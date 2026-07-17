@@ -196,6 +196,14 @@ class GameUiAssets:
 	I_CHECK_KYAKKIYAKOU = RuleImage(roi_front=(305,567,56,64), roi_back=(280,545,100,100), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_kyakkiyakou.png")
 	# 逢魔之时新页面标志 
 	I_CHECK_DEMON_ENCOUNTER_2 = RuleImage(roi_front=(501,441,53,122), roi_back=(358,326,370,288), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_demon_encounter_2.png")
+	#
+	I_TOWN_GOTO_ENTERTAINMENT = RuleImage(roi_front=(201,144,35,72), roi_back=(201,144,35,72), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_town_goto_entertainment.png")
+	#
+	I_CHECK_ENTERTAINMENT = RuleImage(roi_front=(151,18,102,40), roi_back=(151,18,102,40), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_entertainment.png")
+	#
+	I_ENTERTAINMENT_GOTO_CHESS = RuleImage(roi_front=(304,175,41,127), roi_back=(304,175,41,127), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_entertainment_goto_chess.png")
+	#
+	I_CHECK_CHESS = RuleImage(roi_front=(1159,592,66,70), roi_back=(1159,592,66,70), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_chess.png")
 
 
 	# List Rule Assets

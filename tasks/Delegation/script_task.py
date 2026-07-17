@@ -75,10 +75,7 @@ class ScriptTask(GameUi, DelegationAssets):
                 continue
         # 进入委派  fefe e  fe
         logger.info(f'Enter Delegation: {name}')
-        ui_click(self.C_D_1, self.I_D_SELECT_1)
-        ui_click(self.C_D_2, self.I_D_SELECT_2)
-        ui_click(self.C_D_3, self.I_D_SELECT_3)
-        ui_click(self.C_D_4, self.I_D_SELECT_4)
+        ui_click(self.C_D_ALL, self.I_D_SELECT_1)
         # 委派开始
         logger.info(f'Delegation: {name} start')
         while 1:

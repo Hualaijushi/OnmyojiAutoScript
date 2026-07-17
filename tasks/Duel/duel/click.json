@@ -10,5 +10,35 @@
     "roiFront": "105,23,52,47",
     "roiBack": "105,23,52,47",
     "description": "点击第五手上式神位置，获得式神名称"
+  },
+  {
+    "itemName": "duel_click_4",
+    "roiFront": "178,23,52,47",
+    "roiBack": "178,23,52,47",
+    "description": ""
+  },
+  {
+    "itemName": "duel_click_3",
+    "roiFront": "251,23,52,47",
+    "roiBack": "251,23,52,47",
+    "description": ""
+  },
+  {
+    "itemName": "duel_click_2",
+    "roiFront": "324,23,52,47",
+    "roiBack": "324,23,52,47",
+    "description": ""
+  },
+  {
+    "itemName": "duel_click_1",
+    "roiFront": "397,23,52,47",
+    "roiBack": "397,23,52,47",
+    "description": ""
+  },
+  {
+    "itemName": "select_ban",
+    "roiFront": "747,258,123,121",
+    "roiBack": "747,258,123,121",
+    "description": ""
   }
 ]

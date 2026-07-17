@@ -97,8 +97,28 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 else:
                     logger.info('Wait for 30s and invite again')
                     self.timer_invite = None
-                self.invite_friends(config)
+                invite_success = self.invite_friends(config)
+                if not is_first and self.room_type == RoomType.BONDLING_FAIRYLAND and not invite_success:
+                    self._ensure_midway_bondling_invite(config)
         return False
+
+    def _ensure_midway_bondling_invite(self, config: InviteConfig) -> None:
+        """
+        契灵之境中途补邀失败时，等待队伍状态稳定后再确认一次。
+
+        打开邀请面板失败可能是队友恰好在此期间进入房间。等待 5 秒并
+        刷新截图后，如果邀请位已经消失，则按队友已进入处理；如果邀请
+        位仍然存在，则再执行一次邀请，避免一次识别或点击失败后直接开战。
+        """
+        logger.info('Midway invite failed, wait 5s and check the room again')
+        sleep(5)
+        self.screenshot()
+        if not self.appear(self.I_ADD_1):
+            logger.info('Invite button disappeared, teammate is already in the room')
+            return
+
+        logger.warning('Invite button still exists, retry invite friend')
+        self.invite_friends(config)
 
     def room_check_can_fire(self, config: InviteConfig) -> bool:
         fire = False  # 是否开启挑战
@@ -688,10 +708,13 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             self.screenshot()
 
             # 如果自己在探索界面或者是庭院，那就是房间已经被销毁了
+            # 两帧确认避免加载过渡页误匹配
             if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(GameUiAssets.I_CHECK_EXPLORATION):
-                logger.warning('Room destroyed')
-                success = False
-                break
+                self.screenshot()
+                if self.appear(GameUiAssets.I_CHECK_MAIN) or self.appear(GameUiAssets.I_CHECK_EXPLORATION):
+                    logger.warning('Room destroyed')
+                    success = False
+                    break
 
             if self.timer_wait.reached():
                 logger.warning('Wait battle time out')

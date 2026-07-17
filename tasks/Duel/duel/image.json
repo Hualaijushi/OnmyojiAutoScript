@@ -187,5 +187,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "胜利分享"
+  },
+  {
+    "itemName": "ban_ensure",
+    "imageName": "duel_ban_ensure.png",
+    "roiFront": "1123,578,111,46",
+    "roiBack": "1123,578,111,46",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]

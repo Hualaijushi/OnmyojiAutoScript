@@ -48,34 +48,40 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
         :return:
         """
         logger.info('Ensure private')
+        timeout = Timer(15).start()
         while 1:
             self.screenshot()
-            if self.appear(self.I_ENSURE_PRIVATE):
+            if timeout.reached():
+                logger.warning('Ensure private timeout')
+                return False
+            # 降阈值适配渲染偏差设备；小图标 0.8 太严
+            if self.appear(self.I_ENSURE_PRIVATE, threshold=0.7):
                 return True
-            if self.appear(self.I_ENSURE_PRIVATE_2):
+            if self.appear(self.I_ENSURE_PRIVATE_2, threshold=0.7):
                 return True
-            if self.appear_then_click(self.I_ENSURE_PRIVATE_FALSE, interval=1):
+            if self.appear_then_click(self.I_ENSURE_PRIVATE_FALSE, interval=1, threshold=0.7):
                 continue
-            if self.appear_then_click(self.I_ENSURE_PRIVATE_FALSE_2, interval=1):
+            if self.appear_then_click(self.I_ENSURE_PRIVATE_FALSE_2, interval=1, threshold=0.7):
                 continue
         return False
 
     def ensure_public(self) -> bool:
-        """
-        确认公开房间， 允许任何人加入
-        :return:
-        """
         logger.info('Ensure public')
+        timeout = Timer(15).start()
         while 1:
             self.screenshot()
-            if self.appear(self.I_ENSURE_PUBLIC):
+            if timeout.reached():
+                logger.warning('Ensure public timeout')
+                return False
+            if self.appear(self.I_ENSURE_PUBLIC, threshold=0.7):
                 return True
-            if self.appear(self.I_ENSURE_PUBLIC_2):
+            if self.appear(self.I_ENSURE_PUBLIC_2, threshold=0.7):
                 return True
-            if self.appear_then_click(self.I_ENSURE_PUBLIC_FALSE, interval=1):
+            if self.appear_then_click(self.I_ENSURE_PUBLIC_FALSE, interval=1, threshold=0.7):
                 continue
-            if self.appear_then_click(self.I_ENSURE_PUBLIC_FALSE_2, interval=1):
+            if self.appear_then_click(self.I_ENSURE_PUBLIC_FALSE_2, interval=1, threshold=0.7):
                 continue
+        return False
 
     def create_ensure(self) -> bool:
         """

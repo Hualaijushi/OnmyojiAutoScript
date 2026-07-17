@@ -15,6 +15,16 @@ class DuelAssets:
 	C_D_BATTLE_DATA = RuleClick(roi_front=(584,279,100,100), roi_back=(584,279,100,100), name="d_battle_data")
 	# 点击第五手上式神位置，获得式神名称 
 	C_DUEL_CLICK_5 = RuleClick(roi_front=(105,23,52,47), roi_back=(105,23,52,47), name="duel_click_5")
+	#  
+	C_DUEL_CLICK_4 = RuleClick(roi_front=(178,23,52,47), roi_back=(178,23,52,47), name="duel_click_4")
+	#  
+	C_DUEL_CLICK_3 = RuleClick(roi_front=(251,23,52,47), roi_back=(251,23,52,47), name="duel_click_3")
+	#  
+	C_DUEL_CLICK_2 = RuleClick(roi_front=(324,23,52,47), roi_back=(324,23,52,47), name="duel_click_2")
+	#  
+	C_DUEL_CLICK_1 = RuleClick(roi_front=(397,23,52,47), roi_back=(397,23,52,47), name="duel_click_1")
+	#  
+	C_SELECT_BAN = RuleClick(roi_front=(747,258,123,121), roi_back=(747,258,123,121), name="select_ban")
 
 
 	# Image Rule Assets
@@ -60,16 +70,28 @@ class DuelAssets:
 	I_DUEL_HONOR = RuleImage(roi_front=(211,636,20,20), roi_back=(200,601,130,100), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_duel_honor.png")
 	# 胜利分享 
 	I_D_WIN_SHARE = RuleImage(roi_front=(1123,608,82,73), roi_back=(1123,608,82,73), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/d_win_share.png")
+	#  
+	I_BAN_ENSURE = RuleImage(roi_front=(1123,578,111,46), roi_back=(1123,578,111,46), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_ban_ensure.png")
 
 
 	# Ocr Rule Assets
 	# 荣誉 
-	O_D_HONOR = RuleOcr(roi=(233,644,131,31), area=(233,643,131,31), mode="DigitCounter", method="Default", keyword="", name="d_honor")
+	O_D_HONOR = RuleOcr(roi=(233,643,131,31), area=(233,643,131,31), mode="DigitCounter", method="Default", keyword="", name="d_honor")
 	# 分数 
 	O_D_SCORE = RuleOcr(roi=(604,484,108,28), area=(604,484,108,28), mode="DigitCounter", method="Default", keyword="", name="d_score")
-	# 名士星星数 
-	O_D_CELEB_STAR = RuleOcr(roi=(625,454,77,37), area=(625,454,77,37), mode="Digit", method="Default", keyword="", name="d_celeb_star")
-	# 被办式神名称 
-	O_D_BAN_NAME = RuleOcr(roi=(92,97,82,25), area=(92,97,82,25), mode="Single", method="Default", keyword="", name="d_ban_name")
+	# 式神名称5 
+	O_D_NAME_5 = RuleOcr(roi=(78,97,113,32), area=(78,97,113,32), mode="Single", method="Default", keyword="", name="d_name_5")
+	# 式神名称4 
+	O_D_NAME_4 = RuleOcr(roi=(148,97,112,25), area=(148,97,112,25), mode="Single", method="Default", keyword="", name="d_name_4")
+	# 式神名称3 
+	O_D_NAME_3 = RuleOcr(roi=(220,97,112,25), area=(220,97,112,25), mode="Single", method="Default", keyword="", name="d_name_3")
+	# 式神名称2 
+	O_D_NAME_2 = RuleOcr(roi=(292,97,112,25), area=(292,97,112,25), mode="Single", method="Default", keyword="", name="d_name_2")
+	# 式神名称1 
+	O_D_NAME_1 = RuleOcr(roi=(364,97,112,25), area=(364,97,112,25), mode="Single", method="Default", keyword="", name="d_name_1")
+	#  
+	O_D_CELEB_HONOR = RuleOcr(roi=(108,630,131,31), area=(108,630,131,31), mode="DigitCounter", method="Default", keyword="", name="d_celeb_honor")
+	#  
+	O_D_CELEB = RuleOcr(roi=(503,442,250,54), area=(503,442,250,54), mode="Single", method="Default", keyword="", name="d_celeb")
 
 

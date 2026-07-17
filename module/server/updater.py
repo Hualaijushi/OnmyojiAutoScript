@@ -96,6 +96,10 @@ class Updater(DeployConfig, GitManager, PipManager):
         return self.get_commit(f"{source}/{self.Branch}")
 
     def fetch_remote(self) -> bool:
+        if not self.AutoUpdate:
+            logger.info("AutoUpdate is disabled, skip git fetch")
+            return False
+
         source = "origin"
         for _ in range(FETCH_RETRY):
             result = self.execute_command(
@@ -151,6 +155,10 @@ class Updater(DeployConfig, GitManager, PipManager):
         }
 
     def execute_pull(self) -> bool:
+        if not self.AutoUpdate:
+            logger.info("AutoUpdate is disabled, skip git pull")
+            return False
+
         source = "origin"
         for _ in range(FETCH_RETRY):
             if self.execute(

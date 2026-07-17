@@ -21,6 +21,8 @@ class DelegationAssets:
 	C_D_4 = RuleClick(roi_front=(563,493,100,174), roi_back=(563,493,100,174), name="d_4")
 	# description 
 	C_D_5 = RuleClick(roi_front=(695,491,100,178), roi_back=(695,491,100,178), name="d_5")
+	#  一键委派所有式神
+	C_D_ALL = RuleClick(roi_front=(1097,449,133,39), roi_back=(1090,445,144,48), name="d_all")
 
 
 	# Image Rule Assets
