@@ -146,8 +146,8 @@
   {
     "itemName": "town_goto_entertainment",
     "imageName": "page_town_goto_entertainment.png",
-    "roiFront": "201,144,35,72",
-    "roiBack": "201,144,35,72",
+    "roiFront": "201,144,35,26",
+    "roiBack": "201,144,35,26",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
