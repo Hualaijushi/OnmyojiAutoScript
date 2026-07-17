@@ -18,10 +18,11 @@ import zerorpc
 
 from module.exception import ScriptError
 from module.logger import logger
-from module.ocr.ppocr import TextSystem
+from module.ocr.ppocr import OcrLogger, TextSystem
 
 _OCR_SERVER_PROCESS: Optional[multiprocessing.Process] = None
 _OCR_CLIENT_CACHE: dict[str, "ModelProxy"] = {}
+_OCR_LOGGING_ENABLED = False
 
 
 def _normalize_address(address: str) -> str:
@@ -125,9 +126,9 @@ class OcrRuntime:
             "loaded_worker_count": loaded_worker_count,
         }
 
-    def ocr_single_line(self, image_bytes: bytes):
+    def ocr_single_line(self, image_bytes: bytes, save_log: bool = False):
         image = self._decode_image(image_bytes)
-        return self._run_request(self._ocr_single_line, image)
+        return self._run_request(self._ocr_single_line, image, save_log=bool(save_log))
 
     def detect_and_ocr(
         self,
@@ -136,6 +137,7 @@ class OcrRuntime:
         unclip_ratio: Optional[float] = None,
         box_thresh: Optional[float] = None,
         vertical: bool = False,
+        save_log: bool = False,
     ) -> List[Dict[str, Any]]:
         image = self._decode_image(image_bytes)
         return self._run_request(
@@ -145,6 +147,7 @@ class OcrRuntime:
             unclip_ratio=unclip_ratio,
             box_thresh=box_thresh,
             vertical=vertical,
+            save_log=bool(save_log),
         )
 
     def shutdown(self) -> bool:
@@ -192,10 +195,14 @@ class OcrRuntime:
             logger.info(f"OCR worker model loaded: {worker_name}")
         return model
 
-    def _ocr_single_line(self, image: np.ndarray):
+    def _ocr_single_line(self, image: np.ndarray, save_log: bool = False):
         model = self._get_model()
-        result, score = model.ocr_single_line(image)
-        return result, float(score)
+        OcrLogger.set_enabled(save_log)
+        try:
+            result, score = model.ocr_single_line(image)
+            return result, float(score)
+        finally:
+            OcrLogger.set_enabled(False)
 
     def _detect_and_ocr(
         self,
@@ -204,23 +211,28 @@ class OcrRuntime:
         unclip_ratio: Optional[float] = None,
         box_thresh: Optional[float] = None,
         vertical: bool = False,
+        save_log: bool = False,
     ) -> List[Dict[str, Any]]:
         model = self._get_model()
-        if vertical:
-            results = self._detect_and_ocr_vertical(
-                model,
-                image,
-                drop_score=drop_score,
-                unclip_ratio=unclip_ratio,
-                box_thresh=box_thresh,
-            )
-        else:
-            results = model.detect_and_ocr(
-                image,
-                drop_score=drop_score,
-                unclip_ratio=unclip_ratio,
-                box_thresh=box_thresh,
-            )
+        OcrLogger.set_enabled(save_log)
+        try:
+            if vertical:
+                results = self._detect_and_ocr_vertical(
+                    model,
+                    image,
+                    drop_score=drop_score,
+                    unclip_ratio=unclip_ratio,
+                    box_thresh=box_thresh,
+                )
+            else:
+                results = model.detect_and_ocr(
+                    image,
+                    drop_score=drop_score,
+                    unclip_ratio=unclip_ratio,
+                    box_thresh=box_thresh,
+                )
+        finally:
+            OcrLogger.set_enabled(False)
         return [
             {"box": item.box.tolist(), "ocr_text": item.ocr_text, "score": float(item.score)}
             for item in results
@@ -361,6 +373,7 @@ def run_ocr_server(host: str, port: int, settings: dict[str, Any] | None = None)
 class ModelProxy:
     def __init__(self, address: str) -> None:
         self.address = _normalize_address(address)
+        self.save_log = _OCR_LOGGING_ENABLED
         self.client = zerorpc.Client(timeout=10)
         try:
             self.client.connect(self.address)
@@ -376,7 +389,7 @@ class ModelProxy:
 
     def ocr_single_line(self, image: np.ndarray):
         payload = pickle.dumps(image, protocol=4)
-        return self.client.ocr_single_line(payload)
+        return self.client.ocr_single_line(payload, self.save_log)
 
     def detect_and_ocr(
         self,
@@ -387,7 +400,9 @@ class ModelProxy:
         vertical: bool = False,
     ):
         payload = pickle.dumps(image, protocol=4)
-        results = self.client.detect_and_ocr(payload, drop_score, unclip_ratio, box_thresh, vertical)
+        results = self.client.detect_and_ocr(
+            payload, drop_score, unclip_ratio, box_thresh, vertical, self.save_log
+        )
         from module.ocr.ppocr import BoxedResult
         return [
             BoxedResult(np.array(item["box"]), None, item["ocr_text"], item["score"])
@@ -402,6 +417,14 @@ def get_ocr_client(address: str | None = None, refresh: bool = False) -> ModelPr
     if refresh or resolved_address not in _OCR_CLIENT_CACHE:
         _OCR_CLIENT_CACHE[resolved_address] = ModelProxy(resolved_address)
     return _OCR_CLIENT_CACHE[resolved_address]
+
+
+def set_ocr_logging_enabled(enabled: bool) -> None:
+    """设置当前主体后续 OCR 请求是否保存调试日志。"""
+    global _OCR_LOGGING_ENABLED
+    _OCR_LOGGING_ENABLED = bool(enabled)
+    for client in _OCR_CLIENT_CACHE.values():
+        client.save_log = _OCR_LOGGING_ENABLED
 
 
 atexit.register(shutdown_ocr_server)

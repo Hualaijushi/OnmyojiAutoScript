@@ -1,4 +1,7 @@
 {
+  "ocr": "OCR日志",
+  "save_ocr_log": "保存OCR识别日志",
+  "save_ocr_log_help": "默认关闭；开启后保存OCR输入图片和文字识别结果，用于调试识别问题",
   "Chess": "百鬼棋局",
   "chess_config": "百鬼棋局配置",
   "early_exit": "是否提前退出",

@@ -75,6 +75,9 @@
       "battle_timeout": 420,
       "on_takeover": "finish"
     },
+    "ocr": {
+      "save_ocr_log": false
+    },
     "team_flow": {
       "enable": false,
       "broker": "",

@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,17 @@ class OcrLogger:
     LOG_DIR = Path("./log/ocr")
     IMG_DIR = LOG_DIR / "images"
     TXT_DIR = LOG_DIR / "text"
+    _state = threading.local()
+
+    @classmethod
+    def set_enabled(cls, enabled: bool) -> None:
+        """设置当前 OCR 工作线程是否保存调试日志。"""
+        cls._state.enabled = bool(enabled)
+
+    @classmethod
+    def is_enabled(cls) -> bool:
+        """默认关闭，避免正常运行时持续写入图片和文本。"""
+        return bool(getattr(cls._state, 'enabled', False))
 
     @classmethod
     def _init_dirs(cls) -> None:
@@ -60,6 +72,8 @@ class OcrLogger:
             extra:  附加信息（已弃用）。
             pairs:  所有 (text, score) 对列表。
         """
+        if not cls.is_enabled():
+            return
         cls._init_dirs()
         now = datetime.now()
         date_str = now.strftime("%Y-%m-%d")
