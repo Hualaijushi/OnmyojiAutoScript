@@ -74,6 +74,13 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
     BUFF_SELECT_RETRY_INTERVAL = 0.5
     EXPERIENCE_COST = 4
     SHOP_REFRESH_COST = 2
+    ECONOMY_RESERVE_LEVEL_1_TO_5 = 35
+    ECONOMY_RESERVE_LEVEL_6_TO_7 = 25
+    ECONOMY_RESERVE_LEVEL_8 = 15
+    HAKUZOSU_PROTECT_NAME = 'hakuzosu_protect'
+    HAKUZOSU_PROTECT_DISPLAY_NAME = '守护之印'
+    HAKUZOSU_PROTECT_IMAGE = 'c/c_hakuzosu_protect.png'
+    HAKUZOSU_NAME = 'yume_san_byakuzou'
     DEFAULT_LINEUP_KEY = REGISTERED_DEFAULT_LINEUP_KEY
     LINEUP_REGISTRY = REGISTERED_LINEUP_REGISTRY
     SOUL_EQUIP_WAIT = 0.6
@@ -148,8 +155,8 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
         self._active_lineup_key = strategy['key']
         for cache_name in (
             'lineup_shikigami_hand_rules',
-            'special_hand_rules',
             'shikigami_shop_rules',
+            'hakuzosu_protect_rule',
         ):
             self.__dict__.pop(cache_name, None)
         logger.info(
@@ -165,29 +172,9 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
             for name, config in self.get_lineup_strategy()['shikigami'].items()
         }
 
-    @property
-    def special_hand_cards(self) -> dict:
-        return self.get_lineup_strategy().get('special_hand_cards', {})
-
-    def get_lineup_economy_strategy(
-        self,
-        lineup_key: str | None = None,
-    ) -> dict:
-        strategy = self.get_lineup_strategy(lineup_key)
-        return {
-            'key': strategy['key'],
-            'display_name': strategy['display_name'],
-            **strategy['economy'],
-        }
-
-    @staticmethod
-    def _economy_reserve_for_level(level: int, strategy: dict) -> int:
-        """按等级读取经济下限：八阶单独保留，九阶进入清空经济模式。"""
-        if level < 8:
-            return int(strategy['pre_level_8_reserve'])
-        if level == 8:
-            return int(strategy['level_8_reserve'])
-        return int(strategy['level_9_reserve'])
+    def _lineup_final_level(self) -> int:
+        """阵容最终不保留经济的阶数，等于当前羁绊式神总人数。"""
+        return len(self.get_lineup_strategy()['shikigami'])
 
     @classmethod
     def _load_hand_template_folder(
@@ -204,10 +191,6 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                 continue
 
             name = stem[len(prefix):]
-            # `_m` 是商店卡面头像，仅用于商店五格匹配，不能参与手牌
-            # 分类或上阵识别。
-            if folder == 'shikigami' and name.endswith('_m'):
-                continue
             # `_1` 是从图鉴裁出的头像模板；完整手牌模板没有该后缀。
             # 两类模板归一为同一个式神名，并同时参与匹配。
             if folder == 'shikigami' and name.endswith('_1'):
@@ -227,7 +210,7 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
     @cached_property
     def shikigami_hand_rules(self) -> list[tuple[str, RuleImage]]:
         """式神资源大全；用于通用手牌分类，不代表当前阵容会使用。"""
-        return self._load_hand_template_folder('shikigami', prefix='c_')
+        return self._load_hand_template_folder('shikigami/card', prefix='card_')
 
     def _load_strategy_shikigami_rules(
         self,
@@ -271,12 +254,18 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
         return rules
 
     @cached_property
-    def special_hand_rules(self) -> list[tuple[str, RuleImage]]:
-        """当前阵容声明的伴生或特殊手牌模板。"""
-        return self._load_strategy_shikigami_rules(
-            self.special_hand_cards,
-            image_field='images',
+    def hakuzosu_protect_rule(self) -> RuleImage:
+        """梦山白藏主伴生手牌：守护之印。"""
+        file = (
+            Path(__file__).resolve().parent
+            / self.HAKUZOSU_PROTECT_IMAGE
+        )
+        return RuleImage(
+            roi_front=(self.HAND_AREA[0], self.HAND_AREA[1], 1, 1),
+            roi_back=self.HAND_AREA,
             threshold=self.HAND_TEMPLATE_THRESHOLD,
+            method=RuleImage.METHOD_TEMPLATE_MATCH,
+            file=file.as_posix(),
         )
 
     @cached_property
@@ -316,17 +305,12 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                 match = max(matches, key=lambda item: item[0])
                 if best is None or match[0] > best['score']:
                     score, x, y, width, height = match
-                    special = (
-                        self.special_hand_cards.get(name)
-                        if category == 'shikigami'
-                        else None
-                    )
                     best = {
-                        'type': 'special' if special else category,
+                        'type': category,
                         'name': name,
                         'score': score,
                         'position': (x + width // 2, y + height // 2),
-                        'action': None if special is None else special['action'],
+                        'action': None,
                     }
 
         if best is not None:
@@ -420,6 +404,14 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                 logger.warning(
                     'Protect Chess soul hand card from unknown-card sale: '
                     f'name={soul["text"]}, score={soul["score"]:.3f}, '
+                    f'confirmation={confirmation}'
+                )
+                return None
+            protect = self._hakuzosu_protect_match_in_card(current_roi)
+            if protect is not None:
+                logger.warning(
+                    'Protect Chess Hakuzosu protect card from unknown-card '
+                    f'sale: score={protect["score"]:.3f}, '
                     f'confirmation={confirmation}'
                 )
                 return None
@@ -665,32 +657,84 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
         )
         return None
 
-    def deploy_special_hand_card(
+    def _hakuzosu_protect_target_position(self) -> int | None:
+        """当前阵容中守护之印的目标位置；没有白藏主则禁用。"""
+        strategy = self.get_lineup_strategy()
+        if self.HAKUZOSU_NAME not in strategy['shikigami']:
+            return None
+        return int(strategy.get('hakuzosu_protect_position', 1))
+
+    def _find_hakuzosu_protect_hand_card(self) -> dict | None:
+        """定位手牌中的守护之印。"""
+        if self._hakuzosu_protect_target_position() is None:
+            return None
+        matches = self.hakuzosu_protect_rule.match_all_any(
+            self.device.image,
+            roi=list(self.HAND_AREA),
+            threshold=self.hakuzosu_protect_rule.threshold,
+            nms_threshold=0.3,
+            frame_id=self.device.image_frame_id,
+        )
+        if not matches:
+            return None
+        score, x, y, width, height = max(matches, key=lambda item: item[0])
+        return {
+            'name': self.HAKUZOSU_PROTECT_NAME,
+            'display_name': self.HAKUZOSU_PROTECT_DISPLAY_NAME,
+            'score': score,
+            'position': (x + width // 2, y + height // 2),
+        }
+
+    def _hakuzosu_protect_match_in_card(
         self,
-        name: str,
-        source: tuple[int, int],
-    ) -> bool:
-        """通过阵容策略执行伴生手牌；拖动能力由主任务统一提供。"""
-        config = self.special_hand_cards.get(name)
-        if config is None:
-            logger.warning(f'Unknown Chess special hand card: {name}')
+        card_roi: tuple[int, int, int, int],
+    ) -> dict | None:
+        """确认指定手牌框是否为守护之印，用于卖卡保护。"""
+        if self._hakuzosu_protect_target_position() is None:
+            return None
+        matches = self.hakuzosu_protect_rule.match_all_any(
+            self.device.image,
+            roi=list(card_roi),
+            threshold=self.hakuzosu_protect_rule.threshold,
+            nms_threshold=0.3,
+            frame_id=self.device.image_frame_id,
+        )
+        if not matches:
+            return None
+        score, x, y, width, height = max(matches, key=lambda item: item[0])
+        return {
+            'name': self.HAKUZOSU_PROTECT_NAME,
+            'text': self.HAKUZOSU_PROTECT_DISPLAY_NAME,
+            'score': score,
+            'position': (x + width // 2, y + height // 2),
+        }
+
+    def equip_hakuzosu_protect_after_deploy(self) -> bool:
+        """梦山白藏主上阵后，立刻尝试给目标位装备守护之印。"""
+        target_position = self._hakuzosu_protect_target_position()
+        if target_position is None:
             return False
-        if config.get('action') != 'equip_soul':
-            logger.warning(
-                f'Unsupported Chess special hand-card action: '
-                f'name={name}, action={config.get("action")}'
+        if not self._is_preparation_mode():
+            return False
+        card = self._find_hakuzosu_protect_hand_card()
+        if card is None:
+            logger.info(
+                'Chess Hakuzosu protect card is not in hand after '
+                'Byakuzou deployment'
             )
             return False
-        target_position = int(config['target_position'])
         logger.info(
-            f'Deploy Chess special hand card {config["display_name"]} '
-            f'through shared soul operation: set={target_position}'
+            f'Equip Chess {card["display_name"]} immediately after '
+            f'Byakuzou deployment: score={card["score"]:.3f}, '
+            f'source={card["position"]}, set={target_position}'
         )
         self._equip_soul_card(
-            source=source,
-            set_index=target_position,
-            operation_name=name.upper(),
+            source=card['position'],
+            set_index=int(target_position),
+            operation_name=self.HAKUZOSU_PROTECT_NAME.upper(),
         )
+        time.sleep(self.SOUL_EQUIP_WAIT)
+        self.screenshot()
         return True
 
     def _equip_soul_card(
@@ -825,31 +869,6 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                     'position': position,
                     'star': self._hand_card_star_at(position, hand_cards),
                 }
-        return best
-
-    def _find_special_soul_hand_card(self) -> dict | None:
-        """定位当前阵容声明为御魂拖放动作的特殊手牌。"""
-        best = None
-        for name, rule in self.special_hand_rules:
-            config = self.special_hand_cards.get(name, {})
-            if config.get('action') != 'equip_soul':
-                continue
-            matches = rule.match_all_any(
-                self.device.image,
-                roi=list(self.HAND_AREA),
-                threshold=rule.threshold,
-                nms_threshold=0.3,
-                frame_id=self.device.image_frame_id,
-            )
-            for score, x, y, width, height in matches:
-                candidate = {
-                    'name': name,
-                    'display_name': config.get('display_name', name),
-                    'score': score,
-                    'position': (x + width // 2, y + height // 2),
-                }
-                if best is None or score > best['score']:
-                    best = candidate
         return best
 
     def _soul_category(self, name: str) -> str | None:
@@ -1157,23 +1176,6 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                 'has ended'
             )
             return []
-        # 阵容伴生卡可声明为御魂类动作，并复用同一个投放接口。
-        special = self._find_special_soul_hand_card()
-        if special is not None:
-            logger.info(
-                f'Chess special card {special["display_name"]} detected '
-                f'in soul phase: score={special["score"]:.3f}, '
-                f'position={special["position"]}'
-            )
-            self.deploy_special_hand_card(
-                special['name'],
-                special['position'],
-            )
-            time.sleep(self.SOUL_EQUIP_WAIT)
-            self.screenshot()
-            if not self._is_preparation_mode():
-                return []
-
         # “发现御魂”会生成普通御魂，因此必须先全部处理，再扫描并装配
         # soul 文件夹中的御魂卡。
         self.discover_souls_from_hand()
@@ -1338,8 +1340,7 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
 
             candidate = self._find_best_shikigami_hand_card(
                 excluded_names=(
-                    set(self.special_hand_cards)
-                    | star_checked_names
+                    star_checked_names
                     | {
                         name
                         for name, attempts in failed_attempts.items()
@@ -1421,6 +1422,8 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                 'Mark Chess player-deployed position: '
                 f'set={set_index}, name={candidate["name"]}'
             )
+            if candidate['name'] == self.HAKUZOSU_NAME:
+                self.equip_hakuzosu_protect_after_deploy()
         else:
             logger.warning(
                 'Stop deploying Chess hand cards at safety limit '
@@ -1579,10 +1582,17 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                         f'position={soul["position"]}'
                     )
                     continue
+                protect = self._hakuzosu_protect_match_in_card(card_roi)
+                if protect is not None:
+                    logger.info(
+                        'Keep Chess Hakuzosu protect card during cleanup: '
+                        f'score={protect["score"]:.3f}, '
+                        f'position={protect["position"]}'
+                    )
+                    continue
                 result = self.classify_hand_card(card_roi)
                 keep = (
                     result['type'] == 'soul'
-                    or result['type'] == 'special'
                     or (
                         result['type'] == 'shikigami'
                         and result['name'] in self.shikigami_deploy_positions
@@ -2728,13 +2738,14 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
         """重置单局可暂停的回目结束任务和商店状态。"""
         self._economy_pending = False
         self._economy_step_state = 'idle'
-        self._economy_batch_reserve = 0
+        self._economy_sequence_level = None
+        self._economy_sequence_index = 0
         self._formation_pending = False
         self._economy_battle_mode = False
         self._shop_assumed_open = False
 
     def _schedule_economy_cycle(self) -> None:
-        """登记一次经济任务；已有未完成批次时保持其精确进度。"""
+        """登记一次经济任务；已有未完成原子动作时保持其精确进度。"""
         if getattr(self, '_economy_pending', False):
             logger.info(
                 'Chess economy is already pending: '
@@ -2810,14 +2821,84 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
 
         return 'no_progress'
 
-    def _economy_has_budget(self, level: int, gold: int, reserve: int) -> bool:
-        required = reserve + self.SHOP_REFRESH_COST
-        if level < 9:
-            required += self.EXPERIENCE_COST
-        return gold >= required
+    def _economy_sequence_for_level(self, level: int) -> tuple[str, ...]:
+        """返回当前阶数的原子操作序列。"""
+        if level >= self._lineup_final_level():
+            return ('refresh',)
+        if level <= 4:
+            return ('experience', 'experience', 'refresh')
+        elif level == 5:
+            return (
+                'experience',
+                'experience',
+                'experience',
+                'refresh',
+                'refresh',
+            )
+        elif level in (6, 7):
+            return ('experience', 'experience', 'refresh')
+        return ('experience', 'refresh', 'refresh')
+
+    def _economy_reserve_for_level(self, level: int) -> int:
+        if level >= self._lineup_final_level():
+            return 0
+        if level <= 5:
+            return self.ECONOMY_RESERVE_LEVEL_1_TO_5
+        if level <= 7:
+            return self.ECONOMY_RESERVE_LEVEL_6_TO_7
+        return self.ECONOMY_RESERVE_LEVEL_8
+
+    def _reset_economy_sequence_if_level_changed(self, level: int) -> None:
+        if self._economy_sequence_level == level:
+            return
+        logger.info(
+            'Reset Chess economy operation counter: '
+            f'{self._economy_sequence_level} -> {level}'
+        )
+        self._economy_sequence_level = level
+        self._economy_sequence_index = 0
+
+    def _next_economy_operation(self, level: int) -> str:
+        self._reset_economy_sequence_if_level_changed(level)
+        sequence = self._economy_sequence_for_level(level)
+        index = self._economy_sequence_index % len(sequence)
+        operation = sequence[index]
+        logger.info(
+            'Chess economy next operation: '
+            f'level={level}, sequence={sequence}, index={index}, '
+            f'operation={operation}'
+        )
+        return operation
+
+    def _advance_economy_operation_counter(self, level: int) -> None:
+        self._reset_economy_sequence_if_level_changed(level)
+        sequence = self._economy_sequence_for_level(level)
+        self._economy_sequence_index = (
+            self._economy_sequence_index + 1
+        ) % len(sequence)
+        logger.info(
+            'Advance Chess economy operation counter: '
+            f'level={level}, next_index={self._economy_sequence_index}'
+        )
+
+    def _can_execute_economy_operation(
+        self,
+        level: int,
+        gold: int,
+        operation: str,
+    ) -> bool:
+        reserve = self._economy_reserve_for_level(level)
+        cost = (
+            self.EXPERIENCE_COST
+            if operation == 'experience'
+            else self.SHOP_REFRESH_COST
+        )
+        if level < self._lineup_final_level() and gold <= reserve:
+            return False
+        return gold >= reserve + cost
 
     def _run_economy_atomic_batch(self, battle_mode: bool = False) -> str:
-        """执行至多一个“升级-刷新-购买”批次，可跨回目从子步骤续跑。"""
+        """执行一个由计数器决定的经济原子动作。"""
         if not getattr(self, '_economy_pending', False):
             return 'complete'
         if not self._is_purchase_allowed():
@@ -2844,7 +2925,6 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                     )
                 self._economy_step_state = 'ready'
 
-            economy = self.get_lineup_economy_strategy()
             level = self._read_level()
             gold = self._read_shop_gold()
             if level is None or gold is None:
@@ -2852,13 +2932,6 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                     'Pause Chess economy: level or gold OCR unavailable'
                 )
                 return 'blocked'
-            reserve = self._economy_reserve_for_level(level, economy)
-            if not self._economy_has_budget(level, gold, reserve):
-                self._finish_economy_cycle(
-                    f'budget limit reached, level={level}, gold={gold}, '
-                    f'reserve={reserve}'
-                )
-                return 'complete'
             if completed_prior_batch:
                 # 这里只补完上次因阶段切换而暂停的购买子步骤。剩余经济
                 # 留给外层下一次调度，先刷新回目与模式状态。
@@ -2867,34 +2940,27 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
             if not self._ensure_shop_open():
                 return 'blocked'
 
-            # ready 表示新原子批次的起点。九阶不再买经验，直接刷新。
-            if self._economy_step_state == 'ready':
-                self._economy_batch_reserve = reserve
-                if level < 9:
-                    result = self._click_economy_button_and_confirm_gold(
-                        self.I_EXPERIENCE,
-                        self.EXPERIENCE_COST,
-                        'buy experience',
-                        allow_hidden=battle_mode,
-                    )
-                    if result == 'no_progress':
-                        return 'blocked'
-                    # OCR 未知时宁可向前进入刷新子步骤，也不重复购买经验。
-                    self._economy_step_state = 'refresh'
-                else:
-                    self._economy_step_state = 'refresh'
-
-            if self._economy_step_state == 'refresh':
-                gold = self._read_shop_gold()
-                minimum = (
-                    self._economy_batch_reserve + self.SHOP_REFRESH_COST
+            operation = self._next_economy_operation(level)
+            if not self._can_execute_economy_operation(level, gold, operation):
+                self._finish_economy_cycle(
+                    f'budget limit reached, level={level}, gold={gold}, '
+                    f'operation={operation}, '
+                    f'reserve={self._economy_reserve_for_level(level)}, '
+                    f'final_level={self._lineup_final_level()}'
                 )
-                if gold is not None and gold < minimum:
-                    self._finish_economy_cycle(
-                        f'cannot refresh without breaking reserve: '
-                        f'gold={gold}, minimum={minimum}'
-                    )
-                    return 'complete'
+                return 'complete'
+
+            if operation == 'experience':
+                result = self._click_economy_button_and_confirm_gold(
+                    self.I_EXPERIENCE,
+                    self.EXPERIENCE_COST,
+                    'buy experience',
+                    allow_hidden=battle_mode,
+                )
+                if result == 'no_progress':
+                    return 'blocked'
+                self._advance_economy_operation_counter(level)
+            else:
                 result = self._click_economy_button_and_confirm_gold(
                     self.I_REFRESH,
                     self.SHOP_REFRESH_COST,
@@ -2903,20 +2969,20 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
                 )
                 if result == 'no_progress':
                     return 'blocked'
-                # 刷新点击已下发后固定进入购买子步骤，避免确认 OCR 暂时
-                # 失效时重复刷新并跳过上一页的目标卡。
-                self._economy_step_state = 'purchase_after_refresh'
-
-            purchased = self.buy_lineup_shikigami_from_shop()
-            if purchased is None:
-                logger.warning(
-                    'Pause Chess economy after refresh: purchase not confirmed'
-                )
-                return 'blocked'
+                self._advance_economy_operation_counter(level)
+                purchased = self.buy_lineup_shikigami_from_shop()
+                if purchased is None:
+                    logger.warning(
+                        'Pause Chess economy after refresh: purchase not '
+                        'confirmed'
+                    )
+                    self._economy_step_state = 'purchase_after_refresh'
+                    return 'blocked'
             self._economy_step_state = 'ready'
+
             logger.info(
                 'Chess economy atomic batch finished: '
-                f'purchased={purchased}, battle_mode={battle_mode}'
+                f'operation={operation}, battle_mode={battle_mode}'
             )
 
             # 只判断是否还有下一批；真正执行留到外层重新截图、检查回目
@@ -2925,12 +2991,18 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
             gold = self._read_shop_gold()
             if level is None or gold is None:
                 return 'pending'
-            reserve = self._economy_reserve_for_level(level, economy)
-            if self._economy_has_budget(level, gold, reserve):
+            next_operation = self._next_economy_operation(level)
+            if self._can_execute_economy_operation(
+                level,
+                gold,
+                next_operation,
+            ):
                 return 'pending'
             self._finish_economy_cycle(
                 f'budget limit reached after batch, level={level}, '
-                f'gold={gold}, reserve={reserve}'
+                f'gold={gold}, next_operation={next_operation}, '
+                f'reserve={self._economy_reserve_for_level(level)}, '
+                f'final_level={self._lineup_final_level()}'
             )
             return 'complete'
         finally:
@@ -3315,7 +3387,7 @@ class ScriptTask(GameUi, GeneralBattle, ChessAssets):
         return self._ensure_shop_closed(allowed_modes=(mode,))
 
     def _handle_battle_economy(self) -> str:
-        """卖卡完成后，在战阶段续跑一个尚未完成的经济原子批次。"""
+        """卖卡完成后，在战阶段续跑一个尚未完成的经济原子动作。"""
         if self._read_chess_mode() != '战':
             return 'blocked'
         if not getattr(self, '_economy_pending', False):

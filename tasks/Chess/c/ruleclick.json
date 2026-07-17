@@ -28,5 +28,11 @@
     "roiFront": "1098,61,167,140",
     "roiBack": "1098,61,167,140",
     "description": "商店式神1"
+  },
+  {
+    "itemName": "shikigami_store",
+    "roiFront": "344,55,925,241",
+    "roiBack": "344,55,925,241",
+    "description": ""
   }
 ]

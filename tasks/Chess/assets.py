@@ -118,6 +118,8 @@ class ChessAssets:
 	C_SHIKIGAMI_2 = RuleClick(roi_front=(911,61,167,140), roi_back=(911,61,167,140), name="shikigami_2")
 	# 商店式神1 
 	C_SHIKIGAMI_1 = RuleClick(roi_front=(1098,61,167,140), roi_back=(1098,61,167,140), name="shikigami_1")
+	#  
+	C_SHIKIGAMI_STORE = RuleClick(roi_front=(344,55,925,241), roi_back=(344,55,925,241), name="shikigami_store")
 
 
 	# Click Rule Assets
@@ -151,5 +153,6 @@ class ChessAssets:
 	C_BUFF_OPTION_2 = RuleClick(roi_front=(598,205,90,130), roi_back=(598,205,90,130), name="buff_option_2")
 	# Buff右侧选项卡面 
 	C_BUFF_OPTION_3 = RuleClick(roi_front=(875,205,90,130), roi_back=(875,205,90,130), name="buff_option_3")
+
 
 
