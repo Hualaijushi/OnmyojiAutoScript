@@ -1695,8 +1695,8 @@
     },
     "chess_config": {
       "lineup_bond": "七角山",
-      "early_exit": false,
-      "remaining_players": 0,
+      "remaining_players": 1,
+      "rank_protection": false,
       "run_count": 1,
       "coin_full_exit": false
     }

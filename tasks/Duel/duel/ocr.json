@@ -64,8 +64,8 @@
   },
   {
     "itemName": "d_celeb_honor",
-    "roiFront": "108,630,131,31",
-    "roiBack": "108,630,131,31",
+    "roiFront": "108,630,127,31",
+    "roiBack": "108,630,127,31",
     "mode": "DigitCounter",
     "method": "Default",
     "keyword": "",

@@ -90,7 +90,7 @@ class DuelAssets:
 	# 式神名称1 
 	O_D_NAME_1 = RuleOcr(roi=(364,97,112,25), area=(364,97,112,25), mode="Single", method="Default", keyword="", name="d_name_1")
 	#  
-	O_D_CELEB_HONOR = RuleOcr(roi=(108,630,131,31), area=(108,630,131,31), mode="DigitCounter", method="Default", keyword="", name="d_celeb_honor")
+	O_D_CELEB_HONOR = RuleOcr(roi=(108,630,127,31), area=(108,630,127,31), mode="DigitCounter", method="Default", keyword="", name="d_celeb_honor")
 	#  
 	O_D_CELEB = RuleOcr(roi=(503,442,250,54), area=(503,442,250,54), mode="Single", method="Default", keyword="", name="d_celeb")
 

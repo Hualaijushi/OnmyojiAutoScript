@@ -176,9 +176,14 @@ class BaseCor:
             result = ""
         # after proces
         result = self.after_process(result)
-        logger.info("ocr result score: %s %s" % (result, score))
-        logger.attr(name='%s %ss' % (self.name, float2str(time.time() - start_time)),
-                    text=f'[{result}]')
+        logger.debug("ocr result score: %s %s" % (result, score))
+        logger.debug(
+            '[%s %ss] [%s]' % (
+                self.name,
+                float2str(time.time() - start_time),
+                result,
+            )
+        )
         return result
 
     def ocr_single_line(self, image):
@@ -207,9 +212,14 @@ class BaseCor:
             result = ""
         # after proces
         result = self.after_process(result)
-        logger.info("ocr result score: %s %s" % (result, score))
-        logger.attr(name='%s %ss' % (self.name, float2str(time.time() - start_time)),
-                    text=f'[{result}]')
+        logger.debug("ocr result score: %s %s" % (result, score))
+        logger.debug(
+            '[%s %ss] [%s]' % (
+                self.name,
+                float2str(time.time() - start_time),
+                result,
+            )
+        )
         return result
 
     def detect_and_ocr(self, image, logDisplay: bool = True, **kwargs) -> list[BoxedResult]:
@@ -229,14 +239,19 @@ class BaseCor:
         results = []
         # after proces
         for result in boxed_results:
-            logger.info("ocr result score: %s %s" % (result.ocr_text, result.score))
+            logger.debug("ocr result score: %s %s" % (result.ocr_text, result.score))
             if result.score < self.score:
                 continue
             result.ocr_text = self.after_process(result.ocr_text)
             results.append(result)
         if logDisplay:
-            logger.attr(name='%s %ss' % (self.name, float2str(time.time() - start_time)),
-                        text=str([result.ocr_text for result in results]))
+            logger.debug(
+                '[%s %ss] %s' % (
+                    self.name,
+                    float2str(time.time() - start_time),
+                    str([result.ocr_text for result in results]),
+                )
+            )
         return results
 
     def match(self, result: str, included: bool=False) -> bool:
@@ -308,13 +323,18 @@ class BaseCor:
         results = ''
         # after proces
         for result in boxed_results:
-            logger.info("ocr result score: %s %s" % (result.ocr_text, result.score))
+            logger.debug("ocr result score: %s %s" % (result.ocr_text, result.score))
             if result.score < self.score:
                 continue
             results += result.ocr_text
         # logger.info("ocr result score: %s" % score)
-        logger.attr(name='%s %ss' % (self.name, float2str(time.time() - start_time)),
-                    text=f'[{results}]')
+        logger.debug(
+            '[%s %ss] [%s]' % (
+                self.name,
+                float2str(time.time() - start_time),
+                results,
+            )
+        )
         return results
 
 

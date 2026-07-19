@@ -63,8 +63,15 @@ page_login.add_enter_success_hooks(handle_login_page)
 page_main = Page(GameUiAssets.I_CHECK_MAIN, category="global")
 page_main.add_enter_success_hooks(
     GameUiAssets.I_AD_CLOSE_RED, GlobalGameAssets.I_UI_BACK_RED, RestartAssets.I_CANCEL_BATTLE,
-    conditional_action(RestartAssets.I_LOGIN_COURTYARD, RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA),
 )
+
+# 闲庭仍会命中庭院主页标志，因此使用更高优先级先识别闲庭，再点击左上角返回庭院。
+page_relax = Page(
+    all_of(GameUiAssets.I_CHECK_MAIN, GameUiAssets.I_BACK_BROWN),
+    category="global",
+    priority=90,
+)
+page_relax.connect(page_main, GameUiAssets.I_BACK_BROWN, key="page_relax->page_main")
 
 # 庭院区域页面。
 page_shikigami_records = Page(GameUiAssets.I_CHECK_RECORDS, category="global")
