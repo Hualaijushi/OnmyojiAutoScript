@@ -173,8 +173,8 @@
   {
     "itemName": "duel_honor",
     "imageName": "duel_duel_honor.png",
-    "roiFront": "211,636,20,20",
-    "roiBack": "200,601,130,100",
+    "roiFront": "186,633,20,20",
+    "roiBack": "175,631,242,47",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "斗技荣誉图标"
@@ -193,6 +193,15 @@
     "imageName": "duel_ban_ensure.png",
     "roiFront": "1123,578,111,46",
     "roiBack": "1123,578,111,46",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "duel_celeb_honor",
+    "imageName": "duel_duel_celeb_honor.png",
+    "roiFront": "297,633,20,20",
+    "roiBack": "172,632,249,26",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""

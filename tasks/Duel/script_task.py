@@ -29,6 +29,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
     battle_lose_count = 0
     current_score = 0
     current_celeb_star = 0
+    current_normal_honor = 0
+    current_normal_honor_total = 0
     current_celeb_honor = 0
     current_celeb_honor_total = 0
     is_celeb: bool = False  # 是否是名士
@@ -76,6 +78,10 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         self.switch_all_soul()
         self.current_score = 0
         self.current_celeb_star = 0
+        self.current_normal_honor = 0
+        self.current_normal_honor_total = 0
+        self.current_celeb_honor = 0
+        self.current_celeb_honor_total = 0
 
     def can_start_duel(self) -> bool:
         """是否可以运行斗技"""
@@ -243,42 +249,38 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         return similarity >= threshold, similarity, threshold
 
     def check_duel_position_banned(self, position: int, expected_name: str) -> bool:
-        """检查一个指定位置；连续两次不匹配即视为该式神被 Ban。"""
+        """检查一个指定位置；空 OCR 只重试，非空结果再进行编辑距离比较。"""
         click_rule, ocr_rule = self.duel_position_rules(position)
-        self.click(click_rule, interval=0.8)
-        sleep(0.8)
-        self.screenshot()
-        current_name = ocr_rule.ocr(self.device.image).strip()
-        name_matched, similarity, threshold = self._fuzzy_text_match(
-            expected_name, current_name
-        )
-        logger.info(
-            f'Duel slot {position}, first OCR:{current_name or "<empty>"}, '
-            f'expected:{expected_name}, similarity:{similarity:.2f}, '
-            f'threshold:{threshold:.2f}, matched:{name_matched}'
-        )
-        if name_matched:
-            return False
+        attempt = 0
+        while True:
+            attempt += 1
+            self.click(click_rule, interval=0.8)
+            sleep(0.8)
+            self.screenshot()
+            current_name = self._normalize_ocr_text(ocr_rule.ocr(self.device.image))
+            if not current_name:
+                logger.info(
+                    f'Duel slot {position}, OCR is empty on attempt {attempt}; '
+                    'click the slot and retry'
+                )
+                continue
 
-        # 第二次只刷新截图并识别同一个 OCR 框，不重复点击该位置。
-        sleep(0.8)
-        self.screenshot()
-        retry_name = ocr_rule.ocr(self.device.image).strip()
-        retry_matched, retry_similarity, retry_threshold = self._fuzzy_text_match(
-            expected_name, retry_name
-        )
-        logger.info(
-            f'Duel slot {position}, second OCR:{retry_name or "<empty>"}, '
-            f'expected:{expected_name}, similarity:{retry_similarity:.2f}, '
-            f'threshold:{retry_threshold:.2f}, matched:{retry_matched}'
-        )
-        if not retry_matched:
+            name_matched, similarity, threshold = self._fuzzy_text_match(
+                expected_name, current_name
+            )
+            logger.info(
+                f'Duel slot {position}, OCR:{current_name}, expected:{expected_name}, '
+                f'similarity:{similarity:.2f}, threshold:{threshold:.2f}, '
+                f'matched:{name_matched}'
+            )
+            if name_matched:
+                return False
+
             logger.warning(
-                f'Duel slot {position} is not {expected_name} twice, '
+                f'Duel slot {position} is {current_name}, not {expected_name}; '
                 'configured shikigami may be banned'
             )
             return True
-        return False
 
     def check_celeb_shikigami_banned(self) -> bool:
         """按 OASX 配置选择单位置检查或完整阵容顺序检查。"""
@@ -461,14 +463,63 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
             if self.appear_then_click(self.I_DUEL_EXIT, interval=1) or self.appear_then_click(self.I_EXIT, interval=1):
                 continue
 
+    def read_celeb_honors(self) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+        """分别读取名士界面的普通荣誉和名士荣誉比例数。"""
+        default_counter = (0, 0, 0)
+        normal_icon_found = self.appear(self.I_DUEL_HONOR)
+        celeb_icon_found = self.appear(self.I_DUEL_CELEB_HONOR)
+        if not normal_icon_found or not celeb_icon_found:
+            logger.warning(
+                'Duel honor labels not found: '
+                f'normal={normal_icon_found}, celeb={celeb_icon_found}'
+            )
+            return default_counter, default_counter
+
+        original_roi = list(self.O_D_CELEB_HONOR.roi)
+        roi_left, roi_top, roi_width, roi_height = original_roi
+        roi_right = roi_left + roi_width
+
+        def read_after_icon(icon, right: int) -> tuple[int, int, int]:
+            icon_x, _, icon_width, _ = icon.roi_front
+            left = max(roi_left, icon_x + icon_width)
+            right = min(roi_right, right)
+            if right <= left:
+                logger.warning(f'Invalid Duel honor OCR range: {left}-{right}')
+                return default_counter
+            self.O_D_CELEB_HONOR.roi = [left, roi_top, right - left, roi_height]
+            return self.O_D_CELEB_HONOR.ocr(self.device.image)
+
+        try:
+            celeb_icon_x = self.I_DUEL_CELEB_HONOR.roi_front[0]
+            normal_counter = read_after_icon(self.I_DUEL_HONOR, celeb_icon_x)
+            celeb_counter = read_after_icon(self.I_DUEL_CELEB_HONOR, roi_right)
+        finally:
+            self.O_D_CELEB_HONOR.roi = original_roi
+
+        return normal_counter, celeb_counter
+
+    def update_celeb_honors(self) -> None:
+        """刷新两组荣誉计数，并保留各自的当前值和上限。"""
+        normal_counter, celeb_counter = self.read_celeb_honors()
+        normal_current, _, normal_total = normal_counter
+        celeb_current, _, celeb_total = celeb_counter
+        self.current_normal_honor = normal_current
+        self.current_normal_honor_total = normal_total
+        self.current_celeb_honor = celeb_current
+        self.current_celeb_honor_total = celeb_total
+        logger.info(
+            f'Duel honors: normal {normal_current}/{normal_total}, '
+            f'celeb {celeb_current}/{celeb_total}'
+        )
+
     def check_honor(self) -> bool:
         """检查荣誉是否满了"""
         if self.is_celeb:
-            current, remain, total = self.O_D_CELEB_HONOR.ocr(self.device.image)
-            self.current_celeb_honor = current
-            self.current_celeb_honor_total = total
-            logger.info(f'Duel celeb honor: {current}/{total}')
-            return total > 0 and current >= total and remain == 0
+            self.update_celeb_honors()
+            return (
+                self.current_normal_honor_total > 0
+                and self.current_normal_honor >= self.current_normal_honor_total
+            )
         if not self.appear(self.I_DUEL_HONOR):
             return False
         roi_x = self.I_DUEL_HONOR.roi_front[0] + self.I_DUEL_HONOR.roi_front[2]
@@ -480,9 +531,11 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         return total > 0 and current >= total and remain == 0
 
     def is_celeb_honor_full(self) -> bool:
-        """使用最近一次名士荣誉 OCR 结果判断是否刷满。"""
+        """普通荣誉和名士荣誉两组比例数都满时才返回 True。"""
         return (
-            self.current_celeb_honor_total > 0
+            self.current_normal_honor_total > 0
+            and self.current_normal_honor >= self.current_normal_honor_total
+            and self.current_celeb_honor_total > 0
             and self.current_celeb_honor >= self.current_celeb_honor_total
         )
 
@@ -504,11 +557,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         if self.is_celeb:
             star_text = ''.join(char for char in celeb_text if char.isdigit())
             self.current_celeb_star = int(star_text) if star_text else 0
-            current, remain, total = self.O_D_CELEB_HONOR.ocr(self.device.image)
-            self.current_celeb_honor = current
-            self.current_celeb_honor_total = total
+            self.update_celeb_honors()
             logger.info(f'Duel celeb star: {self.current_celeb_star}')
-            logger.info(f'Duel celeb honor: {current}/{total}')
             return
 
         score, remain, total = self.O_D_SCORE.ocr(self.device.image)
@@ -517,6 +567,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
             logger.warning('Recognition error, score is too high')
             score = int(str(score)[1:])
         self.current_score = score
+        self.current_normal_honor = 0
+        self.current_normal_honor_total = 0
         self.current_celeb_honor = 0
         self.current_celeb_honor_total = 0
         logger.info(f'battle score: {score}')

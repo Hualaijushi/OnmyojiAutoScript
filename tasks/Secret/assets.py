@@ -36,7 +36,7 @@ class SecretAssets:
 	# 未通关 
 	O_SE_NO_PASS = RuleOcr(roi=(428,151,262,248), area=(428,151,262,248), mode="Full", method="Default", keyword="未通关", name="se_no_pass")
 	# 第一个位置的层数 
-	O_SE_LAYER_1 = RuleOcr(roi=(210,150,44,39), area=(210,150,44,39), mode="Single", method="Default", keyword="", name="se_layer_1")
+	O_SE_LAYER_1 = RuleOcr(roi=(210,138,43,89), area=(210,138,43,89), mode="Single", method="Default", keyword="", name="se_layer_1")
 	# Ocr-description 
 	O_SE_LAYER_10 = RuleOcr(roi=(210,507,34,34), area=(210,507,34,34), mode="Single", method="Default", keyword="拾", name="se_layer_10")
 	# Ocr-description 
@@ -46,9 +46,9 @@ class SecretAssets:
 	# 后面的时候识别为通关的 
 	O_SE_NO_PASS_LAST = RuleOcr(roi=(429,381,180,234), area=(429,381,180,234), mode="Full", method="Default", keyword="未通关", name="se_no_pass_last")
 	# 勾玉 
-	O_SE_JADE = RuleOcr(roi=(327,230,23,24), area=(327,230,23,24), mode="Digit", method="Default", keyword="", name="se_jade")
+	O_SE_JADE = RuleOcr(roi=(327,216,22,49), area=(327,216,22,49), mode="Digit", method="Default", keyword="", name="se_jade")
 	# 金币 
-	O_SE_GOLD = RuleOcr(roi=(363,226,48,21), area=(363,226,48,21), mode="Digit", method="Default", keyword="", name="se_gold")
+	O_SE_GOLD = RuleOcr(roi=(363,212,47,49), area=(363,212,47,49), mode="Digit", method="Default", keyword="", name="se_gold")
 	# 总耗时 
 	O_SE_TOTAL_TIME = RuleOcr(roi=(289,650,149,38), area=(289,650,149,38), mode="Single", method="Default", keyword="", name="se_total_time")
 

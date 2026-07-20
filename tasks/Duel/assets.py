@@ -67,11 +67,13 @@ class DuelAssets:
 	# ban选界面 
 	I_D_CHECK_BAN = RuleImage(roi_front=(611,36,56,62), roi_back=(590,14,100,100), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_d_check_ban.png")
 	# 斗技荣誉图标 
-	I_DUEL_HONOR = RuleImage(roi_front=(211,636,20,20), roi_back=(200,601,130,100), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_duel_honor.png")
+	I_DUEL_HONOR = RuleImage(roi_front=(186,633,20,20), roi_back=(175,631,242,47), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_duel_honor.png")
 	# 胜利分享 
 	I_D_WIN_SHARE = RuleImage(roi_front=(1123,608,82,73), roi_back=(1123,608,82,73), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/d_win_share.png")
 	#  
 	I_BAN_ENSURE = RuleImage(roi_front=(1123,578,111,46), roi_back=(1123,578,111,46), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_ban_ensure.png")
+	#  
+	I_DUEL_CELEB_HONOR = RuleImage(roi_front=(297,633,20,20), roi_back=(172,632,249,26), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_duel_celeb_honor.png")
 
 
 	# Ocr Rule Assets
@@ -90,7 +92,7 @@ class DuelAssets:
 	# 式神名称1 
 	O_D_NAME_1 = RuleOcr(roi=(364,97,112,25), area=(364,97,112,25), mode="Single", method="Default", keyword="", name="d_name_1")
 	#  
-	O_D_CELEB_HONOR = RuleOcr(roi=(108,630,127,31), area=(108,630,127,31), mode="DigitCounter", method="Default", keyword="", name="d_celeb_honor")
+	O_D_CELEB_HONOR = RuleOcr(roi=(173,633,227,20), area=(173,633,227,20), mode="DigitCounter", method="Default", keyword="", name="d_celeb_honor")
 	#  
 	O_D_CELEB = RuleOcr(roi=(503,442,250,54), area=(503,442,250,54), mode="Single", method="Default", keyword="", name="d_celeb")
 
