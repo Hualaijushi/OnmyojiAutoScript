@@ -23,8 +23,6 @@ class DuelConfig(ConfigBase):
     limit_time: Time = Field(default=Time(minute=30), description='limit_time_help')
     # 目标分数
     target_score: int = Field(default=2000, description='达到目标分数后退出')
-    # 刷满荣誉就退出
-    honor_full_exit: bool = Field(default=False, description='honor_full_exit_help')
     # 是否开启绿标
     green_enable: bool = Field(default=False, description='green_enable_help')
     # 选哪一个绿标
@@ -32,17 +30,11 @@ class DuelConfig(ConfigBase):
 
 
 class DuelCelebConfig(ConfigBase):
-    # 是否开启名士战斗
+    # 荣誉刷满退出，同时控制是否继续名士战斗
     celeb_battle: bool = Field(
-        title='是否开启名士战斗',
-        default=False,
-        description='仅当O_D_CELEB识别文本包含“名士”且该开关已开启时，才允许开始名士战斗',
-    )
-    # 名士荣誉约束
-    celeb_honor_full_exit: bool = Field(
         title='刷满荣誉即退',
         default=False,
-        description='勾选后，名士荣誉刷满时停止战斗',
+        description='勾选后允许名士战斗；普通段位在普通荣誉刷满时退出，名士段位在普通荣誉和名士荣誉都刷满时退出',
     )
     practice_test: bool = Field(
         title='练习模式测试',
@@ -53,7 +45,7 @@ class DuelCelebConfig(ConfigBase):
     ban_check: str = Field(
         title='Ban检查位置及式神',
         default='',
-        description='填写“序号,式神名字”，序号范围1-5，例如“5,平将门”；同一位置连续两次不是该式神时退出本局',
+        description='填写“序号,式神名字”，序号范围1-5，例如“5,平将门”；OCR为空时重新点击，识别到非空名称且编辑距离不匹配时退出本局',
     )
     full_lineup_check: bool = Field(
         title='使用完整阵容对比',

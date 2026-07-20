@@ -1661,13 +1661,11 @@
       "switch_all_soul": false,
       "limit_time": "00:30:00",
       "target_score": 2000,
-      "honor_full_exit": false,
       "green_enable": false,
       "green_mark": "green_left1"
     },
     "duel_celeb_config": {
       "celeb_battle": false,
-      "celeb_honor_full_exit": false,
       "practice_test": false,
       "ban_check": "",
       "full_lineup_check": false,

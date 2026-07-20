@@ -109,18 +109,15 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
 
         self.update_duel_status()
         if self.is_celeb:
-            # 若不开启名士战斗, 则到达名士直接退出。
+            # 合并后的开关同时控制是否继续名士战斗和双荣誉满值退出。
             if not self.conf.duel_celeb_config.celeb_battle:
                 logger.info(
                     'O_D_CELEB detected 名士, but celeb battle switch is disabled'
                 )
                 return False
             logger.info('O_D_CELEB detected 名士 and celeb battle switch is enabled')
-            if (
-                self.conf.duel_celeb_config.celeb_honor_full_exit
-                and self.is_celeb_honor_full()
-            ):
-                logger.info('Duel celeb honor is full')
+            if self.is_celeb_honor_full():
+                logger.info('Duel normal honor and celeb honor are both full')
                 return False
             target_star = self.conf.duel_celeb_config.celeb_star
             if target_star > 0 and self.current_celeb_star >= target_star:
@@ -130,6 +127,9 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
                 )
                 return False
         else:
+            if self.conf.duel_celeb_config.celeb_battle and self.check_honor():
+                logger.info('Duel normal honor is full')
+                return False
             # 普通斗技目标分数最大按 3000 计算。
             configured_target = self.conf.duel_config.target_score
             target_score = min(configured_target, 3000)
@@ -138,10 +138,6 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
             if self.current_score >= target_score:
                 logger.info('Duel task is over score')
                 return False
-        # 荣誉满了，退出
-        if self.conf.duel_config.honor_full_exit and self.check_honor():
-            logger.info('Duel task is over honor')
-            return False
         return True
 
     def start_duel(self):
