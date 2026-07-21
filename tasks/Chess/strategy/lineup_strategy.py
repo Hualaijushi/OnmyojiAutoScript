@@ -4,10 +4,9 @@
 
 阵容配置只描述阵容自身：
 
-- ``shikigami_positions``：式神 -> 上阵位置。式神可填写费用-编号、
-  罗马音或中文名，运行时统一解析为罗马音。
-- ``hakuzosu_protect_position``：当阵容包含梦山白藏主时，守护之印
-  应装备到的位置；不填写时默认装备到 1 号位。
+- ``shikigami_positions``：式神 ->
+  ``(上阵权重, 站位, (限定御魂...), 是否装守护之印)``。权重越低越
+  优先上阵；同权重仍按手牌从左到右处理。
 - ``arakawa_goldfish_position``：荒川羁绊召唤金鱼后应移动到的位置。
   金鱼默认从棋盘右侧 12、11、10、9 号位依次寻找生成格。
 
@@ -26,9 +25,6 @@ def build_lineup_strategy(config: dict) -> dict:
             config.get('shikigami_positions', {})
         ),
     }
-    protect_position = config.get('hakuzosu_protect_position')
-    if protect_position is not None:
-        strategy['hakuzosu_protect_position'] = int(protect_position)
     goldfish_position = int(config.get('arakawa_goldfish_position', 12))
     if not 1 <= goldfish_position <= 12:
         raise ValueError(
@@ -42,17 +38,15 @@ QIJIAOSHAN_CONFIG = {
     'key': 'qijiaoshan',
     'display_name': '七角山',
     'shikigami_positions': {
-        '古笼火': 1,
-        '薰': 2,
-        '一目连': 3,
-        '白狼': 4,
-        '萤草': 5,
-        '小松丸': 6,
-        '梦山白藏主': 7,
-        '山风': 8,
-        '寻森小鹿男': 10,
+        '古笼火': (2, 1, (), False),
+        '薰': (1, 2, ('魍魉之匣', '钓瓶火'), '守护之印'),
+        '一目连': (2, 3, (), False),
+        '白狼': (1, 4, (), False),
+        '萤草': (1, 5, (), False),
+        '小松丸': (1, 6, (), False),
+        '梦山白藏主': (2, 7, (), False),
+        '山风': (2, 8, (), False),
     },
-    'hakuzosu_protect_position': 2,
 }
 
 
@@ -63,14 +57,14 @@ HAIGUO_CONFIG = {
     'key': 'haiguo',
     'display_name': '海国',
     'shikigami_positions': {
-        '黑童子': 1,
-        '蟹姬': 2,
-        '化鲸': 3,
-        '久次良': 4,
-        '灵海蝶': 5,
-        '铃鹿御前': 6,
-        '白童子': 7,
-        '大岳丸': 8,
+        '黑童子': (1, 1, (), False),
+        '蟹姬': (1, 2, (), False),
+        '化鲸': (1, 3, (), False),
+        '久次良': (1, 4, (), False),
+        '灵海蝶': (1, 5, (), False),
+        '铃鹿御前': (1, 6, (), False),
+        '白童子': (1, 7, (), False),
+        '大岳丸': (1, 8, (), False),
     },
 }
 
@@ -82,15 +76,15 @@ DAJIANGSHAN_CONFIG = {
     'key': 'dajiangshan',
     'display_name': '大江山',
     'shikigami_positions': {
-        '雪女': 1,
-        '觉': 2,
-        '鲸汐千姬': 3,
-        '鬼切': 4,
-        '狸猫': 5,
-        '茨木童子': 6,
-        '山童': 7,
-        '薰': 8,
-        '酒吞童子': 10,
+        '雪女': (1, 1, (), False),
+        '觉': (1, 2, (), False),
+        '鲸汐千姬': (1, 3, (), False),
+        '鬼切': (1, 4, (), False),
+        '狸猫': (1, 5, (), False),
+        '茨木童子': (1, 6, (), False),
+        '山童': (1, 7, (), False),
+        '薰': (1, 8, (), False),
+        '酒吞童子': (1, 10, (), False),
     },
 }
 
@@ -102,16 +96,15 @@ HUYAO_CONFIG = {
     'key': 'huyao',
     'display_name': '狐妖',
     'shikigami_positions': {
-        '青行灯': 1,
-        '烬天玉藻前': 2,
-        '梦山白藏主': 3,
-        '妖狐': 4,
-        '本真三尾狐': 5,
-        '葛叶': 6,
-        '御馔津': 7,
-        '妖刀姬': 8,
+        '青行灯': (1, 1, (), '守护之印'),
+        '烬天玉藻前': (1, 2, (), False),
+        '梦山白藏主': (1, 3, (), False),
+        '妖狐': (1, 4, (), False),
+        '本真三尾狐': (1, 5, (), False),
+        '葛叶': (1, 6, (), False),
+        '御馔津': (1, 7, (), False),
+        '妖刀姬': (1, 8, (), False),
     },
-    'hakuzosu_protect_position': 1,
 }
 
 
@@ -122,17 +115,16 @@ MINGFU_CONFIG = {
     'key': 'mingfu',
     'display_name': '冥府',
     'shikigami_positions': {
-        '青行灯': 1,
-        '阎魔': 2,
-        '夜叉': 3,
-        '鬼使黑': 4,
-        '黑童子': 5,
-        '判官': 6,
-        '花鸟卷': 7,
-        '鬼使白': 8,
-        '白童子': 9,
+        '青行灯': (1, 1, (), '守护之印'),
+        '阎魔': (1, 2, (), False),
+        '夜叉': (1, 3, (), False),
+        '鬼使黑': (1, 4, (), False),
+        '黑童子': (1, 5, (), False),
+        '判官': (1, 6, (), False),
+        '花鸟卷': (1, 7, (), False),
+        '鬼使白': (1, 8, (), False),
+        '白童子': (1, 9, (), False),
     },
-    'hakuzosu_protect_position': 1,
 }
 
 
@@ -143,17 +135,16 @@ LIUHUO_CONFIG = {
     'key': 'liuhuo',
     'display_name': '流火',
     'shikigami_positions': {
-        '思金神': 1,
-        '凤凰火': 2,
-        '古笼火': 3,
-        '阿修罗': 4,
-        '云间不见岳': 5,
-        '天火命铃彦姬': 7,
-        '梦山白藏主': 7,
-        '烬天玉藻前': 8,
-        '金鱼姬': 9,
+        '思金神': (1, 1, (), '守护之印'),
+        '凤凰火': (1, 2, (), False),
+        '古笼火': (1, 3, (), False),
+        '阿修罗': (1, 4, (), False),
+        '云间不见岳': (1, 5, (), False),
+        '天火命铃彦姬': (1, 7, (), False),
+        '梦山白藏主': (1, 7, (), False),
+        '烬天玉藻前': (1, 8, (), False),
+        '金鱼姬': (1, 9, (), False),
     },
-    'hakuzosu_protect_position': 1,
 }
 
 
