@@ -301,6 +301,7 @@
       "shikigami_order": 4,
       "harvest_guild_max_times": 3,
       "utilize_enable": true,
+      "disable_utilize_harvest": false,
       "guild_ap_enable": true,
       "guild_assets_enable": true,
       "box_ap_enable": true,

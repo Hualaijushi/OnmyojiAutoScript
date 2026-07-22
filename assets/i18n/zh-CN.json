@@ -120,6 +120,8 @@
   "other_world_twilight_config": "彼世逢魔配置",
   "auto_fill": "智能放入",
   "auto_fill_help": "开启后使用智能放入寄养式神",
+  "disable_utilize_harvest": "不启用寄养领取",
+  "disable_utilize_harvest_help": "开启后不领取好友寄养结束产生的经验",
   "honor_gift": "功勋礼包",
   "guild_banquet_config": "寮宴会配置",
   "auto_switch_shikigami": "自动切换式神",

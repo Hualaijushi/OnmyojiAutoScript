@@ -43,7 +43,10 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         # 查看育成满级
         self.check_max_lv(con.shikigami_class, con.auto_fill)
         # 检查蹭卡收获
-        self.check_utilize_harvest()
+        if not con.disable_utilize_harvest:
+            self.check_utilize_harvest()
+        else:
+            logger.info('Utilize harvest disabled, skip collecting foster experience')
         # 收体力盒子或者是经验盒子
         self.check_box_ap_or_exp(con.box_ap_enable, con.box_exp_enable, con.box_exp_waste)
 
@@ -595,4 +598,3 @@ if __name__ == "__main__":
     # t.screenshot()
     # print(t.appear(t.I_BOX_EXP, threshold=0.6))
     # print(t.appear(t.I_BOX_EXP_MAX, threshold=0.6))
-

@@ -34,6 +34,7 @@ class UtilizeConfig(BaseModel):
     shikigami_order: int = Field(default=4, description='shikigami_order_help')
     harvest_guild_max_times: int = Field(default=3, description='收取寮资金或体力失败的最大尝试次数')
     utilize_enable: bool = Field(default=True, description='是否蹭卡，小号可以选择不蹭卡')
+    disable_utilize_harvest: bool = Field(default=False, description='disable_utilize_harvest_help')
     guild_ap_enable: bool = Field(default=True, description='guild_ap_enable_help')
     guild_assets_enable: bool = Field(default=True, description='guild_assets_enable_help')
     box_ap_enable: bool = Field(default=True, description='box_ap_enable_help')
@@ -44,6 +45,5 @@ class UtilizeConfig(BaseModel):
 class KekkaiUtilize(ConfigBase):
     scheduler: UtilizeScheduler = Field(default_factory=UtilizeScheduler)
     utilize_config: UtilizeConfig = Field(default_factory=UtilizeConfig)
-
 
 
