@@ -115,8 +115,8 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
             if self.ocr_appear_click(self.O_LOGIN_ENTER_GAME, interval=3):
                 self.wait_until_appear(self.I_LOGIN_SPECIFIC_SERVE, True, wait_time=5)
                 continue
-
-        return login_success
+            if self.appear(self.I_LOGIN_SCROOLL_CLOSE) or self.appear(self.I_LOGIN_SCROOLL_OPEN):
+                return login_success
 
     def app_handle_login(self) -> bool:
         self.device.stuck_record_clear()

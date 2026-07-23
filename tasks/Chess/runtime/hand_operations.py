@@ -421,7 +421,7 @@ class ChessHandOperationsMixin:
         name: str,
         source: tuple[int, int],
     ) -> bool:
-        """按当前策略站位拖动式神，并以人数变化确认是否上阵。"""
+        """按当前策略站位拖动式神，并交叉确认是否上阵。"""
         set_index = self.shikigami_deploy_positions.get(name)
         if set_index is None:
             logger.warning(f'Chess shikigami has no deploy position: {name}')
@@ -434,6 +434,8 @@ class ChessHandOperationsMixin:
             )
             return False
         count_before = self._read_shikigami_count()
+        hand_count_before = self._lineup_hand_card_match_count(name)
+        target_occupied_before = self._board_set_has_shikigami(set_index)
         target_position = self._set_position(set_index)
         logger.debug(
             f'Deploy Chess shikigami {name} to set {set_index}, '
@@ -452,52 +454,79 @@ class ChessHandOperationsMixin:
         time.sleep(self.HAND_DEPLOY_WAIT)
         self.screenshot()
         count_after = self._read_shikigami_count()
+        hand_count_after = self._lineup_hand_card_match_count(name)
+        target_occupied_after = self._board_set_has_shikigami(set_index)
 
+        count_increased = False
         if count_before is not None and count_after is not None:
-            succeeded = count_after['current'] > count_before['current']
-            if succeeded:
-                logger.debug(
-                    f'Chess shikigami deploy confirmed: {name} -> '
-                    f'set {set_index}, '
-                    f'{count_before["current"]}/{count_before["total"]} -> '
-                    f'{count_after["current"]}/{count_after["total"]}'
-                )
-                return True
-            else:
-                logger.warning(
-                    f'Chess shikigami count did not confirm deploy: {name} -> '
-                    f'set {set_index}, lineup stayed at '
-                    f'{count_before["current"]}/{count_before["total"]}; '
-                    'verify the hand card before rejecting it'
-                )
+            count_increased = (
+                count_after['current'] > count_before['current']
+            )
+        hand_count_decreased = hand_count_after < hand_count_before
+        target_became_occupied = (
+            not target_occupied_before and target_occupied_after
+        )
 
-        # 人数 OCR 偶尔会被动画遮住或读到不变值。此时不再把一次未确认
-        # 的拖动直接记为成功；检查原横坐标附近是否仍有同名手牌兜底。
+        # 同名手牌可能有多张。旧逻辑只检查原横坐标附近是否仍有同名
+        # 模板，手牌重排后会把另一张同名牌误当作“拖动失败”。现在改为
+        # 比较整片手牌区的同名数量，并结合人数和目标格占位交叉确认。
+        succeeded = (
+            count_increased
+            or target_became_occupied
+            or (hand_count_decreased and target_occupied_after)
+        )
+        if succeeded:
+            logger.debug(
+                f'Chess shikigami deploy confirmed: {name} -> set {set_index}, '
+                f'board_count={count_before["current"] if count_before else "?"}'
+                f'->{count_after["current"] if count_after else "?"}, '
+                f'hand_count={hand_count_before}->{hand_count_after}, '
+                f'target_occupied={target_occupied_before}'
+                f'->{target_occupied_after}'
+            )
+            return True
+
+        logger.warning(
+            f'Chess shikigami deploy not confirmed: {name} -> set {set_index}, '
+            f'board_count={count_before["current"] if count_before else "?"}'
+            f'->{count_after["current"] if count_after else "?"}, '
+            f'hand_count={hand_count_before}->{hand_count_after}, '
+            f'target_occupied={target_occupied_before}'
+            f'->{target_occupied_after}'
+        )
+        return False
+
+    def _lineup_hand_card_match_count(self, name: str) -> int:
+        """统计手牌区内指定阵容式神的实际卡位数量。"""
+        candidates = []
         for rule_name, rule in self.lineup_shikigami_hand_rules:
             if rule_name != name:
                 continue
             matches = rule.match_all_any(
                 self.device.image,
                 roi=list(self.HAND_AREA),
-                threshold=rule.threshold,
+                threshold=self.HAND_DEPLOY_TEMPLATE_THRESHOLD,
                 nms_threshold=0.3,
                 frame_id=self.device.image_frame_id,
             )
-            if any(
-                abs((x + width // 2) - source[0]) <= 45
-                for _, x, _, width, _ in matches
-            ):
-                logger.warning(
-                    f'Chess shikigami deploy not confirmed by hand card: '
-                    f'{name} remains near {source}'
-                )
-                return False
+            candidates.extend(
+                (score, x + width // 2, y + height // 2)
+                for score, x, y, width, height in matches
+            )
 
-        logger.debug(
-            f'Chess shikigami deploy accepted by hand-card disappearance: '
-            f'{name} -> set {set_index}'
-        )
-        return True
+        # 同一个式神若存在多个模板，每张实际手牌可能产生多个重叠命中。
+        # 以人物中心聚类，只计算一次。
+        distinct = []
+        for candidate in sorted(candidates, reverse=True):
+            _, center_x, center_y = candidate
+            if any(
+                abs(center_x - kept_x) <= 32
+                and abs(center_y - kept_y) <= 40
+                for _, kept_x, kept_y in distinct
+            ):
+                continue
+            distinct.append(candidate)
+        return len(distinct)
 
     def _find_best_shikigami_hand_card(
         self,
@@ -1150,35 +1179,9 @@ class ChessHandOperationsMixin:
             getattr(self, '_player_deployed_positions', set())
         )
 
-        # 上一次拖动可能因手牌合成、重排或动画遮挡，被“原位置附近手牌
-        # 消失”兜底误记为成功。若仍直接用该缓存排除同名卡，这个式神会
-        # 在整局内都不再进入上阵候选。每次上卡前以目标格勾玉重新校验；
-        # 目标格已经没有式神时，同时撤销式神名和脚本上阵位置记录。
-        stale_names = {
-            name
-            for name in deployed_names
-            if (
-                name not in self.shikigami_deploy_positions
-                or not self._board_set_has_shikigami(
-                    self.shikigami_deploy_positions[name]
-                )
-            )
-        }
-        if stale_names:
-            stale_positions = {
-                self.shikigami_deploy_positions[name]
-                for name in stale_names
-                if name in self.shikigami_deploy_positions
-            }
-            deployed_names -= stale_names
-            player_positions -= stale_positions
-            self._board_lineup_names = deployed_names
-            self._player_deployed_positions = player_positions
-            logger.info(
-                'Correct stale Chess deployed-card cache: '
-                f'names={[self._shikigami_display_name(name) for name in sorted(stale_names)]}, '
-                f'positions={sorted(stale_positions)}'
-            )
+        # 已确认上阵的阵容式神在本局内保持登记。战斗动画、遮挡或勾玉
+        # 模板单帧漏识别不能证明式神已经离场；若据此清除名称，会同时
+        # 导致重复上阵和专属御魂失去目标。
         failed_attempts = {}
         for _ in range(self.HAND_DEPLOY_SAFETY_LIMIT):
             if not self._is_preparation_mode():
