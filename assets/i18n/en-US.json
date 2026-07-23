@@ -2,6 +2,5 @@
   "ocr": "OCR Logs",
   "save_ocr_log": "Save OCR recognition logs",
   "save_ocr_log_help": "Disabled by default. When enabled, saves OCR input images and recognized text for debugging.",
-  "disable_utilize_harvest": "Disable foster EXP collection",
-  "disable_utilize_harvest_help": "When enabled, skips collecting EXP produced by completed friend foster placement."
+  "utilize_harvest": "Collect foster rewards"
 }
