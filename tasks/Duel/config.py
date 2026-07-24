@@ -23,6 +23,11 @@ class DuelConfig(ConfigBase):
     limit_time: Time = Field(default=Time(minute=30), description='limit_time_help')
     # 目标分数
     target_score: int = Field(default=2000, description='达到目标分数后退出')
+    # 刷满荣誉就退出
+    honor_full_exit: bool = Field(
+        default=False,
+        description='普通段位在普通荣誉刷满时退出；名士段位在普通荣誉和名士荣誉都刷满时退出',
+    )
     # 是否开启绿标
     green_enable: bool = Field(default=False, description='green_enable_help')
     # 选哪一个绿标
@@ -30,11 +35,10 @@ class DuelConfig(ConfigBase):
 
 
 class DuelCelebConfig(ConfigBase):
-    # 荣誉刷满退出，同时控制是否继续名士战斗
+    # 是否开启名士战斗
     celeb_battle: bool = Field(
-        title='刷满荣誉即退',
         default=False,
-        description='勾选后允许名士战斗；普通段位在普通荣誉刷满时退出，名士段位在普通荣誉和名士荣誉都刷满时退出',
+        description='是否开启名士战斗',
     )
     practice_test: bool = Field(
         title='练习模式测试',

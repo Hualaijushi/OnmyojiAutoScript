@@ -109,14 +109,16 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
 
         self.update_duel_status()
         if self.is_celeb:
-            # 合并后的开关同时控制是否继续名士战斗和双荣誉满值退出。
             if not self.conf.duel_celeb_config.celeb_battle:
                 logger.info(
                     'O_D_CELEB detected 名士, but celeb battle switch is disabled'
                 )
                 return False
             logger.info('O_D_CELEB detected 名士 and celeb battle switch is enabled')
-            if self.is_celeb_honor_full():
+            if (
+                self.conf.duel_config.honor_full_exit
+                and self.is_celeb_honor_full()
+            ):
                 logger.info('Duel normal honor and celeb honor are both full')
                 return False
             target_star = self.conf.duel_celeb_config.celeb_star
@@ -127,7 +129,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
                 )
                 return False
         else:
-            if self.conf.duel_celeb_config.celeb_battle and self.check_honor():
+            if self.conf.duel_config.honor_full_exit and self.check_honor():
                 logger.info('Duel normal honor is full')
                 return False
             # 普通斗技目标分数最大按 3000 计算。
