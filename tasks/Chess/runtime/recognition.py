@@ -266,7 +266,7 @@ class ChessRecognitionMixin:
 
     @cached_property
     def soul_hand_rules(self) -> list[tuple[str, RuleImage]]:
-        """御魂模板由罗马音文件名转换为“编号-御魂名”运行时键。"""
+        """按拼音文件名加载御魂模板，运行时统一使用拼音键。"""
         rules = self._load_hand_template_folder('soul', prefix='sou_')
         normalized = []
         for romaji, rule in rules:
@@ -276,7 +276,7 @@ class ChessRecognitionMixin:
                     f'Ignore unregistered Chess soul template: {romaji}'
                 )
                 continue
-            normalized.append((entry.key, rule))
+            normalized.append((entry.romaji, rule))
         return normalized
 
     def classify_hand_card(self, card_roi: tuple[int, int, int, int]) -> dict:

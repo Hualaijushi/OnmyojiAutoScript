@@ -259,7 +259,7 @@ def build_lineup_shikigami(position_by_identity: dict) -> dict[str, dict]:
                     f'御魂目录不存在: {soul_value} '
                     f'(式神={entry.chinese_name})'
                 )
-            soul_key = soul.key
+            soul_key = soul.romaji
             if soul_key not in preferred_souls:
                 preferred_souls.append(soul_key)
 
