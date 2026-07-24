@@ -47,6 +47,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, GoryouRealmAssets):
             }[randint(1, 4)]
         while 1:
             self.screenshot()
+            self.click(self.C_GR_LEVEL_3)
             if self.appear(self.I_GR_FIRE):
                 logger.info('Enter GoryouRealm')
                 break
