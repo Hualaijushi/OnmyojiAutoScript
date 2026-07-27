@@ -182,5 +182,14 @@
   "custom_courtyard_affair_1": "龙仪星引",
   "custom_courtyard_affair": "庭院事务",
   "collect_placement_reward": "收取放置奖励",
-  "collect_exp": "收取经验"
+  "collect_exp": "收取经验",
+  "duel_celeb_config": "名士战斗设置",
+  "switch_enabled": "切换阴阳师",
+  "switch_onmyoji": "上阵阴阳师",
+  "celeb_battle": "名士战斗",
+  "practice_test": "开启练习",
+  "ban_check": "禁选式神",
+  "full_lineup_check": "启用完整阵容检查",
+  "full_lineup_names": "完整阵容",
+  "celeb_star": "名士星数"
 }
