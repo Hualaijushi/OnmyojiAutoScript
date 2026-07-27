@@ -7,6 +7,7 @@ from datetime import datetime
 
 from module.exception import TaskEnd
 from module.logger import logger
+from module.atom.click import RuleClick
 from module.atom.ocr import RuleOcr
 
 from tasks.GameUi.game_ui import GameUi
@@ -21,7 +22,12 @@ from tasks.WeeklyTrifles.assets import WeeklyTriflesAssets
 
 
 class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
-    lay_list = ['壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖', '拾']
+    LAYER_TITLE_AREA = (194, 132, 366, 500)
+    LAYER_CARD_LEFT = 194
+    LAYER_CARD_WIDTH = 360
+    LAYER_CARD_HEIGHT = 121
+    LAYER_TITLE_TOP_OFFSET = 10
+    LAYER_STATUS_OFFSET = (240, 40, 100, 50)
 
     def _exit_matcher(self) -> ExitMatcher:
         return self.I_SE_FIRE
@@ -35,6 +41,18 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
             '柒': 7, '捌': 8,
             '玖': 9, '拾': 10,
         }
+
+    @cached_property
+    def layer_title_ocr(self) -> RuleOcr:
+        """识别列表内“壹·标题”至“拾·标题”的完整关卡名。"""
+        return RuleOcr(
+            roi=self.LAYER_TITLE_AREA,
+            area=self.LAYER_TITLE_AREA,
+            mode='Single',
+            method='Default',
+            keyword='',
+            name='secret_layer_title',
+        )
 
     @cached_property
     def battle_config(self) -> GeneralBattleConfig:
@@ -144,84 +162,124 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
         raise TaskEnd('Secret')
 
     def find_battle(self, screenshot: bool = False) -> int or None:
-        """
-        自动寻找挑战的层数并且选定 , 找不到会向下划一点
-        :return: 如果找得到返回层数，找不到返回None
-        """
-
-        def confirm_layer(ocr_target: RuleOcr, roi=None) -> int or None:
-            """
-            检查层数， 启用函数check_layer
-            :param ocr_target:
-            :param roi:
-            :return:
-            """
-            ocr_target.roi[0] = int(roi[0]) - 118
-            ocr_target.roi[1] = int(roi[1]) + 37
-            # print(f'检测到的未通过ROI: {roi}')
-            # print(f'检测到的勾玉数量ROI: {ocr_target.roi}')
-            jade_num = ocr_target.ocr(self.device.image)
-            if isinstance(jade_num, str):
-                logger.warning(f'OCR failed, try again {jade_num}')
-                return None
-            elif not isinstance(jade_num, int):
-                logger.warning(f'OCR failed, try again {jade_num}')
-                return None
-            if jade_num < 7:
-                # 第一个的时候可能是没有检测到
-                gold_number = self.O_SE_GOLD.ocr(self.device.image)
-                if isinstance(gold_number, int) and (gold_number == 10000 or gold_number == 18000):
-                    logger.info(f'No find jade number, but find gold number {gold_number}')
-                    return 1
-                return None
-            elif jade_num > 70:
-                logger.warning(f'OCR failed, try again {jade_num}')
-                return None
-            # 勾玉数量 = 层数 * 7
-            try:
-                lr = jade_num // 7
-                return lr
-            except TypeError:
-                logger.warning(f'OCR failed, try again {jade_num}')
-                return None
-
+        """按关卡标题定位卡片，只选择状态为“未通关”的关卡。"""
         if screenshot:
             self.screenshot()
         if self.appear(self.I_CHAT_CLOSE_BUTTON):
             self.ui_click_until_disappear(self.I_CHAT_CLOSE_BUTTON, interval=2)
-        text_pos = self.O_SE_NO_PASS.ocr(self.device.image)
-        if text_pos != (0, 0, 0, 0):
-            # 如果能找得到 未通关 ，那可以挑战
-            layer = confirm_layer(self.O_SE_JADE, text_pos)
-            if layer:
-                self.C_SE_CLICK_LAYER.roi_front = text_pos
-                self.click(self.C_SE_CLICK_LAYER, interval=1)
-                return layer
-            else:
-                return None
 
-        else:
-            # 如果不是就向下滑动，继续找或者是判断
-            last_text_pos = self.O_SE_NO_PASS_LAST.ocr(self.device.image)
-            if last_text_pos != (0, 0, 0, 0):
-                # 如果是后面找得到
-                layer = confirm_layer(self.O_SE_JADE, last_text_pos)
+        roi_x, roi_y, _, _ = self.LAYER_TITLE_AREA
+        candidates = []
+        for result in self.layer_title_ocr.detect_and_ocr(
+            self.device.image
+        ):
+            text = ''.join(str(result.ocr_text or '').split())
+            if not text:
+                continue
+            layer = self.match_layer.get(text[0])
+            if layer is None:
+                continue
 
-                # 有个bug 十层的发现不了
-                if not layer and last_text_pos[1] > 520:
-                    layer = 10
+            points = result.box
+            title_left = roi_x + min(int(point[0]) for point in points)
+            title_top = roi_y + min(int(point[1]) for point in points)
+            card_top = max(0, title_top - self.LAYER_TITLE_TOP_OFFSET)
+            card_top = min(
+                self.device.image.shape[0] - self.LAYER_CARD_HEIGHT,
+                card_top,
+            )
+            candidates.append({
+                'layer': layer,
+                'title': text,
+                'title_position': (title_left, title_top),
+                'card_roi': (
+                    self.LAYER_CARD_LEFT,
+                    card_top,
+                    self.LAYER_CARD_WIDTH,
+                    self.LAYER_CARD_HEIGHT,
+                ),
+            })
 
-                if layer:
-                    self.C_SE_CLICK_LAYER.roi_front = last_text_pos
-                    self.click(self.C_SE_CLICK_LAYER, interval=1)
-                    return layer
-                else:
-                    return None
+        # OCR 偶尔会为同一标题返回重叠文本，只保留每个卡片位置的
+        # 第一条结果，并按照画面从上到下检查。
+        distinct = []
+        for candidate in sorted(
+            candidates,
+            key=lambda item: item['card_roi'][1],
+        ):
+            if any(
+                abs(
+                    candidate['card_roi'][1]
+                    - kept['card_roi'][1]
+                ) <= 12
+                for kept in distinct
+            ):
+                continue
+            distinct.append(candidate)
 
-            else:
-                # 如果不是就一直滑动
-                self.swipe(self.S_SE_DOWN_SEIPE, interval=3)
-                time.sleep(2)
+        for candidate in distinct:
+            card_x, card_y, _, _ = candidate['card_roi']
+            offset_x, offset_y, status_width, status_height = (
+                self.LAYER_STATUS_OFFSET
+            )
+            status_roi = (
+                card_x + offset_x,
+                card_y + offset_y,
+                status_width,
+                status_height,
+            )
+            status_rule = RuleOcr(
+                roi=status_roi,
+                area=status_roi,
+                mode='Single',
+                method='Default',
+                keyword='',
+                name=f'secret_layer_{candidate["layer"]}_status',
+            )
+            status = ''.join(
+                str(status_rule.ocr(self.device.image) or '').split()
+            )
+            logger.info(
+                f'Secret layer candidate: '
+                f'layer={candidate["layer"]}, '
+                f'title=[{candidate["title"]}], '
+                f'status=[{status}], card={candidate["card_roi"]}'
+            )
+            if '未解锁' in status:
+                continue
+            if '未通关' not in status:
+                # 时间或其他完成信息都表示该层已经挑战过。
+                continue
+
+            # 点击卡片左侧内容区，避开右侧状态文字；按需求连续点击两次。
+            click_roi = (
+                card_x + 12,
+                card_y + 8,
+                216,
+                self.LAYER_CARD_HEIGHT - 16,
+            )
+            click_rule = RuleClick(
+                roi_front=click_roi,
+                roi_back=click_roi,
+                name=f'secret_layer_{candidate["layer"]}_card',
+            )
+            click_x, click_y = click_rule.center
+            for click_index in range(1, 3):
+                self.device.click(
+                    x=click_x,
+                    y=click_y,
+                    control_name=(
+                        f'SECRET_LAYER_{candidate["layer"]}'
+                        f'_SELECT_{click_index}'
+                    ),
+                )
+                time.sleep(0.4)
+            return candidate['layer']
+
+        # 当前画面没有可挑战关卡时继续向下滚动，外层循环会重新 OCR。
+        self.swipe(self.S_SE_DOWN_SEIPE, interval=3)
+        time.sleep(2)
+        return None
 
     def click_battle(self):
         while 1:
