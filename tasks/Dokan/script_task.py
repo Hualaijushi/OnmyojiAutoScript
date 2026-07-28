@@ -232,8 +232,9 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
                 raise DokanNotStartedError
             if self.update_remain_attack_count() <= 0:  # 可挑战次数为<=0,当作道馆成功完成
                 raise DokanFinishedError
-            if datetime.now().weekday() == 0:  # NOTE 只在周一尝试建立道馆
-                self.creat_dokan()
+            if not self.ensure_dokan_created():
+                logger.warning('Create Dokan failed, stop before selecting a target')
+                raise DokanNotStartedError
             # 寻找合适道馆,找不到直接退出
             if not self.find_dokan(self.config.dokan.dokan_config.find_dokan_score):
                 raise DokanNotStartedError
@@ -400,7 +401,49 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
             return True
         return False
 
-    def creat_dokan(self):
+    def ensure_dokan_created(self) -> bool:
+        """点击道馆状态入口，以是否出现创建确认框判断是否需要创建。"""
+        click_count = 0
+        for attempt in range(1, 3):
+            self.screenshot()
+            marker_found = (
+                self.appear(self.I_RYOU_DOKAN_CREATE_DOKAN)
+                or self.appear(self.I_RYOU_DOKAN_HAVE_DOKAN)
+            )
+            if marker_found:
+                logger.info(
+                    f'Click Dokan create/have marker: attempt={attempt}/2'
+                )
+                self.click(self.I_RYOU_DOKAN_CREATE_DOKAN)
+                click_count += 1
+            else:
+                logger.warning(
+                    f'Dokan create/have marker not recognized: '
+                    f'attempt={attempt}/2'
+                )
+
+            if self.wait_until_appear(
+                    self.I_RYOU_DOKAN_CREATE_DOKAN_ENSURE,
+                    True,
+                    3,
+            ):
+                logger.info('Create Dokan dialog opened')
+                return self.creat_dokan()
+
+        if click_count == 2:
+            logger.info(
+                'Dokan create dialog did not open after 2 clicks; '
+                'treat own Dokan as already created'
+            )
+            return True
+
+        logger.warning(
+            'Dokan state marker was not recognized twice; '
+            'cannot confirm whether own Dokan exists'
+        )
+        return False
+
+    def creat_dokan(self) -> bool:
         # 点击创建道馆
         # 当 成功建立道馆并关闭道馆信息窗口后退出
         #  或 点击创建道馆按钮无反应(道馆已经建立的情况下),5秒后退出
@@ -409,7 +452,7 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
             if self.appear(self.I_RYOU_DOKAN_DOKAN_INFO_CLOSE):
                 self.ui_click_until_disappear(self.I_RYOU_DOKAN_DOKAN_INFO_CLOSE)
                 logger.info("Create Dokan Success")
-                break
+                return True
             if self.appear(self.I_RYOU_DOKAN_CREATE_DOKAN_ENSURE):
                 self.ui_click_until_appear_or_timeout(self.I_RYOU_DOKAN_CREATE_DOKAN_ENSURE,
                                                       stop=self.I_RYOU_DOKAN_DOKAN_INFO_CLOSE, interval=2, timeout=10)
@@ -417,7 +460,7 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
             if self.ui_click_until_appear_or_timeout(self.I_RYOU_DOKAN_CREATE_DOKAN,
                                                      self.I_RYOU_DOKAN_CREATE_DOKAN_ENSURE, 2, 10):
                 continue
-            break
+            return False
 
     def find_all_element(self, item, offset: tuple) -> list[tuple[int, int, int, int]]:
         """

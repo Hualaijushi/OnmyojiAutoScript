@@ -371,8 +371,8 @@
   {
     "itemName": "ryou_dokan_create_dokan",
     "imageName": "res_ryou_dokan_create_dokan.png",
-    "roiFront": "230,580,130,120",
-    "roiBack": "230,580,130,120",
+    "roiFront": "240,600,94,90",
+    "roiBack": "240,600,94,90",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "道馆 地图界面 建立道馆按钮"
@@ -538,5 +538,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "助威灰色不可点击"
+  },
+  {
+    "itemName": "ryou_dokan_have_dokan",
+    "imageName": "res_ryou_dokan_have_dokan.png",
+    "roiFront": "240,600,94,90",
+    "roiBack": "240,600,94,90",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]

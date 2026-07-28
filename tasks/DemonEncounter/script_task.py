@@ -9,7 +9,7 @@ from cached_property import cached_property
 from datetime import datetime, timedelta
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import GameStuckError, TaskEnd
 from module.base.timer import Timer
 
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
@@ -76,40 +76,120 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
         logger.hr('Start boss battle', 1)
 
         def find_boss():
-            find_btn_clicked = False
-            timer_find_boss = Timer(10 * 60)
-            timer_find_boss.start()
-            while 1:
+            def boss_page_opened() -> bool:
+                return (
+                    self.appear(self.I_BOSS_FIRE)
+                    or self.appear(self.I_BEST_BOSS_FIRE)
+                )
+
+            def wait_boss_page_opened(wait_time: float = 2.0) -> bool:
+                timer = Timer(wait_time)
+                timer.start()
+                while True:
+                    self.screenshot()
+                    if boss_page_opened():
+                        return True
+                    if timer.reached():
+                        return False
+
+            def try_open_best_boss(
+                    *,
+                    threshold: float | None = None,
+                    mechanical: bool = False,
+            ) -> bool:
                 self.screenshot()
-                if self.appear(self.I_BOSS_FIRE) or self.appear(self.I_BEST_BOSS_FIRE):
-                    break
-                if timer_find_boss.reached():
-                    logger.warning('find boss timeout')
-                    self.set_next_run(task='DemonEncounter', success=False, finish=True, server=False)
-                    raise TaskEnd('DemonEncounter')
-                if self.appear(self.I_JADE_50):
-                    # 没找到boss但地图中央出现宝箱，导致点击宝箱出现50勾玉购买界面
-                    self.ui_click_until_smt_disappear(self.I_DE_FIND, self.I_JADE_50, interval=1)
-                    continue
-                if find_btn_clicked and self.click(self.C_DM_BOSS_CLICK, interval=5):
-                    find_btn_clicked = False
-                    continue
-                if self.best_demon_enable:
-                    self.device.click_record_clear()
-                    if self.appear(self.I_DE_BOSS_BEST) and (not find_btn_clicked):
-                        self.device.click_record_remove(self.I_DE_BOSS_BEST)
-                        if self.click(self.I_DE_BOSS_BEST, interval=4):
-                            logger.info("Finding best boss...")
-                            find_btn_clicked = True
-                        continue
+                if boss_page_opened():
+                    return True
+
+                if mechanical:
+                    logger.warning(
+                        'Best boss marker not recognized; '
+                        'mechanically click its target position'
+                    )
+                    self.click(self.I_DE_BOSS_BEST)
                 else:
-                    if self.appear(self.I_DE_BOSS) and (not find_btn_clicked):
+                    if not self.appear(
+                            self.I_DE_BOSS_BEST,
+                            threshold=threshold,
+                    ):
+                        return False
+                    logger.info(
+                        'Finding best boss...'
+                        if threshold is None
+                        else f'Finding best boss with threshold={threshold:.1f}...'
+                    )
+                    self.click(self.I_DE_BOSS_BEST)
+
+                if wait_boss_page_opened():
+                    return True
+
+                # 点击底部入口后，地图中央还需要再点一次首领目标。
+                self.click(self.C_DM_BOSS_CLICK)
+                return wait_boss_page_opened()
+
+            if not self.best_demon_enable:
+                find_btn_clicked = False
+                timer_find_boss = Timer(10 * 60)
+                timer_find_boss.start()
+                while True:
+                    self.screenshot()
+                    if boss_page_opened():
+                        return True
+                    if timer_find_boss.reached():
+                        logger.warning('find boss timeout')
+                        self.set_next_run(
+                            task='DemonEncounter',
+                            success=False,
+                            finish=True,
+                            server=False,
+                        )
+                        raise TaskEnd('DemonEncounter')
+                    if self.appear(self.I_JADE_50):
+                        # 没找到boss但地图中央出现宝箱，导致点击宝箱出现50勾玉购买界面
+                        self.ui_click_until_smt_disappear(
+                            self.I_DE_FIND,
+                            self.I_JADE_50,
+                            interval=1,
+                        )
+                        continue
+                    if find_btn_clicked and self.click(
+                            self.C_DM_BOSS_CLICK,
+                            interval=5,
+                    ):
+                        find_btn_clicked = False
+                        continue
+                    if (
+                            self.appear(self.I_DE_BOSS)
+                            and not find_btn_clicked
+                    ):
                         self.device.click_record_remove(self.I_DE_BOSS)
                         if self.click(self.I_DE_BOSS, interval=4):
-                            logger.info("Finding normal boss...")
+                            logger.info('Finding normal boss...')
                             find_btn_clicked = True
                         continue
-            return True
+
+            for cycle in range(1, 4):
+                logger.info(f'Open best boss fallback cycle {cycle}/3')
+                self.device.stuck_record_clear()
+                self.device.click_record_clear()
+
+                if try_open_best_boss():
+                    return True
+                if try_open_best_boss(threshold=0.7):
+                    return True
+                if try_open_best_boss(mechanical=True):
+                    return True
+
+                self.screenshot()
+                logger.warning(
+                    f'Best boss page still closed after fallback cycle '
+                    f'{cycle}/3'
+                )
+
+            raise GameStuckError(
+                'DemonEncounter: failed to open best boss page '
+                'after 3 fallback cycles'
+            )
 
         def enter_boss():
             logger.info('trying to enter boss...')
