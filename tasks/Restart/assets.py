@@ -103,6 +103,8 @@ class RestartAssets:
 	I_EARLY_SERVER_CANCEL = RuleImage(roi_front=(435,404,172,56), roi_back=(435,404,172,56), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_early_server_cancel.png")
 	# 取消继续战斗 
 	I_CANCEL_BATTLE = RuleImage(roi_front=(471,395,129,55), roi_back=(367,227,545,296), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_cancel_battle.png")
+	# 取消返回百鬼棋局，进入棋局结算流程
+	I_RETURN_CHESS_CANCEL = RuleImage(roi_front=(432,400,181,69), roi_back=(400,370,240,120), threshold=0.8, method="Template matching", file="./tasks/Restart/login/login_return_chess_cancel.png")
 
 
 	# Ocr Rule Assets
@@ -114,5 +116,4 @@ class RestartAssets:
 	O_LOGIN_SKIP_1 = RuleOcr(roi=(1046,35,130,37), area=(1046,35,130,37), mode="Single", method="Default", keyword="点击屏幕跳过", name="login_skip_1")
 	# 登录指定角色，默认第一个 
 	O_LOGIN_SPECIFIC_SERVE = RuleOcr(roi=(110,120,350,600), area=(110,120,350,600), mode="Full", method="Default", keyword="", name="login_specific_serve")
-
 
