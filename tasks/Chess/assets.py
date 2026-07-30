@@ -87,7 +87,7 @@ class ChessAssets:
 	#
 	I_GRIGRI_FRESH_DONE_3 = RuleImage(roi_front=(862,599,122,40), roi_back=(862,599,122,40), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_grigri_fresh_done_3.png")
 	#
-	I_CHECK_GOLDFISH_NAME = RuleImage(roi_front=(924,291,192,49), roi_back=(924,291,192,49), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_check_goldfish_name.png")
+	I_CHECK_GOLDFISH = RuleImage(roi_front=(924,291,192,49), roi_back=(924,291,192,49), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_check_goldfish.png")
 
 
 	# Ocr Rule Assets
@@ -147,4 +147,3 @@ class ChessAssets:
 	O_GRIGRI_OPTION_NAME_2 = RuleOcr(roi=(548,370,191,45), area=(548,370,191,45), mode="Single", method="Default", keyword="", name="grigri_option_name_2")
 	#
 	O_GRIGRI_OPTION_NAME_3 = RuleOcr(roi=(825,370,191,45), area=(825,370,191,45), mode="Single", method="Default", keyword="", name="grigri_option_name_3")
-
