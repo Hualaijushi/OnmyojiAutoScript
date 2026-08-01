@@ -99,13 +99,13 @@ class DemonEncounterAssets:
 	# 右侧的宝箱 
 	I_DE_BOX = RuleImage(roi_front=(1210,295,34,33), roi_back=(1183,278,96,277), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_box.png")
 	# 挑战某一个后的封印图片 
-	I_DE_DEFEAT_2 = RuleImage(roi_front=(1211,422,28,35), roi_back=(1211,422,28,35), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_defeat_2.png")
+	I_DE_DEFEAT_2 = RuleImage(roi_front=(1211,422,28,35), roi_back=(1189,409,68,61), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_defeat_2.png")
 	# description 
-	I_DE_DEFEAT_1 = RuleImage(roi_front=(1223,489,42,41), roi_back=(1223,489,42,41), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_defeat_1.png")
+	I_DE_DEFEAT_1 = RuleImage(roi_front=(1223,489,42,41), roi_back=(1210,479,66,64), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_defeat_1.png")
 	# description 
-	I_DE_DEFEAT_3 = RuleImage(roi_front=(1231,358,38,35), roi_back=(1231,358,38,35), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_defeat_3.png")
+	I_DE_DEFEAT_3 = RuleImage(roi_front=(1231,358,38,35), roi_back=(1222,336,57,74), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_defeat_3.png")
 	# description 
-	I_DE_DEFEAT_4 = RuleImage(roi_front=(1215,295,35,35), roi_back=(1215,295,35,35), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_defeat_4.png")
+	I_DE_DEFEAT_4 = RuleImage(roi_front=(1215,295,35,35), roi_back=(1201,280,62,62), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_defeat_4.png")
 	# 已领取四次的奖励 
 	I_DE_AWARD = RuleImage(roi_front=(1216,214,42,36), roi_back=(1195,198,74,67), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_award.png")
 	# 信 
@@ -123,10 +123,9 @@ class DemonEncounterAssets:
 	# 发现大boss 
 	I_DE_FIND_BOSS = RuleImage(roi_front=(1210,425,29,36), roi_back=(1182,279,93,266), threshold=0.7, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_find_boss.png")
 
-
 	# Ocr Rule Assets
 	# 计数已经开启多少的 
-	O_DE_COUNTER = RuleOcr(roi=(1204,685,48,34), area=(1204,685,48,34), mode="DigitCounter", method="Default", keyword="", name="de_counter")
+	O_DE_COUNTER = RuleOcr(roi=(1204,686,48,34), area=(1204,686,48,34), mode="DigitCounter", method="Default", keyword="", name="de_counter")
 
 
 	# Click Rule Assets
@@ -149,5 +148,4 @@ class DemonEncounterAssets:
 	O_LETTER_ANSWER_2 = RuleOcr(roi=(428,350,438,74), area=(428,350,438,74), mode="Single", method="Default", keyword="", name="letter_answer_2")
 	# 回答三 
 	O_LETTER_ANSWER_3 = RuleOcr(roi=(428,439,443,72), area=(428,439,443,72), mode="Single", method="Default", keyword="", name="letter_answer_3")
-
 

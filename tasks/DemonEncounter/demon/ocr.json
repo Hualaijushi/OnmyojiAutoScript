@@ -1,8 +1,8 @@
 [
   {
     "itemName": "de_counter",
-    "roiFront": "1204,685,48,34",
-    "roiBack": "1204,685,48,34",
+    "roiFront": "1204,686,48,34",
+    "roiBack": "1204,686,48,34",
     "mode": "DigitCounter",
     "method": "Default",
     "keyword": "",

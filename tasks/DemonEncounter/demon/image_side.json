@@ -21,7 +21,7 @@
     "itemName": "de_defeat_2",
     "imageName": "demon_de_defeat_2.png",
     "roiFront": "1211,422,28,35",
-    "roiBack": "1211,422,28,35",
+    "roiBack": "1189,409,68,61",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "挑战某一个后的封印图片"
@@ -30,7 +30,7 @@
     "itemName": "de_defeat_1",
     "imageName": "demon_de_defeat_1.png",
     "roiFront": "1223,489,42,41",
-    "roiBack": "1223,489,42,41",
+    "roiBack": "1210,479,66,64",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"
@@ -39,7 +39,7 @@
     "itemName": "de_defeat_3",
     "imageName": "demon_de_defeat_3.png",
     "roiFront": "1231,358,38,35",
-    "roiBack": "1231,358,38,35",
+    "roiBack": "1222,336,57,74",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"
@@ -48,7 +48,7 @@
     "itemName": "de_defeat_4",
     "imageName": "demon_de_defeat_4.png",
     "roiFront": "1215,295,35,35",
-    "roiBack": "1215,295,35,35",
+    "roiBack": "1201,280,62,62",
     "method": "Template matching",
     "threshold": 0.7,
     "description": "description"

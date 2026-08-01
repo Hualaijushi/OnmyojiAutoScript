@@ -9,7 +9,7 @@ from cached_property import cached_property
 from datetime import datetime, timedelta
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import GameStuckError, TaskEnd
 from module.base.timer import Timer
 
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
@@ -35,6 +35,7 @@ class LanternClass(Enum):
 
 class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
     conf: DemonEncounter = None
+    LANTERN_BATTLE_OPEN_MAX_CLICKS = 5
 
     def run(self):
         self.conf = self.config.demon_encounter
@@ -136,9 +137,9 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
                 marker = self.I_DE_BOSS
                 label = 'normal boss'
 
-            for cycle in range(1, 4):
+            for cycle in range(1, 6):
                 logger.info(
-                    f'Open {label} fallback cycle {cycle}/3'
+                    f'Open {label} fallback cycle {cycle}/5'
                 )
                 self.device.stuck_record_clear()
                 self.device.click_record_clear()
@@ -162,25 +163,18 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
                 self.screenshot()
                 logger.warning(
                     f'{label} page still closed after fallback cycle '
-                    f'{cycle}/3'
+                    f'{cycle}/5'
                 )
 
-            logger.warning(
-                f'DemonEncounter: failed to open {label} page after '
-                '3 fallback cycles; treat boss as already challenged today'
+            raise GameStuckError(
+                f'DemonEncounter: failed to open {label} page '
+                'after 5 fallback cycles'
             )
-            self.set_next_run(
-                task='DemonEncounter',
-                success=False,
-                finish=True,
-                server=True,
-            )
-            raise TaskEnd('DemonEncounter')
 
         def enter_boss():
             logger.info('trying to enter boss...')
             # 点击集结挑战
-            boss_fire_count = 0  # 三次没点到就意味着今天已经挑战过了
+            boss_fire_count = 0  # 五次没点到就意味着今天已经挑战过了
             ocr_people_item = self.O_DE_BEST_BOSS_PEOPLE if self.best_demon_enable else self.O_DE_BOSS_PEOPLE
             while 1:
                 self.screenshot()
@@ -205,10 +199,16 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
                     break
                 if self.appear(self.I_BOSS_GATHER):
                     break
-                if boss_fire_count >= 3:
+                if boss_fire_count >= 5:
                     logger.warning('Boss battle already done')
-                    self.set_next_run(task='DemonEncounter', success=False, finish=True, server=True)
+                    self.set_next_run(
+                        task='DemonEncounter',
+                        success=True,
+                        finish=True,
+                        server=True,
+                    )
                     self.ui_click_until_disappear(self.I_UI_BACK_RED)
+                    self.config.model.running_task = ''
                     raise TaskEnd('DemonEncounter')
 
                 if (self.appear_then_click(self.I_BOSS_FIRE, interval=3)
@@ -280,6 +280,31 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
         点灯笼 四次
         :return:
         """
+        # 只有进入页面时同时满足次数为0/4、顶部达摩位置已经变成
+        # de_award，才确认今日现世逢魔已经完整处理。单独命中任一项
+        # 都不能跳过，以免把本轮刚完成寻找但尚未处理的灯笼漏掉。
+        self.screenshot()
+        current, remain, total = self.O_DE_COUNTER.ocr(
+            self.device.image
+        )
+        encounter_over = self.appear(self.I_DE_AWARD)
+        logger.info(
+            'DemonEncounter initial real-world status: '
+            f'counter={current}/{total}, remain={remain}, '
+            f'de_award={encounter_over}'
+        )
+        if (
+                current == 0
+                and remain == 4
+                and total == 4
+                and encounter_over
+        ):
+            logger.info(
+                'Real-world DemonEncounter already completed today; '
+                'skip finding and lantern handling'
+            )
+            return
+
         # 先点四次
         ocr_timer = Timer(0.8)
         ocr_timer.start()
@@ -477,6 +502,7 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
             time.sleep(0.5)
 
     def _battle(self, target_click):
+        click_count = 0
         while 1:
             self.screenshot()
             if not self.appear(self.I_DE_LOCATION):
@@ -494,10 +520,19 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
                 break
 
             if self.click(target_click, interval=1):
+                click_count += 1
+                if click_count >= self.LANTERN_BATTLE_OPEN_MAX_CLICKS:
+                    logger.warning(
+                        'Lantern classified as battle did not open after '
+                        f'{click_count} clicks; treat it as empty or '
+                        'unrecognized and continue'
+                    )
+                    return False
                 continue
         self.current_count = 0
         if self.run_general_battle():
             logger.info('Battle End')
+        return True
 
     def _realm(self, target_click):
         # 结界
