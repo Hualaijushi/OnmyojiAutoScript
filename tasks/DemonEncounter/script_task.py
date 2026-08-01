@@ -9,7 +9,7 @@ from cached_property import cached_property
 from datetime import datetime, timedelta
 
 from module.logger import logger
-from module.exception import GameStuckError, TaskEnd
+from module.exception import TaskEnd
 from module.base.timer import Timer
 
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
@@ -165,10 +165,17 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
                     f'{cycle}/3'
                 )
 
-            raise GameStuckError(
-                f'DemonEncounter: failed to open {label} page '
-                'after 3 fallback cycles'
+            logger.warning(
+                f'DemonEncounter: failed to open {label} page after '
+                '3 fallback cycles; treat boss as already challenged today'
             )
+            self.set_next_run(
+                task='DemonEncounter',
+                success=False,
+                finish=True,
+                server=True,
+            )
+            raise TaskEnd('DemonEncounter')
 
         def enter_boss():
             logger.info('trying to enter boss...')
