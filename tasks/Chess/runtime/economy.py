@@ -1116,6 +1116,8 @@ class ChessEconomyMixin:
         """返回当前阶数的原子操作序列。"""
         if level >= self._lineup_final_level():
             return ('refresh',)
+        if level <= 2:
+            return ('experience',)
         if level <= 7:
             return ('experience', 'refresh')
         return ('experience', 'refresh', 'refresh')
@@ -1123,7 +1125,7 @@ class ChessEconomyMixin:
     def _economy_reserve_for_level(self, level: int) -> int:
         if level >= self._lineup_final_level():
             return 0
-        if level <= 3:
+        if level <= 2:
             return 0
         elif level <= 5:
             return 35
