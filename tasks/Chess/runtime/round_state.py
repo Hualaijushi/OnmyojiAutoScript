@@ -409,7 +409,12 @@ class ChessRoundStateMixin:
         # 不能和真正的 OCR 空结果混为一谈，否则会误累计结算空帧。
         return raw or None
 
-    def _board_set_has_shikigami(self, set_index: int) -> bool:
+    def _board_set_has_shikigami(
+        self,
+        set_index: int,
+        *,
+        threshold: float | None = None,
+    ) -> bool:
         """在对应站位中匹配三种头顶勾玉，任一命中即视为有人。"""
         x, y, width, height = self._set_jade_area(set_index)
         image_height, image_width = self.device.image.shape[:2]
@@ -434,11 +439,16 @@ class ChessRoundStateMixin:
             return False
 
         roi = [x, y, width, height]
+        match_threshold = (
+            self.BOARD_OCCUPANCY_TEMPLATE_THRESHOLD
+            if threshold is None
+            else float(threshold)
+        )
         return any(
             bool(rule.match_all_any(
                 self.device.image,
                 roi=roi,
-                threshold=self.BOARD_OCCUPANCY_TEMPLATE_THRESHOLD,
+                threshold=match_threshold,
                 nms_threshold=0.3,
                 frame_id=self.device.image_frame_id,
             ))

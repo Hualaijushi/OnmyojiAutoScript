@@ -709,7 +709,8 @@ class ChessEconomyMixin:
             expected_name=matched_name,
         )
         attempts = 0
-        handled_souls_before_sale = False
+        emergency_cleanup_done = False
+        lineup_sale_done = False
 
         while current_match is not None and time.monotonic() < deadline:
             if not self._is_purchase_allowed():
@@ -761,8 +762,15 @@ class ChessEconomyMixin:
                     f'Chess shop slot {slot_index} still matches '
                     f'{matched_name} after click, free hand space and retry'
                 )
+                if emergency_cleanup_done and lineup_sale_done:
+                    logger.warning(
+                        f'Chess buy {matched_name} remains blocked after '
+                        'emergency cleanup and one lineup-card sale'
+                    )
+                    return False
+                sell_lineup = emergency_cleanup_done
                 recovery = self._free_one_hand_slot_for_purchase(
-                    handle_souls_first=not handled_souls_before_sale,
+                    sell_lineup=sell_lineup,
                 )
                 if recovery is None:
                     logger.warning(
@@ -770,10 +778,17 @@ class ChessEconomyMixin:
                         'no safe hand card can be cleared; block shop refresh'
                     )
                     return False
-                if recovery.get('type') == 'souls':
-                    handled_souls_before_sale = True
+                if sell_lineup:
+                    lineup_sale_done = True
                     logger.debug(
-                        f'Retry Chess buy {matched_name} after equipping souls'
+                        f'Retry Chess buy {matched_name} after selling one '
+                        'lineup card'
+                    )
+                else:
+                    emergency_cleanup_done = True
+                    logger.debug(
+                        f'Retry Chess buy {matched_name} after emergency '
+                        'hand cleanup'
                     )
 
         if current_match is None:
@@ -871,23 +886,6 @@ class ChessEconomyMixin:
                 matched_name=target['matched_name'],
             ):
                 purchased.append(target['matched_name'])
-                if target['matched_name'] in getattr(
-                    self,
-                    '_board_lineup_names',
-                    set(),
-                ):
-                    pending = set(getattr(
-                        self,
-                        '_board_position_reconcile_pending',
-                        set(),
-                    ))
-                    pending.add(target['matched_name'])
-                    self._board_position_reconcile_pending = pending
-                    logger.info(
-                        'Chess duplicate lineup purchase may move a merged '
-                        f'unit; schedule board position reconciliation: '
-                        f'name={target["matched_name"]}'
-                    )
                 # 第一张卡购买/升星动画会短暂覆盖其他商店格。等待稳定并
                 # 刷新截图后再处理目标列表中的下一格，重复卡也逐格购买。
                 time.sleep(self.SHOP_POST_PURCHASE_SETTLE_WAIT)
