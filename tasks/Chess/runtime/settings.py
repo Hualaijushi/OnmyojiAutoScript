@@ -34,8 +34,6 @@ class ChessRuntimeSettings:
     BOARD_RECALL_POSITIONS = (11, 12, 9, 10)
     # c_card_1/2/3.png 专用于检测棋盘式神头顶的三种勾玉颜色。
     BOARD_OCCUPANCY_TEMPLATE_THRESHOLD = 0.68
-    # 动态阵容记录缺失时降低阈值复核一次，避免单帧光效或遮挡误判偏移。
-    BOARD_OCCUPANCY_RECHECK_THRESHOLD = 0.55
     ROUND_CONFIRM_FRAMES = 2
     GAME_END_CONFIRM_FRAMES = 3
     GAME_END_CONFIRM_INTERVAL = 2

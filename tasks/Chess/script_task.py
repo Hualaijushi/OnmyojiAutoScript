@@ -296,8 +296,6 @@ class ScriptTask(
             return False
         if not self._is_preparation_mode():
             return False
-        if not self.check_linup_completed():
-            return False
         # deploy_shikigami_from_hand 内部负责确认商店关闭、人数上限和
         # 每次拖动后的重新定位，准备阶段不重复实现这些约束。
         self.deploy_shikigami_from_hand()
