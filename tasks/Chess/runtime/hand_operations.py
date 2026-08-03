@@ -141,8 +141,11 @@ class ChessHandOperationsMixin:
         )
         closed = False
         for attempt in range(1, 8):
-            self.click(self.C_CLICK_CLOSE_SPECIFICS_AREA, interval=0.1)
-            time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+            self.click(
+                self.C_CLICK_CLOSE_SPECIFICS_AREA,
+                interval=self.FAST_OPERATION_INTERVAL,
+            )
+            time.sleep(self.SCREENSHOT_INTERVAL)
             self.screenshot()
             if not self.appear(self.I_SHIKIGAMI_SPECIFICS):
                 logger.debug(
@@ -192,7 +195,7 @@ class ChessHandOperationsMixin:
             f'position={position}'
         )
         self.sell_hand_card(position)
-        time.sleep(self.HAND_SELL_WAIT)
+        time.sleep(self.ACTION_SETTLE_INTERVAL)
         self.screenshot()
         self.close_shikigami_specifics_if_open()
         self.screenshot()
@@ -338,14 +341,17 @@ class ChessHandOperationsMixin:
             # 每个候选位只点击一次。等待详情图案稳定后立即判断，
             # 不是金鱼（或未打开详情）便继续检查下一个位置，避免在
             # 12号位连续点击多次。
-            self.click(inspect_rule, interval=0.1)
-            time.sleep(self.ARAKAWA_GOLDFISH_CLICK_INTERVAL)
+            self.click(
+                inspect_rule,
+                interval=self.FAST_OPERATION_INTERVAL,
+            )
+            time.sleep(self.SCREENSHOT_INTERVAL)
             self.screenshot()
             detail_opened = self.appear(self.I_SHIKIGAMI_SPECIFICS)
             logger.info(
                 'Chess Arakawa goldfish open specifics: '
                 f'set={set_index}, wait='
-                f'{self.ARAKAWA_GOLDFISH_CLICK_INTERVAL:.1f}s, '
+                f'{self.SCREENSHOT_INTERVAL:.2f}s, '
                 f'opened={detail_opened}'
             )
 
@@ -420,7 +426,7 @@ class ChessHandOperationsMixin:
                 f'_TO_{target_position}'
             ),
         )
-        time.sleep(self.BOARD_REDEPLOY_SETTLE_WAIT)
+        time.sleep(self.ACTION_SETTLE_INTERVAL)
         self.screenshot()
         confirmed_position = self._identify_arakawa_goldfish_position(
             target_position
@@ -585,7 +591,7 @@ class ChessHandOperationsMixin:
             operation_name=self.HAKUZOSU_PROTECT_NAME.upper(),
         ):
             return False
-        time.sleep(self.SOUL_EQUIP_WAIT)
+        time.sleep(self.ACTION_SETTLE_INTERVAL)
         self.screenshot()
         protect_after = self._hakuzosu_protect_hand_count()
         if protect_after >= protect_before:
@@ -669,7 +675,7 @@ class ChessHandOperationsMixin:
             name=f'CHESS_DEPLOY_{name.upper()}_SET_{set_index}',
         )
         self.close_shikigami_specifics_if_open()
-        time.sleep(self.HAND_DEPLOY_WAIT)
+        time.sleep(self.ACTION_SETTLE_INTERVAL)
         self.screenshot()
         count_after = self._read_shikigami_count()
         hand_count_after = self._lineup_hand_card_match_count(name)
@@ -750,7 +756,7 @@ class ChessHandOperationsMixin:
         frame_candidates = []
         for frame_index in range(1, self.HAND_DEPLOY_CONFIRM_FRAMES + 1):
             if frame_index > 1:
-                time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+                time.sleep(self.SCREENSHOT_INTERVAL)
                 self.screenshot()
             frame_candidates.append(
                 self._scan_lineup_hand_card_candidates_once(excluded_names)
@@ -1134,7 +1140,7 @@ class ChessHandOperationsMixin:
             options = [rule for rule in rules if self.appear(rule)]
             if options:
                 return options
-            time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+            time.sleep(self.SCREENSHOT_INTERVAL)
         return []
 
     def discover_souls_from_hand(self) -> int:
@@ -1170,7 +1176,7 @@ class ChessHandOperationsMixin:
 
             use_deadline = time.monotonic() + self.DISCOVER_SOUL_UI_TIMEOUT
             while time.monotonic() < use_deadline:
-                time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+                time.sleep(self.SCREENSHOT_INTERVAL)
                 self.screenshot()
                 if not self._is_preparation_mode():
                     logger.debug(
@@ -1178,7 +1184,10 @@ class ChessHandOperationsMixin:
                         'interrupted or has ended'
                     )
                     return used
-                if self.appear_then_click(self.I_USE_SOUL, interval=0.5):
+                if self.appear_then_click(
+                    self.I_USE_SOUL,
+                    interval=self.ACTION_SETTLE_INTERVAL,
+                ):
                     break
             else:
                 logger.warning(
@@ -1202,7 +1211,7 @@ class ChessHandOperationsMixin:
             )
             self.click(selected)
             used += 1
-            time.sleep(self.DISCOVER_SOUL_WAIT)
+            time.sleep(self.ACTION_SETTLE_INTERVAL)
             close_deadline = time.monotonic() + self.DISCOVER_SOUL_UI_TIMEOUT
             while time.monotonic() < close_deadline:
                 self.screenshot()
@@ -1215,7 +1224,7 @@ class ChessHandOperationsMixin:
                     )
                 ):
                     break
-                time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+                time.sleep(self.SCREENSHOT_INTERVAL)
             else:
                 logger.warning(
                     'Chess discover-soul selection remained open; '
@@ -1321,7 +1330,7 @@ class ChessHandOperationsMixin:
                 operation_name=selected['name'].upper(),
             ):
                 break
-            time.sleep(self.SOUL_EQUIP_WAIT)
+            time.sleep(self.ACTION_SETTLE_INTERVAL)
             self.screenshot()
             hand_counts_after = Counter(
                 card['name'] for card in self._soul_hand_cards()
@@ -1715,7 +1724,7 @@ class ChessHandOperationsMixin:
                 self.sell_hand_card(badge_target['position'])
                 sold.append(badge_target['position'])
                 clean_confirm_frames = 0
-                time.sleep(self.HAND_CLEANUP_REFLOW_WAIT)
+                time.sleep(self.SLOW_POLL_INTERVAL)
                 self.screenshot()
                 continue
 
@@ -1814,7 +1823,7 @@ class ChessHandOperationsMixin:
                     f'frame={clean_confirm_frames}/'
                     f'{self.HAND_CLEANUP_CLEAN_CONFIRM_FRAMES}'
                 )
-                time.sleep(self.HAND_CLEANUP_REFLOW_WAIT)
+                time.sleep(self.SLOW_POLL_INTERVAL)
                 self.screenshot()
                 continue
 
@@ -1827,7 +1836,7 @@ class ChessHandOperationsMixin:
             sale_key = (sell_target['type'], sell_target['name'])
             count_before = self._hand_card_identity_count(*sale_key)
             self.sell_hand_card(sell_target['position'])
-            time.sleep(self.HAND_CLEANUP_REFLOW_WAIT)
+            time.sleep(self.SLOW_POLL_INTERVAL)
             self.screenshot()
             self.close_shikigami_specifics_if_open()
             self.screenshot()
@@ -2035,7 +2044,7 @@ class ChessHandOperationsMixin:
                     operation_name=f'EMBLEM_{card["name"]}',
                 ):
                     continue
-                time.sleep(self.SOUL_EQUIP_WAIT)
+                time.sleep(self.ACTION_SETTLE_INTERVAL)
                 self.screenshot()
                 after = sum(
                     item['name'] == card['name']
@@ -2083,7 +2092,7 @@ class ChessHandOperationsMixin:
                     f'{card["name"]}, targets={targets}'
                 )
                 self.sell_hand_card(latest['position'])
-                time.sleep(self.HAND_CLEANUP_REFLOW_WAIT)
+                time.sleep(self.SLOW_POLL_INTERVAL)
                 self.screenshot()
         return equipped
 
@@ -2152,7 +2161,7 @@ class ChessHandOperationsMixin:
                 name='chess_hand_area',
             )
         )
-        time.sleep(self.BOARD_RECALL_SETTLE_WAIT)
+        time.sleep(self.ACTION_SETTLE_INTERVAL)
         for set_index in positions:
             if set_index in player_positions:
                 continue
@@ -2176,7 +2185,7 @@ class ChessHandOperationsMixin:
                         f'_ATTEMPT_{attempt}'
                     ),
                 )
-                time.sleep(self.BOARD_RECALL_SETTLE_WAIT)
+                time.sleep(self.ACTION_SETTLE_INTERVAL)
                 self.screenshot()
                 if not self._board_set_has_shikigami(set_index):
                     tracked_names = set(
@@ -2256,7 +2265,7 @@ class ChessHandOperationsMixin:
 
         # 商店图层消失后，棋盘的触控层仍有一小段收起动画。日志显示此前
         # 11 号位在关闭判定后立即拖动，手势已下发但没有成功下阵。
-        time.sleep(self.BOARD_RECALL_SETTLE_WAIT)
+        time.sleep(self.ACTION_SETTLE_INTERVAL)
 
         # 除 11 号位的针对性确认外，其余候选格连续拖完后再统一截图，
         # 避免每个空位都产生一次截图等待。
@@ -2277,7 +2286,7 @@ class ChessHandOperationsMixin:
                 swipe_duration=0.45,
                 name=f'CHESS_RECALL_SET_{set_index}',
             )
-            time.sleep(self.BOARD_RECALL_INTERVAL)
+            time.sleep(self.FAST_OPERATION_INTERVAL)
 
             # 11 号位是系统自动上阵的第一顺位，也是商店关闭后的第一条
             # 棋盘手势。单独确认它是否生效；失败时稍微上移到模型主体重拖。
@@ -2293,7 +2302,7 @@ class ChessHandOperationsMixin:
                         'Chess set 11 recall did not reduce lineup count; '
                         f'retry from {retry_source}'
                     )
-                    time.sleep(self.BOARD_RECALL_RETRY_WAIT)
+                    time.sleep(self.SCREENSHOT_INTERVAL)
                     Press_and_Drag(
                         self.device,
                         p1=retry_source,
@@ -2303,7 +2312,7 @@ class ChessHandOperationsMixin:
                         swipe_duration=0.5,
                         name='CHESS_RECALL_SET_11_RETRY',
                     )
-                    time.sleep(self.BOARD_RECALL_INTERVAL)
+                    time.sleep(self.FAST_OPERATION_INTERVAL)
                     self.screenshot()
                     set_11_count = self._read_shikigami_count()
                     logger.debug(

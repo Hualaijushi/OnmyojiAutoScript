@@ -176,13 +176,13 @@ class ChessRoundStateMixin:
                 f'Chess grigri refresh click: '
                 f'option={index}, click={click_index}/2'
             )
-            time.sleep(self.GRIGRI_REFRESH_WAIT)
+            time.sleep(self.FAST_OPERATION_INTERVAL)
         remaining[index - 1] -= 1
         logger.info(
             f'Chess grigri refresh recorded: '
             f'option={index}, remaining={remaining}'
         )
-        time.sleep(self.GRIGRI_REFRESH_WAIT)
+        time.sleep(self.FAST_OPERATION_INTERVAL)
         self.screenshot()
         return True
 
@@ -291,7 +291,7 @@ class ChessRoundStateMixin:
                 return True
             attempts += 1
             self.click(selected_rule)
-            time.sleep(self.GRIGRI_SELECT_RETRY_INTERVAL)
+            time.sleep(self.ACTION_SETTLE_INTERVAL)
 
         self.screenshot()
         if not self.appear(self.I_SELECT_GRIGRI):

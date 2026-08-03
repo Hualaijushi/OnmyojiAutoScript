@@ -168,7 +168,7 @@ class ScriptTask(
         while True:
             self.device.stuck_record_clear()
             if self._refresh_round_state_screenshot():
-                time.sleep(self.ROUND_STATE_SCREENSHOT_INTERVAL)
+                time.sleep(self.SLOW_POLL_INTERVAL)
                 continue
             if self._finish_chess_game_after_open_lineup_missing(
                 f'round_{round_no}'
@@ -210,7 +210,7 @@ class ScriptTask(
 
             # 回目数字第一次变化时暂停所有旧回目动作，等待第二帧确认。
             if round_transition_pending:
-                time.sleep(self.ROUND_STATE_SCREENSHOT_INTERVAL)
+                time.sleep(self.SLOW_POLL_INTERVAL)
                 continue
 
             in_game = mode is not None or self._is_in_chess_game()
@@ -264,7 +264,7 @@ class ScriptTask(
                     self.purchase_lineup_cards_once()
                     self._run_preparation_economy_until_time_limit()
                     if not self._is_preparation_mode():
-                        time.sleep(self.ROUND_STATE_SCREENSHOT_INTERVAL)
+                        time.sleep(self.SLOW_POLL_INTERVAL)
                         continue
                     if self._handle_preparation_stage(1):
                         preparation_done = True
@@ -275,9 +275,9 @@ class ScriptTask(
                         )
 
             interval = (
-                self.HYAKKI_SCREENSHOT_INTERVAL
+                3 * self.SLOW_POLL_INTERVAL
                 if mode == '鬼'
-                else self.ROUND_STATE_SCREENSHOT_INTERVAL
+                else self.SLOW_POLL_INTERVAL
             )
             time.sleep(interval)
 
@@ -408,7 +408,7 @@ class ScriptTask(
             return False
         if not self.recall_all_board_cards():
             return False
-        time.sleep(self.BOARD_REDEPLOY_SETTLE_WAIT)
+        time.sleep(self.ACTION_SETTLE_INTERVAL)
         self.screenshot()
         if not self._is_preparation_mode():
             return False
@@ -443,7 +443,7 @@ class ScriptTask(
             return False
 
         for frame in range(2, self.GAME_END_CONFIRM_FRAMES + 1):
-            time.sleep(self.GAME_END_CONFIRM_INTERVAL)
+            time.sleep(2 * self.SLOW_POLL_INTERVAL)
             self.device.stuck_record_clear()
             self.screenshot()
             if self.appear(self.I_OPEN_LINEUP):
@@ -480,7 +480,7 @@ class ScriptTask(
                     )
                 self.return_to_chess_lobby()
                 return True
-            time.sleep(self.GAME_END_CONFIRM_INTERVAL)
+            time.sleep(2 * self.SLOW_POLL_INTERVAL)
             self.screenshot()
 
         raise GameStuckError(
@@ -497,7 +497,7 @@ class ScriptTask(
             if self._refresh_round_state_screenshot():
                 candidate = None
                 confirmed = 0
-                time.sleep(self.ROUND_STATE_SCREENSHOT_INTERVAL)
+                time.sleep(self.SLOW_POLL_INTERVAL)
                 continue
             if self._finish_chess_game_after_open_lineup_missing(
                 'wait_for_round_start'
@@ -516,7 +516,7 @@ class ScriptTask(
             else:
                 candidate = None
                 confirmed = 0
-            time.sleep(self.ROUND_STATE_SCREENSHOT_INTERVAL)
+            time.sleep(self.SLOW_POLL_INTERVAL)
 
     def _is_in_chess_game(self) -> bool:
         """只以阵容入口图片确认当前处于百鬼棋局对局内。"""
@@ -550,14 +550,17 @@ class ScriptTask(
                 # 对局的截止时间，使长时间匹配不会触发重启或等待超时。
                 self.device.stuck_record_clear()
                 deadline = time.monotonic() + timeout
-                time.sleep(self.MATCHMAKING_SCREENSHOT_INTERVAL)
+                time.sleep(self.SLOW_POLL_INTERVAL)
                 continue
 
             if retry_start and self.appear(self.I_CHESS_START):
-                if self.appear_then_click(self.I_CHESS_START, interval=2.0):
+                if self.appear_then_click(
+                    self.I_CHESS_START,
+                    interval=2 * self.SLOW_POLL_INTERVAL,
+                ):
                     self.device.stuck_record_clear()
                     deadline = time.monotonic() + timeout
-            time.sleep(self.MATCHMAKING_SCREENSHOT_INTERVAL)
+            time.sleep(self.SLOW_POLL_INTERVAL)
         raise GameStuckError('Chess: timeout waiting for in-game markers')
 
     def _start_chess_game(self) -> None:

@@ -374,7 +374,7 @@ class ChessRecognitionMixin:
         latest = None
         for confirmation in range(1, self.UNKNOWN_SELL_CONFIRM_FRAMES + 1):
             if confirmation > 1:
-                time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+                time.sleep(self.SCREENSHOT_INTERVAL)
                 self.screenshot()
             rois = self._hand_card_rois()
             current_roi = min(

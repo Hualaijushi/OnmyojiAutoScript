@@ -159,7 +159,7 @@ class ChessEconomyMixin:
                     logger.info('Chess coin is full: 600/600')
                 return full
             if attempt < 3:
-                time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+                time.sleep(self.SCREENSHOT_INTERVAL)
                 self.screenshot()
         return False
 
@@ -269,10 +269,10 @@ class ChessEconomyMixin:
             self.click(self.I_MARKET)
             attempt_deadline = min(
                 deadline,
-                time.monotonic() + self.SHOP_OPEN_ATTEMPT_WAIT,
+                time.monotonic() + 2 * self.SLOW_POLL_INTERVAL,
             )
             while time.monotonic() < attempt_deadline:
-                time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+                time.sleep(self.SCREENSHOT_INTERVAL)
                 self.screenshot()
                 if not self._is_purchase_allowed():
                     logger.debug('Stop opening Chess shop: Hyakki mode detected')
@@ -306,7 +306,7 @@ class ChessEconomyMixin:
         )
         self.device.click_record_remove(self.I_MARKET)
         self.click(self.I_MARKET)
-        time.sleep(self.SHOP_OPEN_ATTEMPT_WAIT)
+        time.sleep(2 * self.SLOW_POLL_INTERVAL)
         self.screenshot()
         if self._read_chess_mode() != '战':
             logger.debug('Battle mode ended while opening economy shop')
@@ -356,7 +356,7 @@ class ChessEconomyMixin:
             and not shop_visible
         ):
             self.click(self.I_MARKET)
-            time.sleep(self.SHOP_CLOSE_ATTEMPT_WAIT)
+            time.sleep(2 * self.SLOW_POLL_INTERVAL)
             self.screenshot()
             self._shop_assumed_open = False
             logger.debug('Chess battle economy shop closed by one-shot toggle')
@@ -373,10 +373,10 @@ class ChessEconomyMixin:
             self.click(self.I_MARKET)
             attempt_deadline = min(
                 deadline,
-                time.monotonic() + self.SHOP_CLOSE_ATTEMPT_WAIT,
+                time.monotonic() + 2 * self.SLOW_POLL_INTERVAL,
             )
             while time.monotonic() < attempt_deadline:
-                time.sleep(self.NORMAL_SCREENSHOT_INTERVAL)
+                time.sleep(self.SCREENSHOT_INTERVAL)
                 self.screenshot()
                 if self._read_chess_mode() not in allowed_modes:
                     logger.debug(
@@ -736,7 +736,7 @@ class ChessEconomyMixin:
                 f'identity_score={current_match["score"]:.3f})'
             )
             self.click(click_rule)
-            time.sleep(self.SHOP_BUY_RETRY_INTERVAL)
+            time.sleep(self.SCREENSHOT_INTERVAL)
             self.screenshot()
             current_match = self._recognize_shop_slot(
                 slot_index,
@@ -888,7 +888,7 @@ class ChessEconomyMixin:
                 purchased.append(target['matched_name'])
                 # 第一张卡购买/升星动画会短暂覆盖其他商店格。等待稳定并
                 # 刷新截图后再处理目标列表中的下一格，重复卡也逐格购买。
-                time.sleep(self.SHOP_POST_PURCHASE_SETTLE_WAIT)
+                time.sleep(self.ACTION_SETTLE_INTERVAL)
                 self.screenshot()
             elif not self._is_purchase_allowed():
                 return None
@@ -984,7 +984,7 @@ class ChessEconomyMixin:
             )
             self._clear_economy_click_history()
             self.click(button)
-            time.sleep(self.SHOP_REFRESH_WAIT)
+            time.sleep(self.ACTION_SETTLE_INTERVAL)
             self.screenshot()
             gold_after = self._read_shop_gold()
             if gold_after is None:
@@ -1083,7 +1083,7 @@ class ChessEconomyMixin:
         for attempt in range(1, self.ECONOMY_CONFIRM_RETRIES + 1):
             self._clear_economy_click_history()
             self.click(self.I_REFRESH)
-            time.sleep(self.SHOP_REFRESH_WAIT)
+            time.sleep(self.ACTION_SETTLE_INTERVAL)
             self.screenshot()
             after = self._shop_slot_refresh_snapshot()
             changed, differences = self._shop_refresh_changed_slots(
@@ -1232,7 +1232,7 @@ class ChessEconomyMixin:
                 self._advance_economy_operation_counter(level)
                 # 槽位变化确认时商店已完成换牌；仍额外等待稳定帧，
                 # 再读取费用和羁绊，避免残余动画影响购买识别。
-                time.sleep(self.SHOP_POST_REFRESH_RECOGNITION_WAIT)
+                time.sleep(self.ACTION_SETTLE_INTERVAL)
                 self.screenshot()
                 purchased = self.purchase_lineup_cards_once()
                 if purchased is None:
