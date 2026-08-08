@@ -20,8 +20,6 @@ import tasks.Exploration.page as pages
 
 from module.logger import logger
 from module.exception import TaskEnd, GameStuckError
-from tasks.TeamScroll.config import TeamScrollMode
-from tasks.TeamScroll.coordinator import TeamScrollCoordinator
 from module.atom.animate import RuleAnimate
 from typing import Optional
 
@@ -39,12 +37,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     @cached_property
     def _config(self) -> Exploration:
         self.config.exploration.general_battle_config.lock_team_enable = True
-        coordinator = self.team_scroll_coordinator
-        limit_time = (
-            self.config.team_scroll.team_scroll_config.execution_time
-            if coordinator is not None
-            else self.config.exploration.exploration_config.limit_time
-        )
+        limit_time = self.config.exploration.exploration_config.limit_time
         self.limit_time: timedelta = timedelta(
             hours=limit_time.hour,
             minutes=limit_time.minute,
@@ -55,11 +48,6 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     @cached_property
     def _match_end(self):
         return RuleAnimate(self.I_SWIPE_END)
-
-    @cached_property
-    def team_scroll_coordinator(self):
-        # 只要启用 TeamScroll 就立即接管探索，不依赖状态库是否已由调度器初始化。
-        return TeamScrollCoordinator.from_config(self.config)
 
     def pre_process(self):
         if self._config.switch_soul_config.enable:
@@ -85,13 +73,6 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                 self.exp_100()
             self.close_buff()
         self.user_status = self._config.exploration_config.user_status
-        if self.team_scroll_coordinator is not None:
-            self.user_status = (
-                UserStatus.LEADER
-                if self.team_scroll_coordinator.mode == TeamScrollMode.LEADER
-                else UserStatus.MEMBER
-            )
-            logger.info(f'TeamScroll overrides exploration role: {self.user_status.value}')
         self.wait_start_time = datetime.now()  # 重置等待时间
 
     def post_process(self):
@@ -105,12 +86,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             self.exp_50(is_open=False)
             self.exp_100(is_open=False)
             self.close_buff()
-        if self.team_scroll_coordinator is not None:
-            # 协同开启后由 TeamScroll 唤醒探索，探索自身完成时默认停放到次日。
-            target = (datetime.now() + timedelta(days=1)).replace(microsecond=0)
-            self.set_next_run(task='Exploration', success=False, finish=False, server=False, target=target)
-        else:
-            self.set_next_run(task='Exploration', success=True, finish=False)
+        self.set_next_run(task='Exploration', success=True, finish=False)
         raise TaskEnd
 
     # 打开指定的章节：
@@ -305,40 +281,8 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.set_next_run(task='MemoryScrolls', success=False, finish=False, target=datetime.now())
         raise TaskEnd
 
-    def check_team_scroll(self, current_page: pages.Page | None) -> bool:
-        coordinator = self.team_scroll_coordinator
-        if coordinator is None:
-            return False
-        state = coordinator.read()
-        if state['phase'] in ('raid_requested', 'realm_raid'):
-            logger.info(f"TeamScroll phase={state['phase']}, exit exploration")
-            self._team_scroll_exit_requested = True
-            return True
-        if coordinator.mode != TeamScrollMode.LEADER or state['phase'] != 'exploring' or current_page is None:
-            return False
-        if current_page not in (pages.page_exploration, pages.page_exp_entrance):
-            return False
-        if current_page == pages.page_exp_entrance:
-            current, _, _ = self.O_REALM_RAID_NUMBER1.ocr(self.device.image)
-        else:
-            current, _, _ = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
-        threshold = self.config.team_scroll.team_scroll_config.realm_raid_ticket_threshold
-        if current < threshold:
-            return False
-        logger.info(f'TeamScroll ticket threshold reached: {current}/{threshold}')
-        coordinator.request_realm_raid()
-        self._team_scroll_exit_requested = True
-        return True
-
     def check_exit(self, current_page: pages.Page | None) -> bool:
         # True 表示要退出这个任务
-        coordinator = self.team_scroll_coordinator
-        if coordinator is not None and coordinator.is_expired(
-                self.config.team_scroll.team_scroll_config.execution_time):
-            logger.info('TeamScroll execution time reached, exit exploration')
-            coordinator.mark_finished()
-            self._team_scroll_finish_requested = True
-            return True
         if self.current_count >= self._config.exploration_config.minions_cnt:
             logger.info('Minions count is enough, exit')
             return True
@@ -349,11 +293,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                 datetime.now() - self.wait_start_time >= self._config.invite_config.wait_time_v:
             logger.info('Member wait time out, exit')
             return True
-        if self.check_team_scroll(current_page):
-            return True
-        # TeamScroll owns ticket detection while enabled; keep the original single-account mode otherwise.
-        if self.team_scroll_coordinator is None:
-            self.activate_realm_raid(self._config.scrolls, self._config.exploration_config, current_page)
+        self.activate_realm_raid(self._config.scrolls, self._config.exploration_config, current_page)
         return False
 
     def fire(self, button) -> bool:

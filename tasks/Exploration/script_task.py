@@ -4,7 +4,6 @@ import time
 from datetime import datetime, timedelta
 
 from module.logger import logger
-from module.exception import TaskEnd
 from tasks.Exploration.base import BaseExploration
 from tasks.Exploration.config import AutoRotate, UserStatus, ExplorationLevel
 import tasks.Exploration.page as pages
@@ -46,20 +45,8 @@ class ScriptTask(BaseExploration):
 
     def run(self):
         logger.hr('exploration')
-        coordinator = self.team_scroll_coordinator
-        if coordinator is not None and coordinator.read()['phase'] == 'finished':
-            target = (datetime.now() + timedelta(days=1)).replace(microsecond=0)
-            self.set_next_run(task='Exploration', success=False, finish=False, server=False, target=target)
-            self.set_next_run(task='TeamScroll', success=False, finish=False, server=False, target=datetime.now())
-            raise TaskEnd
         self.pre_process()
         self.exec_exp_page()
-        if getattr(self, '_team_scroll_exit_requested', False):
-            state = self.team_scroll_coordinator.mark_exploration_exited()
-            logger.info(f"TeamScroll exploration exited, phase={state['phase']}")
-            self.set_next_run(task='TeamScroll', success=False, finish=False, server=False, target=datetime.now())
-        elif getattr(self, '_team_scroll_finish_requested', False):
-            self.set_next_run(task='TeamScroll', success=False, finish=False, server=False, target=datetime.now())
         self.post_process()
 
     def exec_exp_page(self):
