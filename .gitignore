@@ -7,6 +7,7 @@ config/*.yaml
 !config/deploy.*.yaml
 config/*.json
 config/tmp*
+config/*.sqlite3
 !config/template*.json
 config/*.crt
 *.pyw

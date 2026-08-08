@@ -241,6 +241,23 @@
       "team_name": ""
     }
   },
+  "team_scroll": {
+    "scheduler": {
+      "enable": false,
+      "next_run": "2023-01-01 00:00:00",
+      "priority": 5,
+      "success_interval": "01 00:00:00",
+      "failure_interval": "01 00:00:00",
+      "server_update": "09:00:00",
+      "delay_date": 1,
+      "float_time": "00:00:00"
+    },
+    "team_scroll_config": {
+      "teammate_config_name": "",
+      "mode": "leader",
+      "realm_raid_ticket_threshold": 30
+    }
+  },
   "ryou_toppa": {
     "scheduler": {
       "enable": false,

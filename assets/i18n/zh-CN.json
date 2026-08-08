@@ -217,5 +217,13 @@
   "enable_book_auto": "自动选择",
   "enable_book_auto_help": "游戏内是否开启自动选择御魂",
   "earn_money": "获取樱灯饰",
-  "earn_money_help": "通过放置借处式神获取500樱灯饰\n开启前确保已放置借出式神"
+  "earn_money_help": "通过放置借处式神获取500樱灯饰\n开启前确保已放置借出式神",
+  "TeamScroll": "组队绘卷",
+  "team_scroll_config": "详细配置",
+  "teammate_config_name": "协同脚本名字",
+  "teammate_config_name_help": "填写另一个OAS实例的配置名；为空时跳过组队绘卷",
+  "mode": "组队模式",
+  "team_scroll_mode_help": "双方必须分别设置为队长和队员；仅队长检测结界突破卷",
+  "realm_raid_ticket_threshold": "结界突破卷门槛",
+  "realm_raid_ticket_threshold_help": "默认30，仅队长模式生效"
 }
