@@ -3,6 +3,7 @@
 # github https://github.com/runhey
 import time
 import re
+from datetime import datetime, timedelta
 from cached_property import cached_property
 from tasks.GameUi.default_pages import page_exploration
 
@@ -22,11 +23,27 @@ from module.exception import TaskEnd
 from module.atom.image_grid import ImageGrid
 from module.atom.image import RuleImage
 from module.atom.click import RuleClick
+from tasks.TeamScroll.coordinator import TeamScrollCoordinator
 
 
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     medal_grid: ImageGrid = None
     init_tickets: int = -1
+
+    def _park_self(self):
+        target = (datetime.now() + timedelta(days=1)).replace(microsecond=0)
+        self.set_next_run(task='RealmRaid', success=False, finish=False, server=False, target=target)
+
+    def _team_scroll_complete(self):
+        coordinator = TeamScrollCoordinator.from_config(self.config, require_session=True)
+        if coordinator is None:
+            return
+        state = coordinator.read()
+        if state['phase'] != 'realm_raid':
+            return
+        state = coordinator.mark_realm_raid_done()
+        logger.info(f"TeamScroll RealmRaid done, phase={state['phase']}")
+        self.set_next_run(task='TeamScroll', success=False, finish=False, server=False, target=datetime.now())
 
     def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         if config.quick_exit:
@@ -40,13 +57,31 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
 
     def run(self):
         con = self.config.realm_raid
+        # 启用 TeamScroll 后立即阻止个人突破按自身调度独立运行。
+        coordinator = TeamScrollCoordinator.from_config(self.config)
+        if coordinator is not None:
+            state = coordinator.read()
+            if state['phase'] != 'realm_raid':
+                logger.info(f"TeamScroll owns RealmRaid schedule, skip in phase={state['phase']}")
+                self._park_self()
+                self.set_next_run(task='TeamScroll', success=False, finish=False, server=False, target=datetime.now())
+                raise TaskEnd
+            if coordinator.is_expired(self.config.team_scroll.team_scroll_config.execution_time):
+                coordinator.mark_finished()
+                self._park_self()
+                self.set_next_run(task='TeamScroll', success=False, finish=False, server=False, target=datetime.now())
+                raise TaskEnd
         # 直接进入个人突破页面
         self.goto_page(page_realm_raid)
 
         # 在突破页面内先判断票数，如果没有票了或者已经达到攻击次数上限，就直接结束任务
         if not self.check_ticket(con.raid_config.number_base):
             self.goto_page(page_exploration)
-            self.set_next_run(task='RealmRaid', success=False, finish=True)
+            self._team_scroll_complete()
+            if coordinator is not None:
+                self._park_self()
+            else:
+                self.set_next_run(task='RealmRaid', success=False, finish=True)
             raise TaskEnd
 
         # 票数足够，现在开始进行御魂切换
@@ -158,7 +193,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 break
 
         self.goto_page(page_exploration)
-        self.set_next_run(task='RealmRaid', success=success, finish=True)
+        self._team_scroll_complete()
+        if coordinator is not None:
+            self._park_self()
+        else:
+            self.set_next_run(task='RealmRaid', success=success, finish=True)
         raise TaskEnd
 
     def is_ticket(self) -> bool:

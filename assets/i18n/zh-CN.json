@@ -225,13 +225,5 @@
   "mode": "组队模式",
   "team_scroll_mode_help": "双方必须分别设置为队长和队员；仅队长检测结界突破卷",
   "realm_raid_ticket_threshold": "结界突破卷门槛",
-  "realm_raid_ticket_threshold_help": "默认30，仅队长模式生效",
-  "exploration_config": "探索配置",
-  "exploration_invite_config": "探索邀请配置",
-  "exploration_battle_config": "探索战斗配置",
-  "realm_raid_config": "结界突破配置",
-  "realm_raid_battle_config": "结界突破战斗配置",
-  "switch_soul_config": "御魂切换配置",
-  "team_scroll_switch_before_task_help": "开启后，在进入探索或结界突破阶段前切换对应御魂",
-  "team_scroll_switch_by_name_help": "关闭时使用御魂装配分组编号；开启时通过OCR识别分组名称和预设名称"
+  "realm_raid_ticket_threshold_help": "默认30，仅队长模式生效"
 }

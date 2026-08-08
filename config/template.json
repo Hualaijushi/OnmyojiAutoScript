@@ -257,60 +257,6 @@
       "mode": "leader",
       "realm_raid_ticket_threshold": 30,
       "execution_time": "00:30:00"
-    },
-    "exploration_config": {
-      "buff_gold_50_click": false,
-      "buff_gold_100_click": false,
-      "buff_exp_50_click": false,
-      "buff_exp_100_click": false,
-      "minions_cnt": 30,
-      "exploration_level": "第二十八章",
-      "collect_paper_reward": true,
-      "auto_rotate": "不",
-      "choose_rarity": "N卡",
-      "up_type": "up_all"
-    },
-    "exploration_invite_config": {
-      "friend_list": "",
-      "find_mode": "auto_find",
-      "wait_time": "00:02:00",
-      "default_invite": true
-    },
-    "exploration_battle_config": {
-      "lock_team_enable": false,
-      "green_enable": false,
-      "green_mark_type": "choose",
-      "green_mark": "green_left1",
-      "green_mark_name": "",
-      "random_click_swipt_enable": false,
-      "battle_timeout": -1
-    },
-    "realm_raid_config": {
-      "number_attack": 30,
-      "number_base": 0,
-      "exit_four": true,
-      "order_attack": "5 > 4 > 3 > 2 > 1 > 0",
-      "three_refresh": false,
-      "when_attack_fail": "Refresh"
-    },
-    "realm_raid_battle_config": {
-      "lock_team_enable": false,
-      "green_enable": false,
-      "green_mark_type": "choose",
-      "green_mark": "green_left1",
-      "green_mark_name": "",
-      "random_click_swipt_enable": false,
-      "battle_timeout": -1
-    },
-    "switch_soul_config": {
-      "switch_before_task": false,
-      "exploration_group_team": "-1,-1",
-      "realm_raid_group_team": "-1,-1",
-      "switch_by_name": false,
-      "exploration_group_name": "",
-      "exploration_team_name": "",
-      "realm_raid_group_name": "",
-      "realm_raid_team_name": ""
     }
   },
   "ryou_toppa": {
