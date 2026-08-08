@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 from typing import Callable
 
@@ -51,12 +51,15 @@ class TeamScrollCoordinator:
             connection.commit()
 
     def _default_state(self):
+        now = datetime.now().isoformat(timespec='seconds')
         return {
             'pair_id': self.pair_id,
             'round_id': 0,
             'phase': 'exploring',
             'leader': self.leader,
             'member': self.member,
+            'started_at': now,
+            'finished_at': None,
             'players': {
                 self.leader: {'exploration_exited': False, 'realm_raid_done': False, 'resume_ready': False},
                 self.member: {'exploration_exited': False, 'realm_raid_done': False, 'resume_ready': False},
@@ -93,7 +96,32 @@ class TeamScrollCoordinator:
             return state
 
     def ensure_session(self):
-        return self.update(lambda state: None)
+        def mutate(state):
+            if not state.get('started_at'):
+                state['started_at'] = datetime.now().isoformat(timespec='seconds')
+            state.setdefault('finished_at', None)
+            # 已结束的协同轮次只允许在次日重新开始，避免另一个脚本在收尾时立即重开。
+            if state.get('phase') != 'finished' or not state.get('finished_at'):
+                return
+            if datetime.fromisoformat(state['finished_at']).date() < datetime.now().date():
+                state.clear()
+                state.update(self._default_state())
+        return self.update(mutate)
+
+    def is_expired(self, execution_time: time):
+        state = self.read()
+        if state.get('phase') == 'finished':
+            return True
+        started_at = datetime.fromisoformat(state.get('started_at') or datetime.now().isoformat())
+        elapsed = (datetime.now() - started_at).total_seconds()
+        limit = execution_time.hour * 3600 + execution_time.minute * 60 + execution_time.second
+        return elapsed >= limit
+
+    def mark_finished(self):
+        def mutate(state):
+            state['phase'] = 'finished'
+            state['finished_at'] = datetime.now().isoformat(timespec='seconds')
+        return self.update(mutate)
 
     def request_realm_raid(self):
         def mutate(state):
