@@ -47,10 +47,6 @@ class ScriptTask(BaseExploration):
         logger.hr('exploration')
         self.pre_process()
         self.exec_exp_page()
-        if getattr(self, '_team_scroll_exit_requested', False):
-            state = self.team_scroll_coordinator.mark_exploration_exited()
-            logger.info(f"TeamScroll exploration exited, phase={state['phase']}")
-            self.set_next_run(task='TeamScroll', success=False, finish=False, server=False, target=datetime.now())
         self.post_process()
 
     def exec_exp_page(self):

@@ -3,7 +3,6 @@
 # github https://github.com/runhey
 import time
 import re
-from datetime import datetime
 from cached_property import cached_property
 from tasks.GameUi.default_pages import page_exploration
 
@@ -23,23 +22,11 @@ from module.exception import TaskEnd
 from module.atom.image_grid import ImageGrid
 from module.atom.image import RuleImage
 from module.atom.click import RuleClick
-from tasks.TeamScroll.coordinator import TeamScrollCoordinator
 
 
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     medal_grid: ImageGrid = None
     init_tickets: int = -1
-
-    def _team_scroll_complete(self):
-        coordinator = TeamScrollCoordinator.from_config(self.config, require_session=True)
-        if coordinator is None:
-            return
-        state = coordinator.read()
-        if state['phase'] != 'realm_raid':
-            return
-        state = coordinator.mark_realm_raid_done()
-        logger.info(f"TeamScroll RealmRaid done, phase={state['phase']}")
-        self.set_next_run(task='TeamScroll', success=False, finish=False, server=False, target=datetime.now())
 
     def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         if config.quick_exit:
@@ -59,7 +46,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         # 在突破页面内先判断票数，如果没有票了或者已经达到攻击次数上限，就直接结束任务
         if not self.check_ticket(con.raid_config.number_base):
             self.goto_page(page_exploration)
-            self._team_scroll_complete()
             self.set_next_run(task='RealmRaid', success=False, finish=True)
             raise TaskEnd
 
@@ -172,7 +158,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 break
 
         self.goto_page(page_exploration)
-        self._team_scroll_complete()
         self.set_next_run(task='RealmRaid', success=success, finish=True)
         raise TaskEnd
 

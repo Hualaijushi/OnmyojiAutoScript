@@ -47,7 +47,6 @@ from tasks.FallenSun.config import FallenSun
 from tasks.EternitySea.config import EternitySea
 from tasks.SixRealms.config import SixRealms
 from tasks.RealmRaid.config import RealmRaid
-from tasks.TeamScroll.config import TeamScroll
 from tasks.CollectiveMissions.config import CollectiveMissions
 from tasks.Hunt.config import Hunt
 from tasks.AbyssShadows.config import AbyssShadows
@@ -98,7 +97,6 @@ class ConfigModel(ConfigBase):
     gold_youkai: GoldYoukai = Field(default_factory=GoldYoukai)
     nian: Nian = Field(default_factory=Nian)
     realm_raid: RealmRaid = Field(default_factory=RealmRaid)
-    team_scroll: TeamScroll = Field(default_factory=TeamScroll)
     ryou_toppa: RyouToppa = Field(default_factory=RyouToppa)
     kekkai_utilize: KekkaiUtilize = Field(default_factory=KekkaiUtilize)
     kekkai_activation: KekkaiActivation = Field(default_factory=KekkaiActivation)

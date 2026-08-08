@@ -20,8 +20,6 @@ import tasks.Exploration.page as pages
 
 from module.logger import logger
 from module.exception import TaskEnd, GameStuckError
-from tasks.TeamScroll.config import TeamScrollMode
-from tasks.TeamScroll.coordinator import TeamScrollCoordinator
 from module.atom.animate import RuleAnimate
 from typing import Optional
 
@@ -51,10 +49,6 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     def _match_end(self):
         return RuleAnimate(self.I_SWIPE_END)
 
-    @cached_property
-    def team_scroll_coordinator(self):
-        return TeamScrollCoordinator.from_config(self.config, require_session=True)
-
     def pre_process(self):
         if self._config.switch_soul_config.enable:
             self.goto_page(pages.page_shikigami_records)
@@ -79,13 +73,6 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                 self.exp_100()
             self.close_buff()
         self.user_status = self._config.exploration_config.user_status
-        if self.team_scroll_coordinator is not None:
-            self.user_status = (
-                UserStatus.LEADER
-                if self.team_scroll_coordinator.mode == TeamScrollMode.LEADER
-                else UserStatus.MEMBER
-            )
-            logger.info(f'TeamScroll overrides exploration role: {self.user_status.value}')
         self.wait_start_time = datetime.now()  # 重置等待时间
 
     def post_process(self):
@@ -294,31 +281,6 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.set_next_run(task='MemoryScrolls', success=False, finish=False, target=datetime.now())
         raise TaskEnd
 
-    def check_team_scroll(self, current_page: pages.Page | None) -> bool:
-        coordinator = self.team_scroll_coordinator
-        if coordinator is None:
-            return False
-        state = coordinator.read()
-        if state['phase'] in ('raid_requested', 'realm_raid'):
-            logger.info(f"TeamScroll phase={state['phase']}, exit exploration")
-            self._team_scroll_exit_requested = True
-            return True
-        if coordinator.mode != TeamScrollMode.LEADER or state['phase'] != 'exploring' or current_page is None:
-            return False
-        if current_page not in (pages.page_exploration, pages.page_exp_entrance):
-            return False
-        if current_page == pages.page_exp_entrance:
-            current, _, _ = self.O_REALM_RAID_NUMBER1.ocr(self.device.image)
-        else:
-            current, _, _ = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
-        threshold = self.config.team_scroll.team_scroll_config.realm_raid_ticket_threshold
-        if current < threshold:
-            return False
-        logger.info(f'TeamScroll ticket threshold reached: {current}/{threshold}')
-        coordinator.request_realm_raid()
-        self._team_scroll_exit_requested = True
-        return True
-
     def check_exit(self, current_page: pages.Page | None) -> bool:
         # True 表示要退出这个任务
         if self.current_count >= self._config.exploration_config.minions_cnt:
@@ -331,11 +293,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                 datetime.now() - self.wait_start_time >= self._config.invite_config.wait_time_v:
             logger.info('Member wait time out, exit')
             return True
-        if self.check_team_scroll(current_page):
-            return True
-        # TeamScroll owns ticket detection while enabled; keep the original single-account mode otherwise.
-        if self.team_scroll_coordinator is None:
-            self.activate_realm_raid(self._config.scrolls, self._config.exploration_config, current_page)
+        self.activate_realm_raid(self._config.scrolls, self._config.exploration_config, current_page)
         return False
 
     def fire(self, button) -> bool:
