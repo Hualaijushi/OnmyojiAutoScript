@@ -14,18 +14,6 @@ class ScriptTask(BaseTask):
         self.set_next_run(task='TeamScroll', success=False, finish=False, server=False,
                           target=datetime.now() + timedelta(seconds=seconds))
 
-    def _park_controlled_tasks(self):
-        target = (datetime.now() + timedelta(days=1)).replace(microsecond=0)
-        self.set_next_run(task='Exploration', success=False, finish=False, server=False, target=target)
-        self.set_next_run(task='RealmRaid', success=False, finish=False, server=False, target=target)
-
-    def _finish(self, coordinator):
-        if coordinator.read()['phase'] != 'finished':
-            coordinator.mark_finished()
-        self._park_controlled_tasks()
-        self.set_next_run(task='TeamScroll', success=True, finish=True)
-        raise TaskEnd
-
     def _load_peer(self, name: str):
         path = Path('./config') / f'{name}.json'
         if not path.is_file():
@@ -72,11 +60,6 @@ class ScriptTask(BaseTask):
             raise TaskEnd
 
         state = coordinator.ensure_session()
-        if state['phase'] == 'finished':
-            self._finish(coordinator)
-        if coordinator.is_expired(self.config.team_scroll.team_scroll_config.execution_time):
-            logger.info('TeamScroll execution time reached, finish cooperative session')
-            self._finish(coordinator)
         phase = state['phase']
         player = state['players'][self.config.config_name]
         logger.info(f"TeamScroll round={state['round_id']} phase={phase}")

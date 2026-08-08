@@ -39,12 +39,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     @cached_property
     def _config(self) -> Exploration:
         self.config.exploration.general_battle_config.lock_team_enable = True
-        coordinator = self.team_scroll_coordinator
-        limit_time = (
-            self.config.team_scroll.team_scroll_config.execution_time
-            if coordinator is not None
-            else self.config.exploration.exploration_config.limit_time
-        )
+        limit_time = self.config.exploration.exploration_config.limit_time
         self.limit_time: timedelta = timedelta(
             hours=limit_time.hour,
             minutes=limit_time.minute,
@@ -58,8 +53,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
 
     @cached_property
     def team_scroll_coordinator(self):
-        # 只要启用 TeamScroll 就立即接管探索，不依赖状态库是否已由调度器初始化。
-        return TeamScrollCoordinator.from_config(self.config)
+        return TeamScrollCoordinator.from_config(self.config, require_session=True)
 
     def pre_process(self):
         if self._config.switch_soul_config.enable:
@@ -105,12 +99,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             self.exp_50(is_open=False)
             self.exp_100(is_open=False)
             self.close_buff()
-        if self.team_scroll_coordinator is not None:
-            # 协同开启后由 TeamScroll 唤醒探索，探索自身完成时默认停放到次日。
-            target = (datetime.now() + timedelta(days=1)).replace(microsecond=0)
-            self.set_next_run(task='Exploration', success=False, finish=False, server=False, target=target)
-        else:
-            self.set_next_run(task='Exploration', success=True, finish=False)
+        self.set_next_run(task='Exploration', success=True, finish=False)
         raise TaskEnd
 
     # 打开指定的章节：
@@ -332,13 +321,6 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
 
     def check_exit(self, current_page: pages.Page | None) -> bool:
         # True 表示要退出这个任务
-        coordinator = self.team_scroll_coordinator
-        if coordinator is not None and coordinator.is_expired(
-                self.config.team_scroll.team_scroll_config.execution_time):
-            logger.info('TeamScroll execution time reached, exit exploration')
-            coordinator.mark_finished()
-            self._team_scroll_finish_requested = True
-            return True
         if self.current_count >= self._config.exploration_config.minions_cnt:
             logger.info('Minions count is enough, exit')
             return True
