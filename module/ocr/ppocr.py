@@ -1,134 +1,10 @@
 import os
-import threading
 import time
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
-import cv2
 import numpy as np
 from paddleocr import PaddleOCR
 
-from module.logger import logger
-
-
-class OcrLogger:
-    """OCR 识别日志记录器。
-
-    日志保存到 ``log/ocr/text/<YYYY-MM-DD>.txt``
-    识别图片保存到 ``log/ocr/images/<YYYY-MM-DD>/``
-    """
-
-    LOG_DIR = Path("./log/ocr")
-    IMG_DIR = LOG_DIR / "images"
-    TXT_DIR = LOG_DIR / "text"
-    _state = threading.local()
-
-    @classmethod
-    def set_enabled(cls, enabled: bool) -> None:
-        """设置当前 OCR 工作线程是否保存调试日志。"""
-        cls._state.enabled = bool(enabled)
-
-    @classmethod
-    def is_enabled(cls) -> bool:
-        """默认关闭，避免正常运行时持续写入图片和文本。"""
-        return bool(getattr(cls._state, 'enabled', False))
-
-    @classmethod
-    def _init_dirs(cls) -> None:
-        """确保 text/ 目录存在。"""
-        cls.TXT_DIR.mkdir(parents=True, exist_ok=True)
-
-    @classmethod
-    def _day_img_dir(cls, date_str: str) -> Path:
-        """返回并创建当日的图片子目录。"""
-        d = cls.IMG_DIR / date_str
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-
-    @classmethod
-    def _log_file(cls, date_str: str) -> Path:
-        """返回当日文本日志文件路径。"""
-        return cls.TXT_DIR / f"{date_str}.txt"
-
-    @classmethod
-    def save(
-        cls,
-        image: np.ndarray,
-        method: str,
-        text: str,
-        score: float,
-        extra: str = "",
-        *,
-        pairs: list[tuple[str, float]] | None = None,
-    ) -> None:
-        """保存 OCR 识别日志。
-
-        Args:
-            image: 输入图片 (numpy array)。
-            method: 调用方法名。
-            text:   识别出的文本（首个文本）。
-            score:  置信度（首个文本的置信度）。
-            extra:  附加信息（已弃用）。
-            pairs:  所有 (text, score) 对列表。
-        """
-        if not cls.is_enabled():
-            return
-        cls._init_dirs()
-        now = datetime.now()
-        date_str = now.strftime("%Y-%m-%d")
-        ts = now.strftime("%H%M%S") + now.strftime("%f")[:3]
-
-        # 保存所有图片
-        seq = getattr(cls, f"_seq_{ts}", 0)
-        setattr(cls, f"_seq_{ts}", seq + 1)
-        filename = f"{ts}_{seq:03d}.png"
-        img_dir = cls._day_img_dir(date_str)
-        try:
-            cv2.imwrite(str(img_dir / filename), image)
-        except Exception as e:
-            logger.warning(f"OCR image save failed: {e}")
-
-        # 写文本日志
-        log_path = cls._log_file(date_str)
-        parts = [
-            now.strftime("%Y-%m-%d %H:%M:%S.%f")[:23],
-            str(cls.IMG_DIR / date_str / filename),
-            method,
-        ]
-        if pairs:
-            for t, s in pairs:
-                parts.append(str(t))
-                parts.append(f"{s:.6f}")
-        else:
-            parts.append(str(text))
-            parts.append(f"{score:.6f}")
-
-        line = " | ".join(parts)
-        try:
-            with open(log_path, "a", encoding="utf-8-sig") as f:
-                f.write(line + "\n")
-        except Exception as e:
-            logger.warning(f"OCR log write failed: {e}")
-
-
-class BoxedResult:
-    box: np.ndarray
-    text_img: Optional[np.ndarray] = None
-    ocr_text: str
-    score: float
-
-    def __init__(self, box, text_img, ocr_text, score):
-        self.box = box
-        self.text_img = text_img
-        self.ocr_text = ocr_text
-        self.score = score
-
-    def __str__(self):
-        return f'BoxedResult[{self.ocr_text}, {self.score}]'
-
-    def __repr__(self):
-        return self.__str__()
+from module.ocr.common import BoxedResult, OcrLogger
 
 
 class TextSystem:
@@ -147,17 +23,23 @@ class TextSystem:
             unclip_ratio=1.6,
             rec_model_path=None,
             det_model_path=None,
-            ort_providers=None
+            ort_providers=None,
+            model_variant="small",
+            **_kwargs,
     ):
         # Map legacy parameter names to paddleocr 3.x parameters
         self._box_thresh = box_thresh
         self._unclip_ratio = unclip_ratio
         self._use_angle_cls = use_angle_cls
+        model_variant = str(model_variant).lower()
+        if model_variant not in {"small", "medium"}:
+            raise ValueError(f"Unsupported OCR model variant: {model_variant}")
+        model_prefix = f"PP-OCRv6_{model_variant}"
 
         self._ocr = PaddleOCR(
-            text_detection_model_name='PP-OCRv6_medium_det' if det_model_path is None else None,
+            text_detection_model_name=f'{model_prefix}_det' if det_model_path is None else None,
             text_detection_model_dir=det_model_path,
-            text_recognition_model_name='PP-OCRv6_medium_rec' if rec_model_path is None else None,
+            text_recognition_model_name=f'{model_prefix}_rec' if rec_model_path is None else None,
             text_recognition_model_dir=rec_model_path,
             engine='onnxruntime',
             use_doc_orientation_classify=False,
@@ -170,6 +52,10 @@ class TextSystem:
         # When set to a callable(img_crop_list) -> list[(text, score)], it
         # replaces only the recognition step after detection.
         self.text_recognizer = None
+
+    def recognize_batch(self, images):
+        """Compatibility recognizer used by vertical-text RPC handling."""
+        return [self.ocr_single_line(image) for image in images]
 
     def ocr_single_line(self, img):
         """Recognize a single line of text from a cropped image.

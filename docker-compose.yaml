@@ -5,9 +5,13 @@ services:
         volumes:
             - '.:/app/OnmyojiAutoScript:rw'
             - '/etc/localtime:/etc/localtime:ro'
+            - 'paddlex_cache:/root/.paddlex'
         container_name: 'oas-env'
         image: 'oas-env'
         build:
             context: ./deploy/docker/
             dockerfile: ./Dockerfile
             # dockerfile: ./Dockerfile
+
+volumes:
+    paddlex_cache:

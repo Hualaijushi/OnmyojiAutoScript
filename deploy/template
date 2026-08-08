@@ -77,9 +77,16 @@ Deploy:
     # Address of ocr server for alas instance to connect
     # [Default] 127.0.0.1:22268
     OcrClientAddress: 127.0.0.1:22268
-    # OCR server worker count, 0 means auto detect
-    # [Default] 0
-    OcrServerWorkerCount: 0
+    # OCR server worker count. One worker minimizes model memory usage.
+    # [Default] 1
+    OcrServerWorkerCount: 1
+    # OCR backend: onnx (lightweight) or paddle (compatibility fallback)
+    OcrEngine: onnx
+    # PP-OCRv6 model size: small (default) or medium (accuracy fallback)
+    OcrModelVariant: small
+    # ONNX Runtime thread limits per shared inference session
+    OcrOrtIntraOpThreads: 2
+    OcrOrtInterOpThreads: 1
 
   Image:
     # Run image recognition as a service. This service is mandatory and all image rules use it.

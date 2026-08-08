@@ -18,7 +18,7 @@ import zerorpc
 
 from module.exception import ScriptError
 from module.logger import logger
-from module.ocr.ppocr import OcrLogger, TextSystem
+from module.ocr.common import BoxedResult, OcrLogger
 
 _OCR_SERVER_PROCESS: Optional[multiprocessing.Process] = None
 _OCR_CLIENT_CACHE: dict[str, "ModelProxy"] = {}
@@ -54,18 +54,28 @@ def _is_port_in_use(host: str, port: int) -> bool:
 
 @dataclass(slots=True)
 class OcrServerSettings:
-    worker_count: int = 0
+    worker_count: int = 1
+    engine: str = "onnx"
+    model_variant: str = "small"
+    intra_op_threads: int = 2
+    inter_op_threads: int = 1
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "OcrServerSettings":
         if not data:
             return cls()
-        return cls(worker_count=int(data.get("worker_count", 0)))
+        return cls(
+            worker_count=int(data.get("worker_count", 1)),
+            engine=str(data.get("engine", "onnx")).lower(),
+            model_variant=str(data.get("model_variant", "small")).lower(),
+            intra_op_threads=int(data.get("intra_op_threads", 2)),
+            inter_op_threads=int(data.get("inter_op_threads", 1)),
+        )
 
 
 class OcrTaskScheduler:
-    def __init__(self, worker_count: int = 0) -> None:
-        self.worker_count = max(1, worker_count or (multiprocessing.cpu_count() or 1))
+    def __init__(self, worker_count: int = 1) -> None:
+        self.worker_count = max(1, worker_count or 1)
         self._executor = ThreadPoolExecutor(
             max_workers=self.worker_count,
             thread_name_prefix="ocr_worker",
@@ -184,10 +194,20 @@ class OcrRuntime:
             return np.rot90(image)
         return image
 
-    def _get_model(self) -> TextSystem:
+    def _get_model(self):
         model = getattr(self._thread_local, "model", None)
         if model is None:
-            model = TextSystem()
+            if self.settings.engine == "onnx":
+                from module.ocr.onnx_ppocr import TextSystem
+            elif self.settings.engine == "paddle":
+                from module.ocr.ppocr import TextSystem
+            else:
+                raise ValueError(f"Unsupported OCR engine: {self.settings.engine}")
+            model = TextSystem(
+                model_variant=self.settings.model_variant,
+                intra_op_threads=self.settings.intra_op_threads,
+                inter_op_threads=self.settings.inter_op_threads,
+            )
             self._thread_local.model = model
             worker_name = threading.current_thread().name
             with self._lock:
@@ -240,17 +260,18 @@ class OcrRuntime:
 
     def _detect_and_ocr_vertical(
         self,
-        model: TextSystem,
+        model,
         image: np.ndarray,
         drop_score: float = 0.5,
         unclip_ratio: Optional[float] = None,
         box_thresh: Optional[float] = None,
     ) -> list[Any]:
         text_recognizer = model.text_recognizer
+        base_recognizer = text_recognizer or model.recognize_batch
 
         def vertical_text_recognizer(img_crop_list):
             img_crop_list = [self._rotate_vertical(item) for item in img_crop_list]
-            return text_recognizer(img_crop_list)
+            return base_recognizer(img_crop_list)
 
         model.text_recognizer = vertical_text_recognizer
         try:
@@ -270,6 +291,10 @@ def _build_server_settings() -> dict[str, Any]:
     deploy_config = State.deploy_config
     return {
         "worker_count": int(deploy_config.OcrServerWorkerCount),
+        "engine": str(deploy_config.OcrEngine),
+        "model_variant": str(deploy_config.OcrModelVariant),
+        "intra_op_threads": int(deploy_config.OcrOrtIntraOpThreads),
+        "inter_op_threads": int(deploy_config.OcrOrtInterOpThreads),
     }
 
 
@@ -403,7 +428,6 @@ class ModelProxy:
         results = self.client.detect_and_ocr(
             payload, drop_score, unclip_ratio, box_thresh, vertical, self.save_log
         )
-        from module.ocr.ppocr import BoxedResult
         return [
             BoxedResult(np.array(item["box"]), None, item["ocr_text"], item["score"])
             for item in results
