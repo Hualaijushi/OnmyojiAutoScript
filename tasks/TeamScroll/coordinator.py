@@ -12,7 +12,6 @@ class TeamScrollCoordinator:
     """Persistent cross-process state for one pair of OAS instances."""
 
     DB_PATH = Path('./config/team_scroll.sqlite3')
-    STATE_VERSION = 2
 
     def __init__(self, config_name: str, teammate: str, mode: TeamScrollMode | str):
         self.config_name = config_name.strip()
@@ -54,7 +53,6 @@ class TeamScrollCoordinator:
     def _default_state(self):
         now = datetime.now().isoformat(timespec='seconds')
         return {
-            'version': self.STATE_VERSION,
             'pair_id': self.pair_id,
             'round_id': 0,
             'phase': 'exploring',
@@ -99,10 +97,6 @@ class TeamScrollCoordinator:
 
     def ensure_session(self):
         def mutate(state):
-            if state.get('version') != self.STATE_VERSION:
-                state.clear()
-                state.update(self._default_state())
-                return
             if not state.get('started_at'):
                 state['started_at'] = datetime.now().isoformat(timespec='seconds')
             state.setdefault('finished_at', None)
@@ -139,30 +133,13 @@ class TeamScrollCoordinator:
                 player.update(exploration_exited=False, realm_raid_done=False, resume_ready=False)
         return self.update(mutate)
 
-    def request_ticket_check(self):
-        def mutate(state):
-            if self.config_name != state['leader'] or state['phase'] != 'exploring':
-                return
-            state['round_id'] += 1
-            state['phase'] = 'check_requested'
-            for player in state['players'].values():
-                player.update(exploration_exited=False, realm_raid_done=False, resume_ready=False)
-        return self.update(mutate)
-
     def mark_exploration_exited(self):
         def mutate(state):
-            if state['phase'] not in ('check_requested', 'raid_requested', 'realm_raid'):
+            if state['phase'] not in ('raid_requested', 'realm_raid'):
                 return
             state['players'][self.config_name]['exploration_exited'] = True
             if all(player['exploration_exited'] for player in state['players'].values()):
-                state['phase'] = 'checking' if state['phase'] == 'check_requested' else 'realm_raid'
-        return self.update(mutate)
-
-    def resolve_ticket_check(self, reached: bool):
-        def mutate(state):
-            if self.config_name != state['leader'] or state['phase'] != 'checking':
-                return
-            state['phase'] = 'realm_raid' if reached else 'resume'
+                state['phase'] = 'realm_raid'
         return self.update(mutate)
 
     def mark_realm_raid_done(self):

@@ -19,10 +19,6 @@ class TeamScrollConfig(BaseModel):
     teammate_config_name: str = Field(default='', description='teammate_config_name_help')
     mode: TeamScrollMode = Field(default=TeamScrollMode.LEADER, description='team_scroll_mode_help')
     realm_raid_ticket_threshold: int = Field(default=30, ge=1, le=30, description='realm_raid_ticket_threshold_help')
-    ticket_check_battle_count: int = Field(
-        default=10, ge=1, title='突破卷检测战斗次数',
-        description='team_scroll_ticket_check_battle_count_help',
-    )
     execution_time: Time = Field(
         default=Time(minute=30),
         title='执行时间',
