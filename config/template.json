@@ -255,8 +255,7 @@
     "team_scroll_config": {
       "teammate_config_name": "",
       "mode": "leader",
-      "realm_raid_ticket_threshold": 30,
-      "execution_time": "00:30:00"
+      "realm_raid_ticket_threshold": 30
     }
   },
   "ryou_toppa": {
