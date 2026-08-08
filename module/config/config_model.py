@@ -47,7 +47,6 @@ from tasks.FallenSun.config import FallenSun
 from tasks.EternitySea.config import EternitySea
 from tasks.SixRealms.config import SixRealms
 from tasks.RealmRaid.config import RealmRaid
-from tasks.TeamScroll.config import TeamScroll
 from tasks.CollectiveMissions.config import CollectiveMissions
 from tasks.Hunt.config import Hunt
 from tasks.AbyssShadows.config import AbyssShadows
@@ -83,6 +82,8 @@ from tasks.WeeklyTrifles.config import WeeklyTrifles
 from tasks.MysteryShop.config import MysteryShop
 from tasks.Duel.config import Duel
 from tasks.Chess.config import Chess
+# 协同任务---------------------------------------------------------------------------------------------------------------
+from tasks.TeamScroll.config import TeamScroll
 # ----------------------------------------------------------------------------------------------------------------------
 
 class ConfigModel(ConfigBase):
@@ -98,7 +99,6 @@ class ConfigModel(ConfigBase):
     gold_youkai: GoldYoukai = Field(default_factory=GoldYoukai)
     nian: Nian = Field(default_factory=Nian)
     realm_raid: RealmRaid = Field(default_factory=RealmRaid)
-    team_scroll: TeamScroll = Field(default_factory=TeamScroll)
     ryou_toppa: RyouToppa = Field(default_factory=RyouToppa)
     kekkai_utilize: KekkaiUtilize = Field(default_factory=KekkaiUtilize)
     kekkai_activation: KekkaiActivation = Field(default_factory=KekkaiActivation)
@@ -149,6 +149,9 @@ class ConfigModel(ConfigBase):
     mystery_shop: MysteryShop = Field(default_factory=MysteryShop)
     duel: Duel = Field(default_factory=Duel)
     chess: Chess = Field(default_factory=Chess)
+
+    # 协同任务：所有需要跨脚本实例通信的任务统一归类于此
+    team_scroll: TeamScroll = Field(default_factory=TeamScroll)
 
     # 阴阳寮
     collective_missions: CollectiveMissions = Field(default_factory=CollectiveMissions)
