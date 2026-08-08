@@ -48,20 +48,15 @@ class _TeamScrollExplorationTask(ExplorationTask):
             self.coordinator.mark_finished()
             return True
         state = self.coordinator.read()
-        if state['phase'] in ('raid_requested', 'realm_raid'):
+        if state['phase'] in ('check_requested', 'raid_requested', 'realm_raid'):
             self._team_scroll_exit_requested = True
             return True
-        # 只在探索章节选择页检测票数。入口页应优先创建房间；在这里重复 OCR
-        # 会阻塞 enter_team()，表现为队长永久停在探索入口。
         if self.coordinator.mode == TeamScrollMode.LEADER and state['phase'] == 'exploring' and \
-                current_page == exploration_pages.page_exploration:
-            current, _, _ = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
-            threshold = self.config.team_scroll.team_scroll_config.realm_raid_ticket_threshold
-            if current >= threshold:
-                logger.info(f'TeamScroll ticket threshold reached: {current}/{threshold}')
-                self.coordinator.request_realm_raid()
-                self._team_scroll_exit_requested = True
-                return True
+                self.current_count >= self.config.team_scroll.team_scroll_config.ticket_check_battle_count:
+            logger.info(f'TeamScroll requests ticket check after {self.current_count} battles')
+            self.coordinator.request_ticket_check()
+            self._team_scroll_exit_requested = True
+            return True
         return super().check_exit(current_page)
 
     def run(self):
@@ -166,6 +161,15 @@ class ScriptTask(ExplorationTask):
         state = coordinator.mark_realm_raid_done()
         logger.info(f"TeamScroll RealmRaid done, phase={state['phase']}")
 
+    def _check_realm_raid_tickets(self, coordinator):
+        self.goto_page(exploration_pages.page_exploration)
+        self.screenshot()
+        current, _, _ = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
+        threshold = self.config.team_scroll.team_scroll_config.realm_raid_ticket_threshold
+        reached = current >= threshold
+        logger.info(f'TeamScroll ticket check: {current}/{threshold}, reached={reached}')
+        return coordinator.resolve_ticket_check(reached)
+
     def run(self):
         logger.hr('TeamScroll')
         try:
@@ -185,8 +189,10 @@ class ScriptTask(ExplorationTask):
         logger.info(f"TeamScroll round={state['round_id']} phase={phase}")
         if phase == 'exploring':
             self._run_exploration(coordinator)
-        elif phase == 'raid_requested' and not player['exploration_exited']:
+        elif phase in ('check_requested', 'raid_requested') and not player['exploration_exited']:
             self._run_exploration(coordinator)
+        elif phase == 'checking' and coordinator.mode == TeamScrollMode.LEADER:
+            self._check_realm_raid_tickets(coordinator)
         elif phase == 'realm_raid' and not player['realm_raid_done']:
             self._run_realm_raid(coordinator)
         elif phase == 'resume':

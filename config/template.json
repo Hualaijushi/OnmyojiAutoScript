@@ -256,6 +256,7 @@
       "teammate_config_name": "",
       "mode": "leader",
       "realm_raid_ticket_threshold": 30,
+      "ticket_check_battle_count": 10,
       "execution_time": "00:30:00"
     },
     "exploration_config": {

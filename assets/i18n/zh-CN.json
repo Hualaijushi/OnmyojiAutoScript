@@ -226,6 +226,8 @@
   "team_scroll_mode_help": "双方必须分别设置为队长和队员；仅队长检测结界突破卷",
   "realm_raid_ticket_threshold": "结界突破卷门槛",
   "realm_raid_ticket_threshold_help": "默认30，仅队长模式生效",
+  "ticket_check_battle_count": "突破卷检测战斗次数",
+  "team_scroll_ticket_check_battle_count_help": "队长完成指定数量的探索战斗后，双方退出队伍并在章节选择页检查突破卷",
   "exploration_config": "探索配置",
   "exploration_invite_config": "探索邀请配置",
   "exploration_battle_config": "探索战斗配置",
