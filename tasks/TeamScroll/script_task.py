@@ -51,11 +51,11 @@ class _TeamScrollExplorationTask(ExplorationTask):
         if state['phase'] in ('raid_requested', 'realm_raid'):
             self._team_scroll_exit_requested = True
             return True
-        # 只在探索章节选择页检测票数。入口页应优先创建房间；在这里重复 OCR
-        # 会阻塞 enter_team()，表现为队长永久停在探索入口。
-        if self.coordinator.mode == TeamScrollMode.LEADER and state['phase'] == 'exploring' and \
-                current_page == exploration_pages.page_exploration:
-            current, _, _ = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
+        if self.coordinator.mode == TeamScrollMode.LEADER and state['phase'] == 'exploring' and current_page in (
+                exploration_pages.page_exploration, exploration_pages.page_exp_entrance):
+            ocr = self.O_REALM_RAID_NUMBER1 if current_page == exploration_pages.page_exp_entrance \
+                else self.O_REALM_RAID_NUMBER
+            current, _, _ = ocr.ocr(self.device.image)
             threshold = self.config.team_scroll.team_scroll_config.realm_raid_ticket_threshold
             if current >= threshold:
                 logger.info(f'TeamScroll ticket threshold reached: {current}/{threshold}')
