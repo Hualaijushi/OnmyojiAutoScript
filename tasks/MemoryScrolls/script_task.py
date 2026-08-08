@@ -1,7 +1,6 @@
 # This Python file uses the following encoding: utf-8
 # @author ghg11
 # github https://github.com/ghg11
-from time import sleep
 from enum import Enum
 from module.logger import logger
 from module.exception import TaskEnd
@@ -53,12 +52,8 @@ class ScriptTask(GameUi, MemoryScrollsAssets):
             raise TaskEnd
         # 如果每天只刷小绘卷50，则先检测小绘卷数量
         if self.config.memory_scrolls.memory_scrolls_finish.auto_finish_exploration:
-            while 1:
-                self.screenshot()
-                if self.appear(self.I_MS_FRAGMENT_S_VERIFICATION):
-                    break
-                if self.appear_then_click(self.I_MS_FRAGMENT_S, interval=1.5):
-                    continue
+            self.ui_click(self.I_MS_FRAGMENT_S, self.I_MS_FRAGMENT_S_VERIFICATION, interval=1.5)
+            self.screenshot()
             if self.appear(self.I_MS_FRAGMENT_S_50):
                 logger.info('Small Memory Scrolls fragments reached 50, planning tomorrow exploration')
                 # 安排下次探索
@@ -169,7 +164,6 @@ if __name__ == '__main__':
     t.screenshot()
 
     t.run()
-
 
 
 
