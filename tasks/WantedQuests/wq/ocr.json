@@ -5,7 +5,6 @@
     "roiBack": "523,12,97,41",
     "mode": "Digit",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "挑战券的数量"
   },
@@ -15,7 +14,6 @@
     "roiBack": "544,248,55,36",
     "mode": "Single",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "Ocr-description"
   },
@@ -25,7 +23,6 @@
     "roiBack": "544,321,55,30",
     "mode": "Single",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "Ocr-description"
   },
@@ -35,7 +32,6 @@
     "roiBack": "544,392,54,30",
     "mode": "Single",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "Ocr-description"
   },
@@ -45,7 +41,6 @@
     "roiBack": "545,462,52,32",
     "mode": "Single",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "Ocr-description"
   },
@@ -55,7 +50,6 @@
     "roiBack": "609,246,309,45",
     "mode": "Single",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "Ocr-description"
   },
@@ -65,7 +59,6 @@
     "roiBack": "612,318,298,41",
     "mode": "Single",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "Ocr-description"
   },
@@ -75,7 +68,6 @@
     "roiBack": "612,386,305,44",
     "mode": "Single",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "Ocr-description"
   },
@@ -85,7 +77,6 @@
     "roiBack": "613,456,315,44",
     "mode": "Single",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "Ocr-description"
   },
@@ -95,7 +86,6 @@
     "roiBack": "165,215,45,175",
     "mode": "Full",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "怪物名称,如酒吞，阎魔等"
   },
@@ -105,7 +95,6 @@
     "roiBack": "11,114,96,403",
     "mode": "Full",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": ""
   },
@@ -115,7 +104,6 @@
     "roiBack": "11,114,92,388",
     "mode": "Full",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "悬赏封印",
     "description": "是否有悬赏封印检查"
   }

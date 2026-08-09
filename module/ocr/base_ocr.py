@@ -100,8 +100,7 @@ class BaseCor:
                  method: str,
                  roi: tuple,
                  area: tuple,
-                 keyword: str,
-                 model_variant: str = "small") -> None:
+                 keyword: str) -> None:
         """
 
         :param name:
@@ -123,9 +122,6 @@ class BaseCor:
         self.roi: list = list(roi)
         self.area: list = list(area)
         self.keyword = keyword
-        self.model_variant = str(model_variant or "small").lower()
-        if self.model_variant not in {"small", "medium"}:
-            raise ValueError(f"Unsupported OCR model variant: {self.model_variant}")
 
     def __str__(self):
         return f"{self.name}"
@@ -175,9 +171,7 @@ class BaseCor:
         image = self.pre_process(image)
         # image = enlarge_canvas(image)
         # ocr
-        result, score = self.model.ocr_single_line(
-            image, model_variant=self.model_variant
-        )
+        result, score = self.model.ocr_single_line(image)
         if score < self.score:
             result = ""
         # after proces
@@ -205,9 +199,7 @@ class BaseCor:
         image = self.pre_process(image)
         # image = enlarge_canvas(image)
         # ocr
-        result, score = self.model.ocr_single_line(
-            image, model_variant=self.model_variant
-        )
+        result, score = self.model.ocr_single_line(image)
         contains_digit = any(char.isdigit() for char in result)
 
         if score >= self.score:
@@ -243,9 +235,7 @@ class BaseCor:
         # image = enlarge_canvas(image)
 
         # ocr
-        boxed_results: list[BoxedResult] = self.model.detect_and_ocr(
-            image, model_variant=self.model_variant, **kwargs
-        )
+        boxed_results: list[BoxedResult] = self.model.detect_and_ocr(image, **kwargs)
         results = []
         # after proces
         for result in boxed_results:

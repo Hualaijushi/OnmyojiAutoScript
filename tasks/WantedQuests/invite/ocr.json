@@ -5,7 +5,6 @@
     "roiBack": "240,185,190,340",
     "mode": "FULL",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "邀请好友界面 好友列表第一列"
   },
@@ -15,7 +14,6 @@
     "roiBack": "520,185,190,340",
     "mode": "FULL",
     "method": "Default",
-    "model_variant": "medium",
     "keyword": "",
     "description": "邀请好友界面 好友列表第二列"
   }

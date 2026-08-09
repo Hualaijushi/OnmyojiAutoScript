@@ -1,6 +1,3 @@
-import os
-import time
-
 import numpy as np
 from paddleocr import PaddleOCR
 
@@ -23,23 +20,16 @@ class TextSystem:
             unclip_ratio=1.6,
             rec_model_path=None,
             det_model_path=None,
-            ort_providers=None,
-            model_variant="small",
-            **_kwargs,
+            ort_providers=None
     ):
         # Map legacy parameter names to paddleocr 3.x parameters
         self._box_thresh = box_thresh
         self._unclip_ratio = unclip_ratio
         self._use_angle_cls = use_angle_cls
-        model_variant = str(model_variant).lower()
-        if model_variant not in {"small", "medium"}:
-            raise ValueError(f"Unsupported OCR model variant: {model_variant}")
-        model_prefix = f"PP-OCRv6_{model_variant}"
-
         self._ocr = PaddleOCR(
-            text_detection_model_name=f'{model_prefix}_det' if det_model_path is None else None,
+            text_detection_model_name='PP-OCRv6_medium_det' if det_model_path is None else None,
             text_detection_model_dir=det_model_path,
-            text_recognition_model_name=f'{model_prefix}_rec' if rec_model_path is None else None,
+            text_recognition_model_name='PP-OCRv6_medium_rec' if rec_model_path is None else None,
             text_recognition_model_dir=rec_model_path,
             engine='onnxruntime',
             use_doc_orientation_classify=False,

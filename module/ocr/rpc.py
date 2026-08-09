@@ -11,7 +11,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
 import zerorpc
@@ -19,6 +19,9 @@ import zerorpc
 from module.exception import ScriptError
 from module.logger import logger
 from module.ocr.common import BoxedResult, OcrLogger
+
+if TYPE_CHECKING:
+    from module.ocr.ppocr import TextSystem
 
 _OCR_SERVER_PROCESS: Optional[multiprocessing.Process] = None
 _OCR_CLIENT_CACHE: dict[str, "ModelProxy"] = {}
@@ -55,22 +58,12 @@ def _is_port_in_use(host: str, port: int) -> bool:
 @dataclass(slots=True)
 class OcrServerSettings:
     worker_count: int = 1
-    engine: str = "onnx"
-    model_variant: str = "small"
-    intra_op_threads: int = 2
-    inter_op_threads: int = 1
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "OcrServerSettings":
         if not data:
             return cls()
-        return cls(
-            worker_count=int(data.get("worker_count", 1)),
-            engine=str(data.get("engine", "onnx")).lower(),
-            model_variant=str(data.get("model_variant", "small")).lower(),
-            intra_op_threads=int(data.get("intra_op_threads", 2)),
-            inter_op_threads=int(data.get("inter_op_threads", 1)),
-        )
+        return cls(worker_count=int(data.get("worker_count", 1)))
 
 
 class OcrTaskScheduler:
@@ -136,11 +129,9 @@ class OcrRuntime:
             "loaded_worker_count": loaded_worker_count,
         }
 
-    def ocr_single_line(self, image_bytes: bytes, save_log: bool = False, model_variant: str | None = None):
+    def ocr_single_line(self, image_bytes: bytes, save_log: bool = False):
         image = self._decode_image(image_bytes)
-        return self._run_request(
-            self._ocr_single_line, image, save_log=bool(save_log), model_variant=model_variant
-        )
+        return self._run_request(self._ocr_single_line, image, save_log=bool(save_log))
 
     def detect_and_ocr(
         self,
@@ -150,7 +141,6 @@ class OcrRuntime:
         box_thresh: Optional[float] = None,
         vertical: bool = False,
         save_log: bool = False,
-        model_variant: str | None = None,
     ) -> List[Dict[str, Any]]:
         image = self._decode_image(image_bytes)
         return self._run_request(
@@ -161,7 +151,6 @@ class OcrRuntime:
             box_thresh=box_thresh,
             vertical=vertical,
             save_log=bool(save_log),
-            model_variant=model_variant,
         )
 
     def shutdown(self) -> bool:
@@ -198,38 +187,24 @@ class OcrRuntime:
             return np.rot90(image)
         return image
 
-    def _get_model(self, model_variant: str | None = None):
-        variant = str(model_variant or self.settings.model_variant).lower()
-        if variant not in {"small", "medium"}:
-            raise ValueError(f"Unsupported OCR model variant: {variant}")
-        models = getattr(self._thread_local, "models", None)
-        if models is None:
-            models = {}
-            self._thread_local.models = models
-        model = models.get(variant)
+    def _get_model(self) -> "TextSystem":
+        model = getattr(self._thread_local, "model", None)
         if model is None:
-            if self.settings.engine == "onnx":
-                from module.ocr.onnx_ppocr import TextSystem
-            elif self.settings.engine == "paddle":
-                from module.ocr.ppocr import TextSystem
-            else:
-                raise ValueError(f"Unsupported OCR engine: {self.settings.engine}")
-            model = TextSystem(
-                model_variant=variant,
-                intra_op_threads=self.settings.intra_op_threads,
-                inter_op_threads=self.settings.inter_op_threads,
-            )
-            models[variant] = model
-            worker_name = f"{threading.current_thread().name}:{variant}"
+            # PaddleOCR is imported only inside the OCR worker process. Script
+            # clients keep using the lightweight RPC proxy without importing
+            # the full inference framework into every account process.
+            from module.ocr.ppocr import TextSystem
+
+            model = TextSystem()
+            self._thread_local.model = model
+            worker_name = threading.current_thread().name
             with self._lock:
                 self._loaded_workers.add(worker_name)
             logger.info(f"OCR worker model loaded: {worker_name}")
         return model
 
-    def _ocr_single_line(
-        self, image: np.ndarray, save_log: bool = False, model_variant: str | None = None
-    ):
-        model = self._get_model(model_variant)
+    def _ocr_single_line(self, image: np.ndarray, save_log: bool = False):
+        model = self._get_model()
         OcrLogger.set_enabled(save_log)
         try:
             result, score = model.ocr_single_line(image)
@@ -245,9 +220,8 @@ class OcrRuntime:
         box_thresh: Optional[float] = None,
         vertical: bool = False,
         save_log: bool = False,
-        model_variant: str | None = None,
     ) -> List[Dict[str, Any]]:
-        model = self._get_model(model_variant)
+        model = self._get_model()
         OcrLogger.set_enabled(save_log)
         try:
             if vertical:
@@ -305,10 +279,6 @@ def _build_server_settings() -> dict[str, Any]:
     deploy_config = State.deploy_config
     return {
         "worker_count": int(deploy_config.OcrServerWorkerCount),
-        "engine": str(deploy_config.OcrEngine),
-        "model_variant": str(deploy_config.OcrModelVariant),
-        "intra_op_threads": int(deploy_config.OcrOrtIntraOpThreads),
-        "inter_op_threads": int(deploy_config.OcrOrtInterOpThreads),
     }
 
 
@@ -426,9 +396,9 @@ class ModelProxy:
     def get_server_info(self) -> dict[str, Any]:
         return self.client.get_server_info()
 
-    def ocr_single_line(self, image: np.ndarray, model_variant: str | None = None):
+    def ocr_single_line(self, image: np.ndarray):
         payload = pickle.dumps(image, protocol=4)
-        return self.client.ocr_single_line(payload, self.save_log, model_variant)
+        return self.client.ocr_single_line(payload, self.save_log)
 
     def detect_and_ocr(
         self,
@@ -437,11 +407,10 @@ class ModelProxy:
         unclip_ratio: Optional[float] = None,
         box_thresh: Optional[float] = None,
         vertical: bool = False,
-        model_variant: str | None = None,
     ):
         payload = pickle.dumps(image, protocol=4)
         results = self.client.detect_and_ocr(
-            payload, drop_score, unclip_ratio, box_thresh, vertical, self.save_log, model_variant
+            payload, drop_score, unclip_ratio, box_thresh, vertical, self.save_log
         )
         return [
             BoxedResult(np.array(item["box"]), None, item["ocr_text"], item["score"])
