@@ -640,9 +640,10 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         """根据进度条坐标向上映射到悬赏头像的安全点击区。"""
         _, progress_y, _, _ = progress_area
         list_x, list_y, list_width, _ = self.O_WQ_TEXT_ALL.roi
-        click_y = max(list_y, progress_y - 72)
+        # 在此前收紧下沿的基础上，将整个点击范围继续向北平移 20 像素。
+        click_y = max(list_y, progress_y - 92)
         # 收紧头像下沿，避免随机点击落到进度条或图标外。
-        click_bottom = max(click_y + 12, progress_y - 18)
+        click_bottom = max(click_y + 12, progress_y - 38)
         return [
             list_x + 5,
             click_y,
