@@ -259,5 +259,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "战斗组队退出页面标志"
+  },
+  {
+    "itemName": "gb_close_red",
+    "imageName": "gb_gb_close_red.png",
+    "roiFront": "1108,128,45,41",
+    "roiBack": "1108,128,45,41",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "时运加成关闭"
   }
 ]

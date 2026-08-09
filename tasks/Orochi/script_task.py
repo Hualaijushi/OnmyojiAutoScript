@@ -36,12 +36,45 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
     def _exit_matcher(self) -> ExitMatcher | None:
         return any_of(self.I_GI_EMOJI_1, self.I_GI_EMOJI_2, self.I_CHECK_EXPLORATION)
 
+    def _close_orochi_soul_choice_popup(self) -> bool:
+        """关闭八岐大蛇战斗结束后偶发出现的御魂自选活动界面。"""
+        if not self.appear_then_click(self.I_GB_CLOSE_RED, interval=0.8):
+            return False
+        logger.info('Close Orochi soul-choice event popup after battle')
+        return True
+
+    def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        if self._close_orochi_soul_choice_popup():
+            context.reward_no_battle_ts = None
+            return BattleAction.CONTINUE
+        return super()._handle_result(context, config)
+
     def _handle_reward(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        if self._close_orochi_soul_choice_popup():
+            context.reward_no_battle_ts = None
+            return BattleAction.CONTINUE
         # 无论胜利与否, 都会出现是否邀请一次队友, 区别在于, 失败的话不会出现那个勾选默认邀请的框
         if self.config.orochi.orochi_config.user_status == UserStatus.LEADER and \
             self.check_and_invite(self.config.orochi.invite_config.default_invite):
             return BattleAction.CONTINUE
         return super()._handle_reward(context, config)
+
+    def _handle_missing_battle_page(
+        self,
+        context: BattleContext,
+        config: GeneralBattleConfig,
+        exit_matcher: ExitMatcher | None,
+    ) -> BattleAction:
+        # 活动弹窗可能在结算页、奖励页或两者之间直接出现；覆盖页面后
+        # 通用识别通常会落入 unknown，因此必须在战后退出判断前关闭。
+        if self._close_orochi_soul_choice_popup():
+            context.reward_no_battle_ts = None
+            return BattleAction.CONTINUE
+        return super()._handle_missing_battle_page(
+            context,
+            config,
+            exit_matcher,
+        )
 
     def run(self) -> bool:
         self.switch_orochi_souls()
