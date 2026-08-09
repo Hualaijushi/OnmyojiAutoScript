@@ -70,13 +70,13 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 logger.info("get treasure")
                 self.ui_get_reward(self.I_E_REWARD_BOX_BIG)
                 continue
-            cu, re, total, self.O_WQ_TEXT_ALL.area = self.find_wq(
+            current, found, total, self.O_WQ_TEXT_ALL.area = self.find_wq(
                 self.device.image,
                 allow_edge_fallback=(
                     error_count >= self.WQ_LIST_MAX_SCROLLS
                 ),
             )
-            if re == -1:
+            if found == -1:
                 if error_count >= self.WQ_LIST_MAX_SCROLLS:
                     logger.warning(
                         'No unfinished wanted quest after scrolling '
@@ -95,7 +95,7 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                     sleep(1)
                 continue
             error_count = 0
-            self.execute_mission(total - cu)
+            self.execute_mission(total - current)
             sleep(1.5)
         self.next_run()
         raise TaskEnd('WantedQuests')
