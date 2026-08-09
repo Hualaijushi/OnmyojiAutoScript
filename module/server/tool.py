@@ -1260,6 +1260,7 @@ class AnnotatorManager:
             item_name = str(rule.get("itemName", "")).strip() or "unnamed"
             mode = str(rule.get("mode", field_default("ocr", "mode", "Single"))).strip() or field_default("ocr", "mode", "Single")
             method = str(rule.get("method", "Default")).strip() or "Default"
+            model_variant = str(rule.get("model_variant", "small")).strip().lower() or "small"
             keyword = str(rule.get("keyword", "")).strip()
             roi_front = self._parse_roi_tuple(str(rule.get("roiFront", "")))
             roi_back = self._parse_roi_tuple(str(rule.get("roiBack", "")))
@@ -1272,6 +1273,7 @@ class AnnotatorManager:
                 roi=roi_front,
                 area=roi_back,
                 keyword=keyword,
+                model_variant=model_variant,
             )
             detail = detect_ocr_detail(str(source_path), target)
             return {

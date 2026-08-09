@@ -8,7 +8,6 @@ from module.atom.image import RuleImage
 
 from pydantic import BaseModel, Field
 
-from tasks.Component.SwitchSoul.switch_soul_config import SwitchSoulConfig
 from tasks.Component.config_base import ConfigBase, Time
 from tasks.Component.config_scheduler import Scheduler
 from typing import List
@@ -131,4 +130,3 @@ class WantedQuestsConfig(BaseModel):
 class WantedQuests(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     wanted_quests_config: WantedQuestsConfig = Field(default_factory=WantedQuestsConfig)
-    switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)

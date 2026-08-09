@@ -186,13 +186,15 @@ class OcrExtractor:
         :return:
         """
         description: str = f'\t# {item["description"]} \n'
+        model_variant = str(item.get("model_variant", "small")).lower()
         name: str = f'\tO_{name_transform(item["itemName"])} = RuleOcr(' \
                     f'roi=({item["roiFront"]}), ' \
                     f'area=({item["roiBack"]}), ' \
                     f'mode="{item["mode"]}", ' \
                     f'method="{item["method"]}", ' \
                     f'keyword="{item["keyword"]}", ' \
-                    f'name="{item["itemName"]}")\n'
+                    f'name="{item["itemName"]}", ' \
+                    f'model_variant="{model_variant}")\n'
         return description + name
 
 

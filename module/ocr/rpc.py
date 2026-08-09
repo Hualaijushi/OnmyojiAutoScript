@@ -136,9 +136,11 @@ class OcrRuntime:
             "loaded_worker_count": loaded_worker_count,
         }
 
-    def ocr_single_line(self, image_bytes: bytes, save_log: bool = False):
+    def ocr_single_line(self, image_bytes: bytes, save_log: bool = False, model_variant: str | None = None):
         image = self._decode_image(image_bytes)
-        return self._run_request(self._ocr_single_line, image, save_log=bool(save_log))
+        return self._run_request(
+            self._ocr_single_line, image, save_log=bool(save_log), model_variant=model_variant
+        )
 
     def detect_and_ocr(
         self,
@@ -148,6 +150,7 @@ class OcrRuntime:
         box_thresh: Optional[float] = None,
         vertical: bool = False,
         save_log: bool = False,
+        model_variant: str | None = None,
     ) -> List[Dict[str, Any]]:
         image = self._decode_image(image_bytes)
         return self._run_request(
@@ -158,6 +161,7 @@ class OcrRuntime:
             box_thresh=box_thresh,
             vertical=vertical,
             save_log=bool(save_log),
+            model_variant=model_variant,
         )
 
     def shutdown(self) -> bool:
@@ -194,8 +198,15 @@ class OcrRuntime:
             return np.rot90(image)
         return image
 
-    def _get_model(self):
-        model = getattr(self._thread_local, "model", None)
+    def _get_model(self, model_variant: str | None = None):
+        variant = str(model_variant or self.settings.model_variant).lower()
+        if variant not in {"small", "medium"}:
+            raise ValueError(f"Unsupported OCR model variant: {variant}")
+        models = getattr(self._thread_local, "models", None)
+        if models is None:
+            models = {}
+            self._thread_local.models = models
+        model = models.get(variant)
         if model is None:
             if self.settings.engine == "onnx":
                 from module.ocr.onnx_ppocr import TextSystem
@@ -204,19 +215,21 @@ class OcrRuntime:
             else:
                 raise ValueError(f"Unsupported OCR engine: {self.settings.engine}")
             model = TextSystem(
-                model_variant=self.settings.model_variant,
+                model_variant=variant,
                 intra_op_threads=self.settings.intra_op_threads,
                 inter_op_threads=self.settings.inter_op_threads,
             )
-            self._thread_local.model = model
-            worker_name = threading.current_thread().name
+            models[variant] = model
+            worker_name = f"{threading.current_thread().name}:{variant}"
             with self._lock:
                 self._loaded_workers.add(worker_name)
             logger.info(f"OCR worker model loaded: {worker_name}")
         return model
 
-    def _ocr_single_line(self, image: np.ndarray, save_log: bool = False):
-        model = self._get_model()
+    def _ocr_single_line(
+        self, image: np.ndarray, save_log: bool = False, model_variant: str | None = None
+    ):
+        model = self._get_model(model_variant)
         OcrLogger.set_enabled(save_log)
         try:
             result, score = model.ocr_single_line(image)
@@ -232,8 +245,9 @@ class OcrRuntime:
         box_thresh: Optional[float] = None,
         vertical: bool = False,
         save_log: bool = False,
+        model_variant: str | None = None,
     ) -> List[Dict[str, Any]]:
-        model = self._get_model()
+        model = self._get_model(model_variant)
         OcrLogger.set_enabled(save_log)
         try:
             if vertical:
@@ -412,9 +426,9 @@ class ModelProxy:
     def get_server_info(self) -> dict[str, Any]:
         return self.client.get_server_info()
 
-    def ocr_single_line(self, image: np.ndarray):
+    def ocr_single_line(self, image: np.ndarray, model_variant: str | None = None):
         payload = pickle.dumps(image, protocol=4)
-        return self.client.ocr_single_line(payload, self.save_log)
+        return self.client.ocr_single_line(payload, self.save_log, model_variant)
 
     def detect_and_ocr(
         self,
@@ -423,10 +437,11 @@ class ModelProxy:
         unclip_ratio: Optional[float] = None,
         box_thresh: Optional[float] = None,
         vertical: bool = False,
+        model_variant: str | None = None,
     ):
         payload = pickle.dumps(image, protocol=4)
         results = self.client.detect_and_ocr(
-            payload, drop_score, unclip_ratio, box_thresh, vertical, self.save_log
+            payload, drop_score, unclip_ratio, box_thresh, vertical, self.save_log, model_variant
         )
         return [
             BoxedResult(np.array(item["box"]), None, item["ocr_text"], item["score"])

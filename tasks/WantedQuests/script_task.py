@@ -1,6 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import re
 from datetime import timedelta, time, datetime
 from time import sleep
 
@@ -26,6 +27,9 @@ from tasks.WantedQuests.explore import WQExplore, ExploreWantedBoss
 
 
 class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
+    WQ_LIST_MAX_SCROLLS = 4
+    WQ_LIST_EDGE_MARGIN = 80
+
     # 追踪界面(显示"前往"按钮的界面,左上角位置,神秘任务不好使)显示以下名称时,任务不再执行
     unwanted_boss_name_list: list = []
     # 已经执行过的悬赏封印(仅记录执行过的, 不一定成功运行)
@@ -35,16 +39,10 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         con = self.config.model.wanted_quests
         unwanted_boss_names = con.wanted_quests_config.unwanted_boss_names
         if unwanted_boss_names is not None and unwanted_boss_names != '':
-            import re
             self.unwanted_boss_name_list = re.split(r"[，,]", unwanted_boss_names)
 
-        # 自动换御魂
-        if con.switch_soul_config.enable:
-            self.goto_page(page_shikigami_records)
-            self.run_switch_soul(con.switch_soul_config.switch_group_team)
-        if con.switch_soul_config.enable_switch_by_name:
-            self.goto_page(page_shikigami_records)
-            self.run_switch_soul_by_name(con.switch_soul_config.group_name, con.switch_soul_config.team_name)
+        # 悬赏会使用探索和秘闻战斗，御魂直接复用这两个任务的预设。
+        self.switch_mission_souls()
 
         preSuc = False
         if (self.get_config()).cooperation_only:
@@ -72,23 +70,54 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 logger.info("get treasure")
                 self.ui_get_reward(self.I_E_REWARD_BOX_BIG)
                 continue
-            if error_count > 3:
-                logger.warning('failed too many times, exit')
-                break
-            cu, re, total, self.O_WQ_TEXT_ALL.area = self.find_wq(self.device.image)
+            cu, re, total, self.O_WQ_TEXT_ALL.area = self.find_wq(
+                self.device.image,
+                allow_edge_fallback=(
+                    error_count >= self.WQ_LIST_MAX_SCROLLS
+                ),
+            )
             if re == -1:
+                if error_count >= self.WQ_LIST_MAX_SCROLLS:
+                    logger.warning(
+                        'No unfinished wanted quest after scrolling '
+                        f'{self.WQ_LIST_MAX_SCROLLS} times, exit'
+                    )
+                    break
                 error_count += 1
-                # 没找到任务 尝试上滑
+                # 当前画面没有可靠候选，保留原逻辑：手指上滑以继续浏览列表下方。
                 self.swipe(self.S_WQ_LIST_UP, interval=1)
                 sleep(1)
                 continue
-            error_count = 0
             if not self.open_wq_info():
+                error_count += 1
+                if error_count <= self.WQ_LIST_MAX_SCROLLS:
+                    self.swipe(self.S_WQ_LIST_UP, interval=1)
+                    sleep(1)
                 continue
+            error_count = 0
             self.execute_mission(total - cu)
             sleep(1.5)
         self.next_run()
         raise TaskEnd('WantedQuests')
+
+    def switch_mission_souls(self) -> None:
+        """为悬赏装配探索与秘闻任务已配置的御魂预设。"""
+        soul_configs = (
+            ('Exploration', self.config.model.exploration.switch_soul_config),
+            ('Secret', self.config.model.secret.switch_soul),
+        )
+        for task_name, soul_config in soul_configs:
+            if soul_config.enable:
+                logger.info(f'Wanted quests use {task_name} soul preset')
+                self.goto_page(page_shikigami_records)
+                self.run_switch_soul(soul_config.switch_group_team)
+            if soul_config.enable_switch_by_name:
+                logger.info(f'Wanted quests use {task_name} named soul preset')
+                self.goto_page(page_shikigami_records)
+                self.run_switch_soul_by_name(
+                    soul_config.group_name,
+                    soul_config.team_name,
+                )
 
     def open_wq_info(self) -> bool:
         """打开对应怪物悬赏详情界面"""
@@ -324,7 +353,6 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             return None
         wq_info_txt = info_rule.ocr(self.device.image)
         wq_info_txt = wq_info_txt.replace('：', ':').replace('（', '(').replace('）', ')')
-        import re
         match = re.search(r"(.+?)\s*\(?[数教]量[:：]\s*(\d+)", wq_info_txt)
         if not match:
             logger.warning(f'Unknown wq info: {wq_info_txt}')
@@ -587,68 +615,171 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         ismatch = regex.match(res)
         return ismatch is not None
 
-    def find_wq(self, img) -> tuple[int, int, int, List[int]]:
+    @staticmethod
+    def _wq_box_xywh(box) -> List[int]:
+        """将 OCR 的四点坐标转换为相对 OCR 截图的 xywh。"""
+        xs = [int(point[0]) for point in box]
+        ys = [int(point[1]) for point in box]
+        x1, x2 = min(xs), max(xs)
+        y1, y2 = min(ys), max(ys)
+        return [x1, y1, x2 - x1, y2 - y1]
+
+    @staticmethod
+    def _normalize_wq_list_text(text: str) -> str:
+        """清理列表 OCR 文本，保留进度分隔符的容错字符 7。"""
+        return ''.join(str(text).split()).replace('／', '/')
+
+    @staticmethod
+    def _has_wq_label_hint(text: str) -> bool:
+        """完整或被底部裁切的“悬赏封印”都可作为局部归属证据。"""
+        if '悬赏' in text or '封印' in text:
+            return True
+        return re.search(r'[封野][印卬]', text) is not None
+
+    def _wq_icon_click_area(self, progress_area: List[int]) -> List[int]:
+        """根据进度条坐标向上映射到悬赏头像的安全点击区。"""
+        _, progress_y, _, _ = progress_area
+        list_x, list_y, list_width, _ = self.O_WQ_TEXT_ALL.roi
+        click_y = max(list_y, progress_y - 72)
+        click_bottom = max(click_y + 12, progress_y - 8)
+        return [
+            list_x + 5,
+            click_y,
+            max(12, list_width - 10),
+            click_bottom - click_y,
+        ]
+
+    def find_wq(
+        self,
+        img,
+        *,
+        allow_edge_fallback: bool = False,
+    ) -> tuple[int, int, int, List[int]]:
         """
-        在探索页面从悬赏列表中找到可以执行的任务, 自动过滤已完成的任务(根据下方数字判断, 例12/12)
+        在探索页面定位未完成的悬赏卡位。
+
+        新逻辑先找进度，再用同一卡位附近的“悬赏/封印”文字确认归属，
+        避免将真八岐大蛇等其他左侧入口误当成悬赏。靠近底部的卡位先
+        通过外层翻页移到完整区域；连续翻页仍无法完整显示时才启用边缘保底。
 
         :param img: 当前截图
-        :return: (已完成数量, 剩余数量, 总数量, roi列表)
+        :param allow_edge_fallback: 已连续翻页到下方时，允许点击文字裁切的底部卡位
+        :return: (已完成数量, 有效标记, 总数量, 头像点击 roi)
         """
-
-        def calc_xywh(box) -> List[int]:
-            """计算最终ocr文本位于整张截图的roi(因为detect_and_ocr返回的位置是基于截取之后的图像的位置,所以需要拼接)"""
-            rec_x, rec_y, rec_w, rec_h = box[0, 0], box[0, 1], box[1, 0] - box[0, 0], box[2, 1] - box[0, 1]
-            x = rec_x + self.O_WQ_TEXT_ALL.roi[0]
-            y = rec_y + self.O_WQ_TEXT_ALL.roi[1]
-            w = rec_w
-            h = rec_h
-            return [x, y, w, h]
-
         res_list = self.O_WQ_TEXT_ALL.detect_and_ocr(img)
-        import re
-        reg_time = re.compile(r'^D?([01]?[0-9]|2[0-3]):([0-5]?[0-9]):?([0-5]?[0-9])?$')
-        reg_fengyin = re.compile(r'.*[封|野]印.*')
-        # 由于斜杠'/'经常被误识别为'7',且悬赏封印悬赏怪物总数没有与‘7’相关的数字
-        reg_progress = re.compile(r'^(\d+)([7/])(\d+)$')
-        # 没有检测到斜杠，符合格式：前N位与后N位相同,表示已完成
-        reg_XX = re.compile(r'^(\d+)\1$')
-        # 过滤掉协或者未知悬赏等其他无用字符
-        reg_other = re.compile(r'[?？协边]')
-        for index, res in enumerate(res_list):
-            if reg_fengyin.match(res.ocr_text):
+        progress_pattern = re.compile(
+            r'(?<!\d)(\d{1,2})([7/])(\d{1,2})(?!\d)'
+        )
+        roi_x, roi_y, _, roi_height = self.O_WQ_TEXT_ALL.roi
+        safe_progress_bottom = (
+            roi_y + roi_height - self.WQ_LIST_EDGE_MARGIN
+        )
+
+        ocr_items = []
+        for result in res_list:
+            relative_area = self._wq_box_xywh(result.box)
+            absolute_area = [
+                relative_area[0] + roi_x,
+                relative_area[1] + roi_y,
+                relative_area[2],
+                relative_area[3],
+            ]
+            ocr_items.append((
+                self._normalize_wq_list_text(result.ocr_text),
+                absolute_area,
+            ))
+
+        confirmed_candidates = []
+        edge_candidates = []
+        for text, progress_area in ocr_items:
+            match = progress_pattern.search(text)
+            if not match:
                 continue
-            if reg_time.match(res.ocr_text):
+            current, total = int(match.group(1)), int(match.group(3))
+            if total <= 0 or total > 14 or current > total:
+                logger.warning(
+                    'Ignore abnormal wanted quest progress: '
+                    f'{text}'
+                )
                 continue
-            if reg_other.match(res.ocr_text) is not None:
+            if current == total:
                 continue
-            if match := reg_progress.match(res.ocr_text):
-                spliter_index = match.start(2)
-                xywh = calc_xywh(res.box)
-                cu, re, total = int(res.ocr_text[:spliter_index]), 1, int(res.ocr_text[spliter_index + 1:])
-                # 识别结果规范性检查
-                if total > 14:
-                    logger.warning("Total number of wanted quests is greater than 14")
-                    total = total % 10
-                if cu > total:
-                    logger.warning('Current number of wanted quests is greater than total number')
-                    cu = cu % 10
-                if cu == total:
-                    # 该任务已完成，一般是悬赏任务，邀请人没有做导致的
-                    continue
-                logger.info(f'find wq {res.ocr_text} @ {xywh}')
-                return cu, re, total, xywh
-            # 例如：1414 66 1212
-            if reg_XX.match(res.ocr_text):
-                continue
+
+            progress_top = progress_area[1]
+            progress_bottom = progress_top + progress_area[3]
+            label_confirmed = self._has_wq_label_hint(text)
+            if not label_confirmed:
+                for nearby_text, nearby_area in ocr_items:
+                    if not self._has_wq_label_hint(nearby_text):
+                        continue
+                    nearby_top = nearby_area[1]
+                    nearby_bottom = nearby_top + nearby_area[3]
+                    if (
+                        nearby_bottom >= progress_top - 12
+                        and nearby_top <= progress_bottom + 82
+                    ):
+                        label_confirmed = True
+                        break
+
+            candidate = (
+                progress_top,
+                current,
+                total,
+                self._wq_icon_click_area(progress_area),
+                text,
+            )
+            if progress_top >= safe_progress_bottom:
+                # 最底一项即使识别到局部文字，也先翻页将其移入完整区域。
+                edge_candidates.append(candidate)
+            elif label_confirmed:
+                confirmed_candidates.append(candidate)
+
+        candidates = confirmed_candidates
+        if not candidates and allow_edge_fallback:
+            candidates = edge_candidates
+            if candidates:
+                logger.warning(
+                    'Use cropped bottom wanted quest as fallback after '
+                    'list scrolling'
+                )
+        if candidates:
+            _, current, total, click_area, raw_text = min(
+                candidates,
+                key=lambda item: item[0],
+            )
+            logger.info(
+                f'Find wanted quest progress {raw_text}: '
+                f'{current}/{total}, click={click_area}'
+            )
+            return current, 1, total, click_area
         return -1, -1, -1, [0, 0, 0, 0]
 
     def is_wq_remained(self):
-        # 检测是否还存在任务
-        return self.appear(self.O_WQ_LIST_CHECK)
+        """检测是否仍有悬赏；兼容列表底部仅剩裁切卡位。"""
+        if self.appear(self.O_WQ_LIST_CHECK):
+            return True
+        progress_pattern = re.compile(
+            r'(?<!\d)(\d{1,2})([7/])(\d{1,2})(?!\d)'
+        )
+        for result in self.O_WQ_TEXT_ALL.detect_and_ocr(
+            self.device.image,
+            logDisplay=False,
+        ):
+            text = self._normalize_wq_list_text(result.ocr_text)
+            match = progress_pattern.search(text)
+            if not match:
+                continue
+            current, total = int(match.group(1)), int(match.group(3))
+            if 0 <= current < total <= 14:
+                logger.info(
+                    'Wanted quest remains by cropped progress fallback: '
+                    f'{current}/{total}'
+                )
+                return True
+        return False
 
 
 if __name__ == '__main__':
-    import re
     # 原始版本
     strict_pattern = re.compile(r"^(.+?)\(?[数教]量:\s*(\d+)\)?$")
     # OCR容错版本

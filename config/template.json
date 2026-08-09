@@ -594,13 +594,6 @@
       "battle_priority": "挑战 > 秘闻 > 探索",
       "cooperation_only": false,
       "unwanted_boss_names": "酒吞童子,阎魔"
-    },
-    "switch_soul_config": {
-      "enable": false,
-      "switch_group_team": "-1,-1",
-      "enable_switch_by_name": false,
-      "group_name": "",
-      "team_name": ""
     }
   },
   "tako": {
