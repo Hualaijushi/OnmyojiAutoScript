@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import atexit
 import multiprocessing
+import os
 import pickle
 import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
@@ -26,6 +28,48 @@ if TYPE_CHECKING:
 _OCR_SERVER_PROCESS: Optional[multiprocessing.Process] = None
 _OCR_CLIENT_CACHE: dict[str, "ModelProxy"] = {}
 _OCR_LOGGING_ENABLED = False
+
+_BUNDLED_MODEL_DIRS = (
+    "PP-OCRv6_medium_det_onnx",
+    "PP-OCRv6_medium_rec_onnx",
+)
+_BUNDLED_MODEL_FILES = (
+    "inference.json",
+    "inference.onnx",
+    "inference.yml",
+)
+_OCR_STARTUP_TIMEOUT_SECONDS = 90.0
+
+
+def _configure_bundled_paddlex_cache() -> Path | None:
+    """Use models shipped in ``toolkit/.paddlex`` when they are complete.
+
+    PaddleX otherwise stores and downloads official models under the current
+    user's profile.  The easy-install release is intended to be portable, so
+    it carries the two medium OCR models beside its Python runtime instead.
+    Environment variables must be set before importing PaddleOCR/PaddleX.
+    """
+    cache_home = Path(__file__).resolve().parents[2] / "toolkit" / ".paddlex"
+    official_models = cache_home / "official_models"
+    missing = [
+        str(Path(model_dir) / filename)
+        for model_dir in _BUNDLED_MODEL_DIRS
+        for filename in _BUNDLED_MODEL_FILES
+        if not (official_models / model_dir / filename).is_file()
+    ]
+    if missing:
+        if cache_home.exists():
+            logger.warning(
+                "Bundled PaddleOCR models are incomplete; fallback to the "
+                f"default PaddleX cache (missing={missing})"
+            )
+        return None
+
+    os.environ["PADDLE_PDX_CACHE_HOME"] = str(cache_home)
+    # No hoster connectivity checks are needed when all required files exist.
+    os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+    logger.info(f"Use bundled PaddleOCR models: {official_models}")
+    return cache_home
 
 
 def _normalize_address(address: str) -> str:
@@ -155,6 +199,14 @@ class OcrRuntime:
 
     def shutdown(self) -> bool:
         self._scheduler.shutdown()
+        return True
+
+    def warmup(self) -> bool:
+        """Load the model on the worker before accepting RPC requests."""
+        logger.info("Warming up OCR worker model")
+        future = self._scheduler.submit(self._get_model)
+        future.result()
+        logger.info("OCR worker model warmup completed")
         return True
 
     def _run_request(self, func, *args, **kwargs):
@@ -312,11 +364,21 @@ def ensure_ocr_server_started() -> bool:
     )
     _OCR_SERVER_PROCESS.start()
     logger.info(f"Start OCR server on {host}:{port}")
-    for _ in range(50):
+    deadline = time.monotonic() + _OCR_STARTUP_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
         if _is_port_in_use("127.0.0.1", port):
             return True
+        if not _OCR_SERVER_PROCESS.is_alive():
+            logger.error(
+                "OCR server exited during model warmup, "
+                f"exit_code={_OCR_SERVER_PROCESS.exitcode}"
+            )
+            return False
         time.sleep(0.1)
-    logger.error(f"OCR server is not ready on port {port}")
+    logger.error(
+        f"OCR server is not ready on port {port} after "
+        f"{_OCR_STARTUP_TIMEOUT_SECONDS:.0f}s"
+    )
     return False
 
 
@@ -366,6 +428,7 @@ def shutdown_ocr_server(timeout: float = 2.0) -> bool:
 
 
 def run_ocr_server(host: str, port: int, settings: dict[str, Any] | None = None) -> None:
+    _configure_bundled_paddlex_cache()
     # Import onnxruntime BEFORE zerorpc initializes gevent.
     # gevent's monkey-patching interferes with onnxruntime's C extension
     # DLL initialization on Windows, causing ImportError.
@@ -373,6 +436,7 @@ def run_ocr_server(host: str, port: int, settings: dict[str, Any] | None = None)
     runtime = OcrRuntime(settings=settings)
     server = zerorpc.Server(runtime)
     try:
+        runtime.warmup()
         server.bind(f"tcp://{host}:{port}")
         server.run()
     finally:
