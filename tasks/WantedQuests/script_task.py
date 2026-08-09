@@ -641,7 +641,8 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         _, progress_y, _, _ = progress_area
         list_x, list_y, list_width, _ = self.O_WQ_TEXT_ALL.roi
         click_y = max(list_y, progress_y - 72)
-        click_bottom = max(click_y + 12, progress_y - 8)
+        # 收紧头像下沿，避免随机点击落到进度条或图标外。
+        click_bottom = max(click_y + 12, progress_y - 18)
         return [
             list_x + 5,
             click_y,
