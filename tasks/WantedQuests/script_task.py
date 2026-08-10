@@ -636,21 +636,6 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             return True
         return re.search(r'[封野][印卬]', text) is not None
 
-    def _wq_icon_click_area(self, progress_area: List[int]) -> List[int]:
-        """根据进度条坐标向上映射到悬赏头像的安全点击区。"""
-        _, progress_y, _, _ = progress_area
-        list_x, list_y, list_width, _ = self.O_WQ_TEXT_ALL.roi
-        # 在此前收紧下沿的基础上，将整个点击范围继续向北平移 20 像素。
-        click_y = max(list_y, progress_y - 92)
-        # 收紧头像下沿，避免随机点击落到进度条或图标外。
-        click_bottom = max(click_y + 12, progress_y - 38)
-        return [
-            list_x + 5,
-            click_y,
-            max(12, list_width - 10),
-            click_bottom - click_y,
-        ]
-
     def find_wq(
         self,
         img,
@@ -666,7 +651,7 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
 
         :param img: 当前截图
         :param allow_edge_fallback: 已连续翻页到下方时，允许点击文字裁切的底部卡位
-        :return: (已完成数量, 有效标记, 总数量, 头像点击 roi)
+        :return: (已完成数量, 有效标记, 总数量, 进度文字点击 roi)
         """
         res_list = self.O_WQ_TEXT_ALL.detect_and_ocr(img)
         progress_pattern = re.compile(
@@ -727,7 +712,7 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 progress_top,
                 current,
                 total,
-                self._wq_icon_click_area(progress_area),
+                progress_area,
                 text,
             )
             if progress_top >= safe_progress_bottom:
