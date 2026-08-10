@@ -176,9 +176,13 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
             text = ''.join(str(result.ocr_text or '').split())
             if not text:
                 continue
-            layer = self.match_layer.get(text[0])
-            if layer is None:
+            layer_text = next(
+                (char for char in text if char in self.match_layer),
+                None,
+            )
+            if layer_text is None:
                 continue
+            layer = self.match_layer[layer_text]
 
             points = result.box
             title_left = roi_x + min(int(point[0]) for point in points)
