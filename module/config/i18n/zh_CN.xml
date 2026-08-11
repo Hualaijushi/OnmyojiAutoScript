@@ -418,6 +418,11 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 	<message><source>limit_count_help</source><translation>两个限制需要同时设置，最先达到就会退出。
 建议执行时间设置成一个小时足够长，此时基于次数来判定设置为100次</translation></message>
 	<message><source>GeneralClimb</source><translation>通用爬塔</translation></message>
+	<message><source>Ap Limit</source><translation>体力战斗次数</translation></message>
+	<message><source>Boss Limit</source><translation>首领战斗次数</translation></message>
+	<message><source>Run Sequence</source><translation>运行顺序</translation></message>
+	<message><source>Ap Battle Conf</source><translation>体力战斗配置</translation></message>
+	<message><source>Boss Battle Conf</source><translation>首领战斗配置</translation></message>
 	<message><source>Ap Game Max</source><translation>活动每日使用体力挑战的最大次数</translation></message>
 	<message><source>ap_game_max_help</source><translation>保持默认300即可</translation></message>
 	<message><source>ApMode</source><translation>挂体力模式</translation></message>
@@ -555,6 +560,14 @@ mode_3策略是刷到五个契灵后开始结契，选择高级、中级盘来�
 <context>
     <name>Args</name>
 	<message><source>SwitchSoulConfig</source><translation>执行任务前切换御魂</translation></message>	
+	<message><source>Enable Switch Ap</source><translation>切换体力战御魂</translation></message>
+	<message><source>Ap Group Team</source><translation>体力战预设组号,队伍号</translation></message>
+	<message><source>Enable Switch Ap By Name</source><translation>按名称切换体力战御魂</translation></message>
+	<message><source>Ap Group Team Name</source><translation>体力战预设组名,队伍名</translation></message>
+	<message><source>Enable Switch Boss</source><translation>切换首领战御魂</translation></message>
+	<message><source>Boss Group Team</source><translation>首领战预设组号,队伍号</translation></message>
+	<message><source>Enable Switch Boss By Name</source><translation>按名称切换首领战御魂</translation></message>
+	<message><source>Boss Group Team Name</source><translation>首领战预设组名,队伍名</translation></message>
 	<message><source>Switch Group Team</source><translation>御魂装配分组设置</translation></message>
 	<message><source>switch_group_team_help</source><translation>初始值是不合适的，你需要根据自己的情况设置
 "1,2"表示第一个预设组，第二个队伍

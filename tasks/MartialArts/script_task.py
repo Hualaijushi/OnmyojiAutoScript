@@ -1,45 +1,46 @@
 # This Python file uses the following encoding: utf-8
-"""武道大会日常训练（体力模式）战斗循环。"""
+"""武道大会战斗任务。"""
 
 import time
-from datetime import datetime
 
 from cached_property import cached_property
 
 from module.base.timer import Timer
 from module.exception import TaskEnd
 from module.logger import logger
+from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 from tasks.MartialArts.assets import MartialArtsAssets
 from tasks.MartialArts.config import MartialArts
 import tasks.MartialArts.page as pages
 
 
-class ScriptTask(GeneralBattle, GameUi, MartialArtsAssets):
+class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
     AP_COST = 30
     TICKET_COST = 1
     RESOURCE_OCR_RETRIES = 3
     ENTER_BATTLE_TIMEOUT = 20
+
+    battle_type = 'ap'
 
     @cached_property
     def conf(self) -> MartialArts:
         return self.config.model.martial_arts
 
     def _exit_matcher(self):
-        """结算完成并重新出现挑战按钮时，视为已回到日常训练页面。"""
-        return self.I_MAR_FIRE_AP
+        """体力战结算完成并重新出现挑战按钮时，视为已返回日常训练。"""
+        if self.battle_type == 'ap':
+            return self.I_MAR_FIRE_AP
+        return None
 
     def before_run(self):
-        self.limit_time = self.conf.martial_arts_config.limit_time_v
-        self.limit_count = self.conf.martial_arts_config.battle_count
-        logger.info(
-            f'MartialArts limits: count={self.limit_count}, '
-            f'time={self.limit_time.total_seconds():.0f}s'
-        )
+        sequence = self.conf.general_climb.run_sequence_v
+        logger.info(f'MartialArts run sequence: {sequence}')
 
     def enter_ap_battle(self):
-        """从任意已知页面导航至武道大会日常训练（体力战斗）页面。"""
+        """从任意已知页面导航至武道大会日常训练页面。"""
         logger.hr('Enter MartialArts AP battle page', 2)
         self.goto_page(pages.page_martial_arts_ap)
         logger.info('Entered MartialArts AP battle page')
@@ -86,17 +87,37 @@ class ScriptTask(GeneralBattle, GameUi, MartialArtsAssets):
         )
         return enough
 
-    def lock_team(self):
-        """根据通用战斗配置锁定或解锁日常训练阵容。"""
-        if self.conf.battle_conf.lock_team_enable:
-            logger.info('Lock MartialArts AP team')
+    def switch_soul_before_battle(self, battle_type: str):
+        """按体力战/首领战各自配置，在该类型首次执行前切换御魂。"""
+        conf = self.conf.switch_soul_config
+        enable_number = getattr(conf, f'enable_switch_{battle_type}')
+        enable_name = getattr(conf, f'enable_switch_{battle_type}_by_name')
+        if not enable_number and not enable_name:
+            return
+
+        conf.validate_switch_soul()
+        logger.hr(f'Switch MartialArts {battle_type} soul', 2)
+        self.ui_click(self.I_BATTLE_MAIN_TO_RECORDS, stop=self.I_CHECK_RECORDS, interval=1)
+        if enable_name:
+            group, team = getattr(conf, f'{battle_type}_group_team_name').split(',')
+            self.run_switch_soul_by_name(group, team)
+        else:
+            self.run_switch_soul(getattr(conf, f'{battle_type}_group_team'))
+
+        if battle_type == 'ap':
+            self.goto_page(pages.page_martial_arts_ap)
+
+    def lock_team(self, battle_conf: GeneralBattleConfig):
+        """根据当前战斗类型配置锁定或解锁阵容。"""
+        if battle_conf.lock_team_enable:
+            logger.info(f'Lock MartialArts {self.battle_type} team')
             self.ui_click(self.I_AP_UNLOCK, stop=self.I_AP_LOCK, interval=1.5)
             return
-        logger.info('Unlock MartialArts AP team')
+        logger.info(f'Unlock MartialArts {self.battle_type} team')
         self.ui_click(self.I_AP_LOCK, stop=self.I_AP_UNLOCK, interval=1.5)
 
     def enter_battle(self) -> bool:
-        """点击挑战并等待进入通用准备/战斗页面。"""
+        """点击体力挑战并等待进入通用准备/战斗页面。"""
         timer = Timer(self.ENTER_BATTLE_TIMEOUT).start()
         click_count = 0
         while not timer.reached():
@@ -118,48 +139,46 @@ class ScriptTask(GeneralBattle, GameUi, MartialArtsAssets):
         logger.warning(f'Cannot enter MartialArts battle within {self.ENTER_BATTLE_TIMEOUT}s')
         return False
 
-    def run_battle_round(self) -> bool:
-        """执行一轮挑战并等待结算返回日常训练页面。"""
+    def run_battle_round(self, battle_conf: GeneralBattleConfig) -> bool:
+        """执行一轮体力挑战并等待结算返回日常训练页面。"""
         if not self.enter_battle():
             return False
         win = self.run_general_battle(
-            self.conf.battle_conf,
+            battle_conf,
             battle_key='martial_arts_ap',
             exit_matcher=self.I_MAR_FIRE_AP,
         )
-        logger.info(f'MartialArts battle {self.current_count} result: {"win" if win else "lose"}')
+        logger.info(f'MartialArts AP battle {self.current_count} result: {"win" if win else "lose"}')
         return True
 
-    def limit_reached(self) -> bool:
-        if self.limit_count <= 0:
-            logger.info('MartialArts battle count is 0, stop task')
-            return True
-        if self.current_count >= self.limit_count:
-            logger.info(f'MartialArts battle count reached: {self.current_count}/{self.limit_count}')
-            return True
-        elapsed = datetime.now() - self.start_time
-        if elapsed >= self.limit_time:
-            logger.info(
-                f'MartialArts time limit reached: '
-                f'{elapsed.total_seconds():.1f}/{self.limit_time.total_seconds():.1f}s'
-            )
-            return True
-        return False
+    def run_ap_battles(self):
+        """按体力战配置执行完整循环。"""
+        self.battle_type = 'ap'
+        self.current_count = 0
+        limit = self.conf.general_climb.ap_limit
+        battle_conf = self.conf.ap_battle_conf
 
-    def run(self):
-        self.before_run()
         self.enter_ap_battle()
-        self.lock_team()
-
-        while not self.limit_reached():
+        self.switch_soul_before_battle('ap')
+        self.lock_team(battle_conf)
+        while self.current_count < limit:
             self.goto_page(pages.page_martial_arts_ap)
             if not self.resources_enough():
                 logger.info('MartialArts resources are insufficient, stop AP battles')
                 break
-            if not self.run_battle_round():
+            if not self.run_battle_round(battle_conf):
                 break
+        logger.info(f'MartialArts AP battles finished: {self.current_count}/{limit}')
 
-        logger.info(f'MartialArts AP battles finished, total count: {self.current_count}')
+    def run(self):
+        self.before_run()
+        for battle_type in self.conf.general_climb.run_sequence_v:
+            if battle_type == 'ap':
+                self.run_ap_battles()
+                continue
+            if battle_type == 'boss':
+                logger.warning('MartialArts boss battle is configured but not implemented yet, skip')
+
         self.goto_page(pages.page_main)
         self.set_next_run(task='MartialArts', success=True, finish=True)
         raise TaskEnd('MartialArts')
