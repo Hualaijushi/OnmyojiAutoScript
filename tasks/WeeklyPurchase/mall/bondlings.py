@@ -7,16 +7,16 @@ from module.logger import logger
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 
-from tasks.RichMan.mall.navbar import MallNavbar
+from tasks.WeeklyPurchase.mall.navbar import MallNavbar
 from tasks.Component.Buy.buy import Buy
-from tasks.RichMan.config import Bondlings as BondlingsConfig
+from tasks.WeeklyPurchase.config import Bondlings as BondlingsConfig
 
 
 class Bondlings(Buy, MallNavbar):
 
     def execute_bondlings(self, con: BondlingsConfig = None):
         if not con:
-            con = self.config.rich_man.bondlings
+            con = self.config.weekly_purchase.bondlings
         if not con.enable:
             logger.info('Bondlings is disable')
             return

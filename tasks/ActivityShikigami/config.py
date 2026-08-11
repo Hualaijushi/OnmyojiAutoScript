@@ -145,21 +145,12 @@ class SwitchSoulConfig(BaseModel):
                 field.startswith("enable_switch_") and not field.endswith("by_name")}
 
 
-class RichManConfig(ConfigBase):
-    buy_ap: bool = Field(default=False, description='是否购买体力')
-    buy_reward: bool = Field(default=False, description='是否购买奖励积分')
-    buy_ticket: bool = Field(default=False, description='是否购买定向骰子')
-
-
 class ActivityShikigami(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     general_climb: GeneralClimb = Field(default_factory=GeneralClimb)
-    rich_man: RichManConfig = Field(default_factory=RichManConfig)
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
 
     pass_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     ap_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     boss_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     ap100_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
-
-    hide_fields = dynamic_hide('rich_man')

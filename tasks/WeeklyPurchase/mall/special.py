@@ -8,17 +8,17 @@ from module.logger import logger
 from module.atom.image import RuleImage
 
 from tasks.GameUi.page import page_main, page_guild
-from tasks.RichMan.mall.navbar import MallNavbar
+from tasks.WeeklyPurchase.mall.navbar import MallNavbar
 from tasks.Component.Buy.buy import Buy
-from tasks.RichMan.assets import RichManAssets
-from tasks.RichMan.config import SpecialRoom
+from tasks.WeeklyPurchase.assets import WeeklyPurchaseAssets
+from tasks.WeeklyPurchase.config import SpecialRoom
 
 
 class Special(Buy, MallNavbar):
 
     def execute_special(self, con: SpecialRoom = None):
         if not con:
-            con = self.config.rich_man.special_room
+            con = self.config.weekly_purchase.special_room
         if not con.enable:
             logger.info('Special room is not enable')
             return

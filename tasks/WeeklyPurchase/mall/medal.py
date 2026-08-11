@@ -8,16 +8,16 @@ from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
 from tasks.GameUi.game_ui import GameUi
 from tasks.Component.Buy.buy import Buy
-from tasks.RichMan.assets import RichManAssets
-from tasks.RichMan.config import MedalRoom
-from tasks.RichMan.mall.friendship_points import FriendshipPoints
+from tasks.WeeklyPurchase.assets import WeeklyPurchaseAssets
+from tasks.WeeklyPurchase.config import MedalRoom
+from tasks.WeeklyPurchase.mall.friendship_points import FriendshipPoints
 
 
 class Medal(FriendshipPoints):
 
     def execute_medal(self, con: MedalRoom = None):
         if not con:
-            con = self.config.rich_man.medal_room
+            con = self.config.weekly_purchase.medal_room
         if not con.enable:
             logger.info('Medal is not enable')
             return

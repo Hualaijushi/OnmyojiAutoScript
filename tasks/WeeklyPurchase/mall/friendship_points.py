@@ -7,15 +7,15 @@ from module.logger import logger
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 
-from tasks.RichMan.mall.special import Special
-from tasks.RichMan.config import FriendshipPoints as FriendshipPointsConfig
+from tasks.WeeklyPurchase.mall.special import Special
+from tasks.WeeklyPurchase.config import FriendshipPoints as FriendshipPointsConfig
 import re
 
 class FriendshipPoints(Special):
 
     def execute_friendship(self, con: FriendshipPointsConfig = None):
         if not con:
-            con = self.config.rich_man.friendship_points
+            con = self.config.weekly_purchase.friendship_points
         if not con.enable:
             logger.info('Friendship points is not enable')
             return

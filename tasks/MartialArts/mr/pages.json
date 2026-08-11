@@ -1,0 +1,47 @@
+[
+  {
+    "itemName": "main_goto_mar",
+    "imageName": "mr_main_goto_mar.png",
+    "roiFront": "1190,380,37,39",
+    "roiBack": "1162,193,87,328",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "武道大会活动主页标志（待裁模板）"
+  },
+  {
+    "itemName": "check_main_mar",
+    "imageName": "mr_check_main_mar.png",
+    "roiFront": "150,16,134,41",
+    "roiBack": "150,16,134,41",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "to_battle_ap",
+    "imageName": "mr_to_battle_ap.png",
+    "roiFront": "905,227,26,131",
+    "roiBack": "905,227,26,131",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "to_battle_boss",
+    "imageName": "mr_to_battle_boss.png",
+    "roiFront": "1118,258,26,131",
+    "roiBack": "1118,258,26,131",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "check_battle_ap",
+    "imageName": "mr_check_battle_ap.png",
+    "roiFront": "150,16,134,41",
+    "roiBack": "150,16,134,41",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  }
+]

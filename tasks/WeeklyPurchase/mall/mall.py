@@ -3,12 +3,12 @@
 # github https://github.com/runhey
 from module.logger import logger
 
-from tasks.RichMan.mall.medal import Medal
-from tasks.RichMan.mall.charisma import Charisma
-from tasks.RichMan.mall.consignment import Consignment
-from tasks.RichMan.mall.scales import Scales
-from tasks.RichMan.mall.honor import Honor
-from tasks.RichMan.mall.bondlings import Bondlings
+from tasks.WeeklyPurchase.mall.medal import Medal
+from tasks.WeeklyPurchase.mall.charisma import Charisma
+from tasks.WeeklyPurchase.mall.consignment import Consignment
+from tasks.WeeklyPurchase.mall.scales import Scales
+from tasks.WeeklyPurchase.mall.honor import Honor
+from tasks.WeeklyPurchase.mall.bondlings import Bondlings
 from tasks.GameUi.page import page_main, page_mall
 
 

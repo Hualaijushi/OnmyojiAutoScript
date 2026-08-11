@@ -217,5 +217,7 @@
   "enable_book_auto": "自动选择",
   "enable_book_auto_help": "游戏内是否开启自动选择御魂",
   "earn_money": "获取樱灯饰",
-  "earn_money_help": "通过放置借处式神获取500樱灯饰\n开启前确保已放置借出式神"
+  "earn_money_help": "通过放置借处式神获取500樱灯饰\n开启前确保已放置借出式神",
+  "WeeklyPurchase": "每周购买",
+  "MartialArts": "武道大会"
 }

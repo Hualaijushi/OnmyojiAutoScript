@@ -8,16 +8,16 @@ from module.logger import logger
 from tasks.GameUi.page import page_main, page_guild
 from tasks.GameUi.game_ui import GameUi
 from tasks.Component.Buy.buy import Buy
-from tasks.RichMan.mall.navbar import MallNavbar
-from tasks.RichMan.mall.special import Special
-from tasks.RichMan.config import HonorRoom
+from tasks.WeeklyPurchase.mall.navbar import MallNavbar
+from tasks.WeeklyPurchase.mall.special import Special
+from tasks.WeeklyPurchase.config import HonorRoom
 
 
 class Honor(Special):
 
     def execute_honor(self, con: HonorRoom = None):
         if not con:
-            con = self.config.rich_man.honor_room
+            con = self.config.weekly_purchase.honor_room
         if not con.enable:
             logger.info('Honor is not enable')
             return

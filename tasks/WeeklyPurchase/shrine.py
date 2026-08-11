@@ -7,11 +7,11 @@ from module.logger import logger
 
 from tasks.GameUi.page import page_main, page_summon
 from tasks.GameUi.game_ui import GameUi
-from tasks.RichMan.assets import RichManAssets
-from tasks.RichMan.config import Shrine as ConfigShrine
+from tasks.WeeklyPurchase.assets import WeeklyPurchaseAssets
+from tasks.WeeklyPurchase.config import Shrine as ConfigShrine
 
 
-class Shrine(GameUi, RichManAssets):
+class Shrine(GameUi, WeeklyPurchaseAssets):
 
     def execute_shrine(self, con: ConfigShrine):
         logger.hr('Start Shrine')
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     t = Shrine(c, d)
 
     # t.shrine_white_four()
-    t.execute_shrine(t.config.model.rich_man.shrine)
+    t.execute_shrine(t.config.model.weekly_purchase.shrine)
     # t.screenshot()
     # print(t.appear(t.I_S_BUY_WHITE_FIVE, threshold=0.9))
 

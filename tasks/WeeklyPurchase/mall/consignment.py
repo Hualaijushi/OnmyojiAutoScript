@@ -6,9 +6,9 @@ import time
 from module.logger import logger
 
 from tasks.Component.Buy.buy import Buy
-# from tasks.RichMan.assets import RichManAssets
-from tasks.RichMan.mall.navbar import MallNavbar
-from tasks.RichMan.config import Consignment as ConsignmentStore
+# from tasks.WeeklyPurchase.assets import WeeklyPurchaseAssets
+from tasks.WeeklyPurchase.mall.navbar import MallNavbar
+from tasks.WeeklyPurchase.config import Consignment as ConsignmentStore
 
 
 class Consignment(Buy, MallNavbar):
@@ -20,7 +20,7 @@ class Consignment(Buy, MallNavbar):
         :return:
         """
         if not con:
-            con = self.config.rich_man.consignment
+            con = self.config.weekly_purchase.consignment
         if not con.enable:
             logger.info('Consignment is not enable')
             return

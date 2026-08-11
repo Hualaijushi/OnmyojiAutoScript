@@ -56,6 +56,8 @@ from tasks.GuildActivityMonitor.config import GuildActivityMonitor
 
 # 这一部分是活动的配置-----------------------------------------------------------------------------------------------------
 from tasks.ActivityShikigami.config import ActivityShikigami
+from tasks.RichMan.config import RichMan
+from tasks.MartialArts.config import MartialArts
 from tasks.MetaDemon.config import MetaDemon
 from tasks.FrogBoss.config import FrogBoss
 from tasks.FloatParade.config import FloatParade
@@ -76,7 +78,7 @@ from tasks.MemoryScrolls.config import MemoryScrolls
 
 # 每周任务---------------------------------------------------------------------------------------------------------------
 from tasks.TrueOrochi.config import TrueOrochi
-from tasks.RichMan.config import RichMan
+from tasks.WeeklyPurchase.config import WeeklyPurchase
 from tasks.Secret.config import Secret
 from tasks.WeeklyTrifles.config import WeeklyTrifles
 from tasks.MysteryShop.config import MysteryShop
@@ -122,6 +124,8 @@ class ConfigModel(ConfigBase):
 
     # 这些是活动的
     activity_shikigami: ActivityShikigami = Field(default_factory=ActivityShikigami)
+    rich_man: RichMan = Field(default_factory=RichMan)
+    martial_arts: MartialArts = Field(default_factory=MartialArts)
     meta_demon: MetaDemon = Field(default_factory=MetaDemon)
     frog_boss: FrogBoss = Field(default_factory=FrogBoss)
     float_parade: FloatParade = Field(default_factory=FloatParade)
@@ -141,7 +145,7 @@ class ConfigModel(ConfigBase):
 
     # 这些是每周任务
     true_orochi: TrueOrochi = Field(default_factory=TrueOrochi)
-    rich_man: RichMan = Field(default_factory=RichMan)
+    weekly_purchase: WeeklyPurchase = Field(default_factory=WeeklyPurchase)
     secret: Secret = Field(default_factory=Secret)
     weekly_trifles: WeeklyTrifles = Field(default_factory=WeeklyTrifles)
     mystery_shop: MysteryShop = Field(default_factory=MysteryShop)
@@ -163,6 +167,7 @@ class ConfigModel(ConfigBase):
         :param config_name:
         """
         if data:
+            data = self._migrate_renamed_tasks(data)
             if config_name:
                 data["config_name"] = config_name
             super().__init__(**data)
@@ -170,9 +175,29 @@ class ConfigModel(ConfigBase):
         if not config_name:
             super().__init__()
             return
-        data = self.read_json(config_name)
+        data = self._migrate_renamed_tasks(self.read_json(config_name))
         data["config_name"] = config_name
         super().__init__(**data)
+
+    @staticmethod
+    def _migrate_renamed_tasks(data: dict) -> dict:
+        """兼容 RichMan/FlightChess 更名前保存的用户配置。"""
+        data = dict(data)
+        old_rich_man = data.get('rich_man')
+        is_old_weekly_purchase = isinstance(old_rich_man, dict) and any(
+            key in old_rich_man for key in ('special_room', 'thousand_things', 'guild_store')
+        )
+
+        if is_old_weekly_purchase and 'weekly_purchase' not in data:
+            data['weekly_purchase'] = old_rich_man
+
+        old_flight_chess = data.pop('flight_chess', None)
+        if old_flight_chess is not None:
+            data['rich_man'] = old_flight_chess
+        elif is_old_weekly_purchase:
+            data.pop('rich_man', None)
+
+        return data
 
     def __setattr__(self, key, value):
         """

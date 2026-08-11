@@ -13,12 +13,12 @@ from tasks.GameUi.default_pages import page_shirin
 from tasks.GameUi.page import page_main, page_guild
 from tasks.GameUi.game_ui import GameUi
 from tasks.Component.Buy.buy import Buy
-from tasks.RichMan.assets import RichManAssets
-from tasks.RichMan.config import GuildStore
-from tasks.RichMan.page import page_guild_store
+from tasks.WeeklyPurchase.assets import WeeklyPurchaseAssets
+from tasks.WeeklyPurchase.config import GuildStore
+from tasks.WeeklyPurchase.page import page_guild_store
 
 
-class Guild(Buy, GameUi, RichManAssets):
+class Guild(Buy, GameUi, WeeklyPurchaseAssets):
 
     def _default_detect_categories(self) -> set[str]:
         categories = super()._default_detect_categories()

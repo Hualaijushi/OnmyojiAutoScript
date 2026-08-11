@@ -1,121 +1,75 @@
 # This Python file uses the following encoding: utf-8
-# @author runhey
-# github https://github.com/runhey
-from datetime import timedelta, datetime
-from pydantic import BaseModel, Field
+"""大富翁任务配置。"""
 
+from datetime import time, timedelta
+
+from pydantic import Field, validator
+
+from module.logger import logger
+from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+from tasks.Component.config_base import ConfigBase, Time
 from tasks.Component.config_scheduler import Scheduler
-from tasks.Component.config_base import ConfigBase, DateTime, dynamic_hide
-from tasks.Utils.config_enum import DemonClass
 
 
-class ThousandThings(BaseModel):
-    # 千物宝箱
-    enable: bool = Field(title='Enable', default=False)
-    earn_money: bool = Field(title='Earn Money', default=False, description='earn_money_help')
-    mystery_amulet: bool = Field(title='Mystery Amulet', default=False)
-    black_daruma_fragment: bool = Field(title='Black Daruma Fragment', default=False)
-    ap: bool = Field(title='AP', default=False, description='ap_help')
+class RichManRunConfig(ConfigBase):
+    limit_time: Time = Field(default=Time(hour=1, minute=30), description='总限制时间')
+    pass_limit: int = Field(default=50, description='最多投掷次数')
+    active_souls_clean: bool = Field(default=False, description='运行结束后清理御魂')
+    random_sleep: bool = Field(default=False, description='点击战斗前随机休息')
+
+    @property
+    def limit_time_v(self) -> timedelta:
+        if isinstance(self.limit_time, time):
+            return timedelta(hours=self.limit_time.hour, minutes=self.limit_time.minute,
+                             seconds=self.limit_time.second)
+        return self.limit_time
+
+    @property
+    def run_sequence_v(self) -> list[str]:
+        return ['pass']
+
+    @validator('limit_time', pre=True, always=True)
+    def parse_limit_time(cls, value):
+        if isinstance(value, str):
+            if value.isdigit():
+                delta = timedelta(seconds=int(value))
+                return time(hour=delta.seconds // 3600, minute=delta.seconds // 60 % 60,
+                            second=delta.seconds % 60)
+            try:
+                return time.fromisoformat(value)
+            except ValueError:
+                logger.warning('Invalid limit_time value. Expected format: HH:MM:SS')
+                return time(hour=1, minute=30)
+        return value
 
 
-class Consignment(BaseModel):
-    # 寄售屋
-    enable: bool = Field(title='Enable', default=False)
-    buy_sale_ticket: bool = Field(title='Buy Sale Ticket', default=False, description='buy_sale_ticket_help')
+class RichManPurchaseConfig(ConfigBase):
+    buy_ap: bool = Field(default=False, description='是否购买体力')
+    buy_reward: bool = Field(default=False, description='是否购买奖励积分')
+    buy_ticket: bool = Field(default=False, description='是否购买定向骰子')
 
 
-class Scales(BaseModel):
-    # 密卷屋 蛇皮
-    enable: bool = Field(title='Enable', default=False)
-    orochi_scales: int = Field(title='Orochi Scales', default=40, description='orochi_scales_help')
-    demon_souls: int = Field(title='Demon Souls', default=50, description='demon_souls_help')
-    demon_class: DemonClass = Field(title='DemonClass', default=DemonClass.TSUCHIGUMO, description='demon_class_help')
-    demon_position: int = Field(title='Demon Position', default=1, description='demon_position_help')
-    picture_book_scrap: int = Field(title='Picture Book Scrap', default=30, description='picture_book_scrap_help')
-    enable_book_auto: bool = Field(title='Enable Book Auto', default=False, description='enable_book_auto_help')
-    picture_book_rule: str = Field(title='Picture Book Rule', default='auto', description='picture_book_rule_help')
+class RichManSoulConfig(ConfigBase):
+    enable_switch_pass: bool = Field(default=False, description='是否按编号切换御魂预设')
+    pass_group_team: str = Field(default='-1,-1', description='御魂预设组号,队伍号')
+    enable_switch_pass_by_name: bool = Field(default=False, description='是否按名称切换御魂预设')
+    pass_group_team_name: str = Field(default='', description='御魂预设组名,队伍名')
 
-
-class SpecialRoom(BaseModel):
-    # 杂货铺 特殊购买
-    enable: bool = Field(title='Enable', default=False)
-    totem_pass: bool = Field(title='Totem Pass', default=False)
-    medium_bondling_discs: int = Field(title='Medium Bondling Discs', default=0, description='medium_bondling_discs_special')
-    low_bondling_discs: int = Field(title='Low Bondling Discs', default=0, description='low_bondling_discs_special')
-
-
-class HonorRoom(BaseModel):
-    # 杂货铺 荣誉购买
-    enable: bool = Field(title='Enable', default=False)
-    mystery_amulet: bool = Field(title='Mystery Amulet', default=False, description='mystery_amulet_help_honor')
-    black_daruma_scrap: bool = Field(title='Black Daruma Scrap', default=False, description='black_daruma_scrap_help_honor')
-
-
-class FriendshipPoints(BaseModel):
-    # 杂货铺 友情点
-    enable: bool = Field(title='Enable', default=False)
-    white_daruma: bool = Field(title='White Daruma', default=False)
-    red_daruma: int = Field(title='Red Daruma', default=0)
-    broken_amulet: int = Field(title='Broken Amulet', default=0)
-
-
-class MedalRoom(BaseModel):
-    # 杂货铺 勋章购买
-    enable: bool = Field(title='Enable', default=False)
-    black_daruma: bool = Field(title='Black Daruma', default=False)
-    mystery_amulet: bool = Field(title='Mystery Amulet', default=False)
-    ap_100: bool = Field(title='AP 100', default=False)
-    random_soul: bool = Field(title='Random Soul', default=False)
-    white_daruma: bool = Field(title='White Daruma', default=False)
-    challenge_pass: int = Field(title='Challenge Pass', default=0, description='challenge_pass_help')
-    red_daruma: int = Field(title='Red Daruma', default=0)
-    broken_amulet: int = Field(title='Broken Amulet', default=0)
-
-
-class Charisma(BaseModel):
-    # 杂货铺 魅力购买
-    enable: bool = Field(title='Enable', default=False)
-    black_daruma_scrap: bool = Field(title='Black Daruma Scrap', default=False)
-    mystery_amulet: bool = Field(title='Mystery Amulet', default=False)
-
-
-class Shrine(BaseModel):
-    # 神社 神龛
-    enable: bool = Field(title='Enable', default=False)
-    black_daruma: bool = Field(title='Black Daruma', default=False)
-    white_daruma_five: bool = Field(title='White Daruma Five', default=False)
-    white_daruma_four: bool = Field(title='White Daruma Four', default=False)
-
-
-class Bondlings(BaseModel):
-    # 契灵商店 契忆
-    enable: bool = Field(title='Enable', default=False)
-    random_soul: int = Field(title='Random Soul', default=0, description='random_soul_help')
-    bondling_stone: int = Field(title='Bondling Stone', default=0, description='bondling_stone_help')
-    high_bondling_discs: int = Field(title='High Bondling Discs', default=0, description='high_bondling_discs_help')
-    medium_bondling_discs: int = Field(title='Medium Bondling Discs', default=0, description='medium_bondling_discs_help')
-
-
-class GuildStore(BaseModel):
-    # 寮商店
-    enable: bool = Field(title='Enable', default=False)
-    honor_gift: bool = Field(default=False)
-    mystery_amulet: bool = Field(title='Mystery Amulet', default=False)
-    black_daruma_scrap: bool = Field(title='Black Daruma Scrap', default=False)
-    skin_ticket: int = Field(title='Skin Ticket', default=0, description='skin_ticket_help')
+    def validate_switch_soul(self):
+        if self.enable_switch_pass:
+            parts = self.pass_group_team.split(',')
+            if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
+                raise ValueError('[PASS]御魂预设必须是数字组号和队伍号，格式为 组号,队伍号')
+        if self.enable_switch_pass_by_name:
+            parts = self.pass_group_team_name.split(',')
+            if len(parts) != 2 or not all(part.strip() for part in parts):
+                raise ValueError('[PASS]御魂预设名称格式必须为 组名,队伍名')
+        return self
 
 
 class RichMan(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
-    special_room: SpecialRoom = Field(default_factory=SpecialRoom)
-    honor_room: HonorRoom = Field(default_factory=HonorRoom)
-    friendship_points: FriendshipPoints = Field(default_factory=FriendshipPoints)
-    medal_room: MedalRoom = Field(default_factory=MedalRoom)
-    charisma: Charisma = Field(default_factory=Charisma)
-
-    thousand_things: ThousandThings = Field(default_factory=ThousandThings)
-    consignment: Consignment = Field(default_factory=Consignment)
-    scales: Scales = Field(default_factory=Scales)
-    bondlings: Bondlings = Field(default_factory=Bondlings)
-    shrine: Shrine = Field(default_factory=Shrine)
-    guild_store: GuildStore = Field(default_factory=GuildStore)
+    general_climb: RichManRunConfig = Field(default_factory=RichManRunConfig)
+    purchase: RichManPurchaseConfig = Field(default_factory=RichManPurchaseConfig)
+    switch_soul_config: RichManSoulConfig = Field(default_factory=RichManSoulConfig)
+    pass_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)

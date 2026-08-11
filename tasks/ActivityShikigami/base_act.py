@@ -105,6 +105,11 @@ class StateMachine(BaseTask):
 class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigamiAssets):
     """爬塔活动基类"""
 
+    @property
+    def scheduled_task_name(self) -> str:
+        """运行结束后需要重新调度的任务名。"""
+        return 'ActivityShikigami'
+
     def _exit_matcher(self) -> ExitMatcher | None:
         return self.I_ACT_FIRE
 
@@ -166,7 +171,7 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigami
         self.goto_page(pages.page_main)
         if self.conf.general_climb.active_souls_clean:
             self.set_next_run(task='SoulsTidy', success=False, finish=False, target=datetime.now())
-        self.set_next_run(task="ActivityShikigami", success=True)
+        self.set_next_run(task=self.scheduled_task_name, success=True)
         raise TaskEnd
 
     def _run_pass(self):

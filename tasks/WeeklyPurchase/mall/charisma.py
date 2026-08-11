@@ -6,8 +6,8 @@ import time
 from module.logger import logger
 
 from tasks.GameUi.page import page_main, page_guild
-from tasks.RichMan.mall.friendship_points import FriendshipPoints
-from tasks.RichMan.config import Charisma as CharismaConfig
+from tasks.WeeklyPurchase.mall.friendship_points import FriendshipPoints
+from tasks.WeeklyPurchase.config import Charisma as CharismaConfig
 
 
 class Charisma(FriendshipPoints):
@@ -15,7 +15,7 @@ class Charisma(FriendshipPoints):
     def execute_charisma(self, con: CharismaConfig = None):
         if not con:
             logger.info('Charisma is not enable')
-            con = self.config.rich_man.charisma
+            con = self.config.weekly_purchase.charisma
         if not con.enable:
             logger.info('Charisma is not enable')
             return

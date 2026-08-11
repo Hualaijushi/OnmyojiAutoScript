@@ -6,8 +6,8 @@ import time
 from module.logger import logger
 
 from tasks.Component.Buy.buy import Buy
-from tasks.RichMan.mall.navbar import MallNavbar
-from tasks.RichMan.config import Scales as ScalesConfig
+from tasks.WeeklyPurchase.mall.navbar import MallNavbar
+from tasks.WeeklyPurchase.config import Scales as ScalesConfig
 from tasks.Utils.config_enum import DemonClass
 
 
@@ -15,7 +15,7 @@ class Scales(Buy, MallNavbar):
 
     def execute_scales(self, con: ScalesConfig=None):
         if not con:
-            con = self.config.rich_man.scales
+            con = self.config.weekly_purchase.scales
         if not con.enable:
             logger.info('Scales is not enable')
             return
@@ -337,13 +337,13 @@ class Scales(Buy, MallNavbar):
             buy_res_number = buy_number
         if buy_cycles_number:
             for i in range(buy_cycles_number):
-                if self.config.rich_man.scales.enable_book_auto:
+                if self.config.weekly_purchase.scales.enable_book_auto:
                     self._scales_buy_more(self.I_SCA_PICTURE_BOOK)
                 else:
                     self._scales_buy_sea_more(self.I_SCA_PICTURE_BOOK)
                 time.sleep(0.5)
         if buy_res_number and buy_res_number >= 2:
-            if self.config.rich_man.scales.enable_book_auto:
+            if self.config.weekly_purchase.scales.enable_book_auto:
                 self._scales_buy_more(self.I_SCA_PICTURE_BOOK, buy_res_number)
             else:
                 self._scales_buy_sea_more(self.I_SCA_PICTURE_BOOK, buy_res_number)

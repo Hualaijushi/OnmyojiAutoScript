@@ -7,10 +7,10 @@ from module.logger import logger
 
 from tasks.GameUi.page import page_main, page_travel
 from tasks.GameUi.game_ui import GameUi
-from tasks.RichMan.assets import RichManAssets
-from tasks.RichMan.config import ThousandThings as ConfigThousandThings
+from tasks.WeeklyPurchase.assets import WeeklyPurchaseAssets
+from tasks.WeeklyPurchase.config import ThousandThings as ConfigThousandThings
 
-class ThousandThings(GameUi, RichManAssets):
+class ThousandThings(GameUi, WeeklyPurchaseAssets):
 
     def execute_tt(self, con: ConfigThousandThings) -> None:
         """
@@ -203,7 +203,7 @@ if __name__ == '__main__':
     d = Device(c)
     t = ThousandThings(c, d)
 
-    t.execute_tt(t.config.rich_man.thousand_things)
+    t.execute_tt(t.config.weekly_purchase.thousand_things)
 
 
 

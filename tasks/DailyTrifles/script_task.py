@@ -393,11 +393,11 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
             return
         # 进入Special
         while 1:
-            from tasks.RichMan.assets import RichManAssets
+            from tasks.WeeklyPurchase.assets import WeeklyPurchaseAssets
             self.screenshot()
-            if self.appear(RichManAssets.I_SIDE_CHECK_SPECIAL):
+            if self.appear(WeeklyPurchaseAssets.I_SIDE_CHECK_SPECIAL):
                 break
-            if self.appear_then_click(RichManAssets.I_MALL_SUNDRY, interval=1):
+            if self.appear_then_click(WeeklyPurchaseAssets.I_MALL_SUNDRY, interval=1):
                 continue
 
 
