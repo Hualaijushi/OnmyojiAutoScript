@@ -34,5 +34,77 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "boss_unlock",
+    "imageName": "mr_boss_unlock.png",
+    "roiFront": "1094,452,31,30",
+    "roiBack": "1094,452,31,30",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "boss_lock",
+    "imageName": "mr_boss_lock.png",
+    "roiFront": "1094,452,31,30",
+    "roiBack": "1094,452,31,30",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "battle_boss_to_records",
+    "imageName": "mr_battle_boss_to_records.png",
+    "roiFront": "995,590,45,49",
+    "roiBack": "995,590,45,49",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "mar_fire_boss",
+    "imageName": "mr_mar_fire_boss.png",
+    "roiFront": "1099,601,90,47",
+    "roiBack": "1099,601,90,47",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "mar_fire_boss_gold",
+    "imageName": "mr_mar_fire_boss_gold.png",
+    "roiFront": "1104,579,76,90",
+    "roiBack": "1104,579,76,90",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "mar_change_boss_mode",
+    "imageName": "mr_mar_change_boss_mode.png",
+    "roiFront": "1163,539,29,30",
+    "roiBack": "1163,539,29,30",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "mar_fire_boss_main",
+    "imageName": "mr_mar_fire_boss_main.png",
+    "roiFront": "1106,529,70,82",
+    "roiBack": "1106,529,70,82",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "fire_over",
+    "imageName": "mr_fire_over.png",
+    "roiFront": "1126,606,30,35",
+    "roiBack": "1126,606,30,35",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]

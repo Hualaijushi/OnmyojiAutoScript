@@ -10,11 +10,9 @@ from module.atom.list import RuleList
 class MartialArtsAssets: 
 
 
-	# Image Rule Assets
-	# 武道大会活动主页标志（待裁模板） 
-	I_MARTIAL_ARTS_MAIN = RuleImage(roi_front=(0,0,1,1), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/MartialArts/Martialarts/ma_martial_arts_main.png")
-	# 武道大会战斗入口（待裁模板） 
-	I_BATTLE_ENTRY = RuleImage(roi_front=(0,0,1,1), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/MartialArts/Martialarts/ma_battle_entry.png")
+	# Click Rule Assets
+	#  
+	C_SELECT_FIRE_BOSS = RuleClick(roi_front=(28,88,254,99), roi_back=(28,88,254,99), name="select_fire_boss")
 
 
 	# Image Rule Assets
@@ -26,6 +24,22 @@ class MartialArtsAssets:
 	I_MAR_FIRE_AP = RuleImage(roi_front=(1134,598,90,47), roi_back=(1134,598,90,47), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mar_fire_ap.png")
 	#  
 	I_AP_LOCK = RuleImage(roi_front=(868,637,31,30), roi_back=(868,637,31,30), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_ap_lock.png")
+	#  
+	I_BOSS_UNLOCK = RuleImage(roi_front=(1094,452,31,30), roi_back=(1094,452,31,30), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_boss_unlock.png")
+	#  
+	I_BOSS_LOCK = RuleImage(roi_front=(1094,452,31,30), roi_back=(1094,452,31,30), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_boss_lock.png")
+	#  
+	I_BATTLE_BOSS_TO_RECORDS = RuleImage(roi_front=(995,590,45,49), roi_back=(995,590,45,49), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_battle_boss_to_records.png")
+	#  
+	I_MAR_FIRE_BOSS = RuleImage(roi_front=(1099,601,90,47), roi_back=(1099,601,90,47), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mar_fire_boss.png")
+	#  
+	I_MAR_FIRE_BOSS_GOLD = RuleImage(roi_front=(1104,579,76,90), roi_back=(1104,579,76,90), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mar_fire_boss_gold.png")
+	#  
+	I_MAR_CHANGE_BOSS_MODE = RuleImage(roi_front=(1163,539,29,30), roi_back=(1163,539,29,30), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mar_change_boss_mode.png")
+	#  
+	I_MAR_FIRE_BOSS_MAIN = RuleImage(roi_front=(1106,529,70,82), roi_back=(1106,529,70,82), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mar_fire_boss_main.png")
+	#  
+	I_FIRE_OVER = RuleImage(roi_front=(1126,606,30,35), roi_back=(1126,606,30,35), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_fire_over.png")
 
 
 	# Ocr Rule Assets
@@ -33,18 +47,26 @@ class MartialArtsAssets:
 	O_AP_TICKET = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Single", method="Default", keyword="", name="ap_ticket")
 	#  
 	O_AP_COUNT = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Single", method="Default", keyword="", name="ap_count")
+	#  
+	O_BOSS_TICKET_GOLD = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Single", method="Default", keyword="", name="boss_ticket_gold")
+	#  
+	O_BOSS_TICKET = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Single", method="Default", keyword="", name="boss_ticket")
 
 
 	# Image Rule Assets
 	# 武道大会活动主页标志（待裁模板） 
 	I_MAIN_GOTO_MAR = RuleImage(roi_front=(1190,380,37,39), roi_back=(1162,193,87,328), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_main_goto_mar.png")
 	#  
-	I_CHECK_MAIN_MAR = RuleImage(roi_front=(150,16,134,41), roi_back=(150,16,134,41), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_main_mar.png")
+	I_CHECK_MAIN_MAR = RuleImage(roi_front=(152,15,134,41), roi_back=(144,10,146,55), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_main_mar.png")
 	#  
-	I_TO_BATTLE_AP = RuleImage(roi_front=(905,227,26,131), roi_back=(905,227,26,131), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_to_battle_ap.png")
+	I_TO_BATTLE_AP = RuleImage(roi_front=(184,212,26,131), roi_back=(184,212,26,131), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_to_battle_ap.png")
 	#  
 	I_TO_BATTLE_BOSS = RuleImage(roi_front=(1118,258,26,131), roi_back=(1118,258,26,131), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_to_battle_boss.png")
 	#  
-	I_CHECK_BATTLE_AP = RuleImage(roi_front=(150,16,134,41), roi_back=(150,16,134,41), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_battle_ap.png")
+	I_CHECK_BATTLE_AP = RuleImage(roi_front=(150,16,134,41), roi_back=(144,10,146,55), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_battle_ap.png")
+	#  
+	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(152,13,134,41), roi_back=(144,10,146,55), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_battle_boss.png")
+	#  
+	I_CHECK_BATTLE_BOSS_MAIN = RuleImage(roi_front=(555,63,164,47), roi_back=(555,63,164,47), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_battle_boss_main.png")
 
 

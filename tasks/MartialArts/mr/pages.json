@@ -11,8 +11,8 @@
   {
     "itemName": "check_main_mar",
     "imageName": "mr_check_main_mar.png",
-    "roiFront": "150,16,134,41",
-    "roiBack": "150,16,134,41",
+    "roiFront": "152,15,134,41",
+    "roiBack": "144,10,146,55",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -20,8 +20,8 @@
   {
     "itemName": "to_battle_ap",
     "imageName": "mr_to_battle_ap.png",
-    "roiFront": "905,227,26,131",
-    "roiBack": "905,227,26,131",
+    "roiFront": "184,212,26,131",
+    "roiBack": "184,212,26,131",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -39,7 +39,25 @@
     "itemName": "check_battle_ap",
     "imageName": "mr_check_battle_ap.png",
     "roiFront": "150,16,134,41",
-    "roiBack": "150,16,134,41",
+    "roiBack": "144,10,146,55",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "check_battle_boss",
+    "imageName": "mr_check_battle_boss.png",
+    "roiFront": "152,13,134,41",
+    "roiBack": "144,10,146,55",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "check_battle_boss_main",
+    "imageName": "mr_check_battle_boss_main.png",
+    "roiFront": "555,63,164,47",
+    "roiBack": "555,63,164,47",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""

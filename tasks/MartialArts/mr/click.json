@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "itemName": "select_fire_boss",
+    "roiFront": "28,88,254,99",
+    "roiBack": "28,88,254,99",
+    "description": ""
+  }
+]

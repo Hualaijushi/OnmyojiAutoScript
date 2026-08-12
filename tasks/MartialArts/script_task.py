@@ -9,9 +9,10 @@ from module.base.timer import Timer
 from module.exception import TaskEnd
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
-from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.general_battle import BattleBehaviorScope, GeneralBattle
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
+from tasks.GameUi.matcher import any_of
 from tasks.MartialArts.assets import MartialArtsAssets
 from tasks.MartialArts.config import MartialArts
 import tasks.MartialArts.page as pages
@@ -20,8 +21,12 @@ import tasks.MartialArts.page as pages
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
     AP_COST = 30
     TICKET_COST = 1
+    BATTLE_TIMEOUT = 600
     RESOURCE_OCR_RETRIES = 3
     ENTER_BATTLE_TIMEOUT = 20
+    SEARCH_BOSS_TIMEOUT = 20
+    SEARCH_BOSS_MAX_ATTEMPTS = 3
+    SEARCH_BOSS_WAIT_SECONDS = 2
 
     battle_type = 'ap'
 
@@ -30,10 +35,31 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         return self.config.model.martial_arts
 
     def _exit_matcher(self):
-        """体力战结算完成并重新出现挑战按钮时，视为已返回日常训练。"""
+        """根据当前类型返回战斗结算后的任务页面标志。"""
         if self.battle_type == 'ap':
             return self.I_MAR_FIRE_AP
+        if self.battle_type == 'boss':
+            return any_of(self.I_CHECK_BATTLE_BOSS, self.I_CHECK_BATTLE_BOSS_MAIN)
         return None
+
+    def _resolve_battle_timeout(self, config: GeneralBattleConfig) -> int:
+        """首领战默认允许十分钟，体力战沿用通用战斗超时。"""
+        if config.battle_timeout is not None and config.battle_timeout > 0:
+            return config.battle_timeout
+        if self.battle_type == 'boss':
+            return self.BATTLE_TIMEOUT
+        return super()._resolve_battle_timeout(config)
+
+    def _get_battle_behavior_scopes(
+        self,
+        config: GeneralBattleConfig,
+        battle_key: str,
+    ) -> dict[str, BattleBehaviorScope]:
+        """首领战每轮重新应用阵容预设，体力战沿用通用作用域。"""
+        scopes = super()._get_battle_behavior_scopes(config, battle_key)
+        if battle_key == 'martial_arts_boss':
+            scopes['preset'] = BattleBehaviorScope.ROUND
+        return scopes
 
     def before_run(self):
         sequence = self.conf.general_climb.run_sequence_v
@@ -44,6 +70,12 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         logger.hr('Enter MartialArts AP battle page', 2)
         self.goto_page(pages.page_martial_arts_ap)
         logger.info('Entered MartialArts AP battle page')
+
+    def enter_boss_battle(self):
+        """从任意已知页面导航至武道大会修行合训地图。"""
+        logger.hr('Enter MartialArts boss map', 2)
+        self.goto_page(pages.page_martial_arts_boss)
+        logger.info('Entered MartialArts boss map')
 
     @staticmethod
     def _parse_ocr_number(value) -> int:
@@ -87,6 +119,115 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         )
         return enough
 
+    def read_boss_tickets(self) -> tuple[int, int]:
+        """读取普通搜寻券和注灵搜寻券，多次识别取最大值。"""
+        best_ticket = 0
+        best_gold = 0
+        for attempt in range(1, self.RESOURCE_OCR_RETRIES + 1):
+            self.screenshot()
+            ticket = self._parse_ocr_number(self.O_BOSS_TICKET.ocr(self.device.image))
+            gold = self._parse_ocr_number(self.O_BOSS_TICKET_GOLD.ocr(self.device.image))
+            best_ticket = max(best_ticket, ticket)
+            best_gold = max(best_gold, gold)
+            logger.info(
+                f'MartialArts boss tickets OCR {attempt}/{self.RESOURCE_OCR_RETRIES}: '
+                f'normal={ticket}, gold={gold}'
+            )
+            if ticket >= self.TICKET_COST or gold >= self.TICKET_COST:
+                return ticket, gold
+            if attempt < self.RESOURCE_OCR_RETRIES:
+                time.sleep(0.5)
+        return best_ticket, best_gold
+
+    def select_boss_search_mode(self, use_gold: bool) -> bool:
+        """切换到普通搜寻或注灵搜寻模式。"""
+        target = self.I_MAR_FIRE_BOSS_GOLD if use_gold else self.I_MAR_FIRE_BOSS
+        mode_name = 'gold' if use_gold else 'normal'
+        timer = Timer(8).start()
+        while not timer.reached():
+            self.screenshot()
+            if self.appear(target):
+                logger.info(f'MartialArts boss search mode: {mode_name}')
+                return True
+            if self.appear_then_click(self.I_MAR_CHANGE_BOSS_MODE, interval=0.8):
+                continue
+            time.sleep(0.4)
+        logger.warning(f'Cannot switch MartialArts boss search mode to {mode_name}')
+        return False
+
+    def open_existing_boss(self) -> bool:
+        """打开地图上已经完成搜寻、可继续挑战的首领。"""
+        logger.info('MartialArts existing boss detected, open challenge panel')
+        timer = Timer(self.SEARCH_BOSS_TIMEOUT).start()
+        while not timer.reached():
+            self.screenshot()
+            if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
+                logger.info('Entered existing MartialArts boss challenge panel')
+                return True
+            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or \
+                    self.appear_then_click(self.I_UI_CONFIRM, interval=1):
+                continue
+            if self.appear(self.I_FIRE_OVER):
+                self.click(self.C_SELECT_FIRE_BOSS, interval=1.2)
+                self.device.click_record_clear()
+                continue
+            time.sleep(0.5)
+        logger.warning(
+            f'Cannot open existing MartialArts boss within {self.SEARCH_BOSS_TIMEOUT}s'
+        )
+        return False
+
+    def search_boss(self) -> bool:
+        """打开已有首领；否则普通券优先、注灵券兜底搜寻新首领。"""
+        self.screenshot()
+        if self.appear(self.I_FIRE_OVER):
+            return self.open_existing_boss()
+
+        ticket, gold = self.read_boss_tickets()
+        if ticket >= self.TICKET_COST:
+            use_gold = False
+        elif gold >= self.TICKET_COST:
+            use_gold = True
+        else:
+            logger.info('MartialArts boss tickets are insufficient')
+            return False
+
+        if not self.select_boss_search_mode(use_gold):
+            return False
+        fire_rule = self.I_MAR_FIRE_BOSS_GOLD if use_gold else self.I_MAR_FIRE_BOSS
+        for attempt in range(1, self.SEARCH_BOSS_MAX_ATTEMPTS + 1):
+            self.screenshot()
+            if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
+                logger.info('MartialArts boss found, entered challenge panel')
+                return True
+
+            if not self.appear_then_click(fire_rule, interval=0):
+                logger.warning(
+                    f'MartialArts boss search button not found '
+                    f'({attempt}/{self.SEARCH_BOSS_MAX_ATTEMPTS})'
+                )
+            else:
+                logger.info(
+                    f'MartialArts boss search clicked '
+                    f'({attempt}/{self.SEARCH_BOSS_MAX_ATTEMPTS}), '
+                    f'wait {self.SEARCH_BOSS_WAIT_SECONDS}s for challenge panel'
+                )
+                self.device.click_record_clear()
+
+            wait_timer = Timer(self.SEARCH_BOSS_WAIT_SECONDS).start()
+            while not wait_timer.reached():
+                self.screenshot()
+                if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
+                    logger.info('MartialArts boss found, entered challenge panel')
+                    return True
+                if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=0.5) or \
+                        self.appear_then_click(self.I_UI_CONFIRM, interval=0.5):
+                    continue
+                time.sleep(0.2)
+
+        logger.warning('Boss search rejected, ticket may be insufficient')
+        return False
+
     def switch_soul_before_battle(self, battle_type: str):
         """按体力战/首领战各自配置，在该类型首次执行前切换御魂。"""
         conf = self.conf.switch_soul_config
@@ -97,7 +238,12 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
 
         conf.validate_switch_soul()
         logger.hr(f'Switch MartialArts {battle_type} soul', 2)
-        self.ui_click(self.I_BATTLE_MAIN_TO_RECORDS, stop=self.I_CHECK_RECORDS, interval=1)
+        enter_records = (
+            self.I_BATTLE_BOSS_TO_RECORDS
+            if battle_type == 'boss'
+            else self.I_BATTLE_MAIN_TO_RECORDS
+        )
+        self.ui_click(enter_records, stop=self.I_CHECK_RECORDS, interval=1)
         if enable_name:
             group, team = getattr(conf, f'{battle_type}_group_team_name').split(',')
             self.run_switch_soul_by_name(group, team)
@@ -106,15 +252,19 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
 
         if battle_type == 'ap':
             self.goto_page(pages.page_martial_arts_ap)
+        elif battle_type == 'boss':
+            self.goto_page(pages.page_martial_arts_boss_main)
 
     def lock_team(self, battle_conf: GeneralBattleConfig):
         """根据当前战斗类型配置锁定或解锁阵容。"""
+        lock_rule = self.I_BOSS_LOCK if self.battle_type == 'boss' else self.I_AP_LOCK
+        unlock_rule = self.I_BOSS_UNLOCK if self.battle_type == 'boss' else self.I_AP_UNLOCK
         if battle_conf.lock_team_enable:
             logger.info(f'Lock MartialArts {self.battle_type} team')
-            self.ui_click(self.I_AP_UNLOCK, stop=self.I_AP_LOCK, interval=1.5)
+            self.ui_click(unlock_rule, stop=lock_rule, interval=1.5)
             return
         logger.info(f'Unlock MartialArts {self.battle_type} team')
-        self.ui_click(self.I_AP_LOCK, stop=self.I_AP_UNLOCK, interval=1.5)
+        self.ui_click(lock_rule, stop=unlock_rule, interval=1.5)
 
     def enter_battle(self) -> bool:
         """点击体力挑战并等待进入通用准备/战斗页面。"""
@@ -170,6 +320,67 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
                 break
         logger.info(f'MartialArts AP battles finished: {self.current_count}/{limit}')
 
+    def enter_boss_fight(self) -> bool:
+        """在战斗小界面点击开始挑战并等待进入通用战斗页面。"""
+        timer = Timer(self.ENTER_BATTLE_TIMEOUT).start()
+        click_count = 0
+        while not timer.reached():
+            self.screenshot()
+            if self.is_in_battle(False):
+                logger.info(f'Entered boss battle after {click_count} challenge clicks')
+                return True
+            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or \
+                    self.appear_then_click(self.I_UI_CONFIRM, interval=1):
+                continue
+            if self.appear_then_click(self.I_MAR_FIRE_BOSS_MAIN, interval=1.5):
+                click_count += 1
+                self.device.click_record_clear()
+                continue
+            time.sleep(0.5)
+        if click_count:
+            logger.warning(
+                f'Boss challenge did not enter battle after {click_count} clicks; '
+                'AP may be insufficient'
+            )
+        else:
+            logger.warning(
+                f'Boss challenge button not found within {self.ENTER_BATTLE_TIMEOUT}s'
+            )
+        return False
+
+    def run_boss_battle_round(self, battle_conf: GeneralBattleConfig) -> bool:
+        """执行一轮首领挑战并等待结算返回首领界面。"""
+        if not self.enter_boss_fight():
+            return False
+        win = self.run_general_battle(
+            battle_conf,
+            battle_key='martial_arts_boss',
+            exit_matcher=any_of(self.I_CHECK_BATTLE_BOSS, self.I_CHECK_BATTLE_BOSS_MAIN),
+        )
+        logger.info(f'MartialArts boss battle {self.current_count} result: {"win" if win else "lose"}')
+        return True
+
+    def run_boss_battles(self):
+        """按首领战配置搜寻并挑战首领，普通券优先、注灵券兜底。"""
+        self.battle_type = 'boss'
+        self.current_count = 0
+        limit = self.conf.general_climb.boss_limit
+        battle_conf = self.conf.boss_battle_conf
+        soul_switched = False
+
+        self.enter_boss_battle()
+        while self.current_count < limit:
+            self.goto_page(pages.page_martial_arts_boss)
+            if not self.search_boss():
+                break
+            if not soul_switched:
+                self.switch_soul_before_battle('boss')
+                soul_switched = True
+            self.lock_team(battle_conf)
+            if not self.run_boss_battle_round(battle_conf):
+                break
+        logger.info(f'MartialArts boss battles finished: {self.current_count}/{limit}')
+
     def run(self):
         self.before_run()
         for battle_type in self.conf.general_climb.run_sequence_v:
@@ -177,7 +388,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
                 self.run_ap_battles()
                 continue
             if battle_type == 'boss':
-                logger.warning('MartialArts boss battle is configured but not implemented yet, skip')
+                self.run_boss_battles()
 
         self.goto_page(pages.page_main)
         self.set_next_run(task='MartialArts', success=True, finish=True)

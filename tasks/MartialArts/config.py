@@ -73,4 +73,6 @@ class MartialArts(ConfigBase):
     general_climb: GeneralClimb = Field(default_factory=GeneralClimb)
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
     ap_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
-    boss_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
+    boss_battle_conf: GeneralBattleConfig = Field(
+        default_factory=lambda: GeneralBattleConfig(battle_timeout=600)
+    )
