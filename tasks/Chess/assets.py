@@ -82,6 +82,8 @@ class ChessAssets:
 	I_GRIGRI_COPPER = RuleImage(roi_front=(584,142,122,40), roi_back=(584,142,122,40), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_grigri_copper.png")
 	#  
 	I_CHECK_GOLDFISH = RuleImage(roi_front=(924,291,192,49), roi_back=(924,291,192,49), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_check_goldfish.png")
+	#  
+	I_BACK_RED = RuleImage(roi_front=(977,67,41,46), roi_back=(972,62,51,56), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_back_red.png")
 
 
 	# Ocr Rule Assets

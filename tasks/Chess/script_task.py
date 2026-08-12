@@ -522,6 +522,29 @@ class ScriptTask(
         """只以阵容入口图片确认当前处于百鬼棋局对局内。"""
         return self.appear(self.I_OPEN_LINEUP)
 
+    def _close_chess_lobby_abnormal_page(self) -> bool:
+        """关闭棋局大厅开战时偶发出现的红色返回键异常页面。"""
+        recovered = False
+        while self.appear(self.I_BACK_RED):
+            if not recovered:
+                logger.warning(
+                    'Chess start blocked by abnormal lobby page; '
+                    'close it with back red'
+                )
+            if self.appear_then_click(
+                self.I_BACK_RED,
+                interval=self.SLOW_POLL_INTERVAL,
+            ):
+                recovered = True
+            self.device.stuck_record_clear()
+            time.sleep(self.SLOW_POLL_INTERVAL)
+            self.screenshot()
+        if recovered:
+            logger.info(
+                'Chess abnormal lobby page closed; retry normal game start'
+            )
+        return recovered
+
     def _wait_until_in_chess_game(
         self,
         timeout: float,
@@ -551,6 +574,15 @@ class ScriptTask(
                 self.device.stuck_record_clear()
                 deadline = time.monotonic() + timeout
                 time.sleep(self.SLOW_POLL_INTERVAL)
+                continue
+
+            if (
+                retry_start
+                and self.appear(self.I_BACK_RED)
+                and self._close_chess_lobby_abnormal_page()
+            ):
+                self.device.stuck_record_clear()
+                deadline = time.monotonic() + timeout
                 continue
 
             if retry_start and self.appear(self.I_CHESS_START):

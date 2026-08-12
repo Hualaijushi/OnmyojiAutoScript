@@ -187,5 +187,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "back_red",
+    "imageName": "c_back_red.png",
+    "roiFront": "977,67,41,46",
+    "roiBack": "972,62,51,56",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]
