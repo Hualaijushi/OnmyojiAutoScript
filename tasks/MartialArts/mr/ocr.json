@@ -3,7 +3,7 @@
     "itemName": "ap_ticket",
     "roiFront": "1138,19,83,27",
     "roiBack": "1138,19,83,27",
-    "mode": "Single",
+    "mode": "Digit",
     "method": "Default",
     "keyword": "",
     "description": ""
@@ -12,7 +12,7 @@
     "itemName": "ap_count",
     "roiFront": "941,18,83,27",
     "roiBack": "941,18,83,27",
-    "mode": "Single",
+    "mode": "Digit",
     "method": "Default",
     "keyword": "",
     "description": ""

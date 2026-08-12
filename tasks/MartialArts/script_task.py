@@ -90,6 +90,19 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         digits = ''.join(char for char in text if char.isdigit())
         return int(digits) if digits else 0
 
+    @classmethod
+    def _parse_optional_ocr_number(cls, value) -> int | None:
+        """解析门票 OCR；无法识别时返回 None，避免误判为零。"""
+        text = str(value).strip()
+        if not text:
+            return None
+        number = cls._parse_ocr_number(text)
+        has_digit = any(char.isdigit() for char in text)
+        replacements = {'I', 'l', 'D', 'O', 'o', 'S', 'B', 'd', '?', '？'}
+        if not has_digit and not any(char in replacements for char in text):
+            return None
+        return number
+
     def read_resources(self) -> tuple[int, int]:
         """读取体力和门票，多次识别取最大值以降低偶发空识别影响。"""
         best_ap = 0
@@ -119,21 +132,28 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         )
         return enough
 
-    def read_boss_tickets(self) -> tuple[int, int]:
-        """读取普通搜寻券和注灵搜寻券，多次识别取最大值。"""
-        best_ticket = 0
-        best_gold = 0
+    def read_boss_tickets(self) -> tuple[int | None, int | None]:
+        """读取两种门票；None 表示 OCR 不确定，不等同于门票为零。"""
+        best_ticket = None
+        best_gold = None
         for attempt in range(1, self.RESOURCE_OCR_RETRIES + 1):
             self.screenshot()
-            ticket = self._parse_ocr_number(self.O_BOSS_TICKET.ocr(self.device.image))
-            gold = self._parse_ocr_number(self.O_BOSS_TICKET_GOLD.ocr(self.device.image))
-            best_ticket = max(best_ticket, ticket)
-            best_gold = max(best_gold, gold)
+            ticket = self._parse_optional_ocr_number(
+                self.O_BOSS_TICKET.ocr(self.device.image)
+            )
+            gold = self._parse_optional_ocr_number(
+                self.O_BOSS_TICKET_GOLD.ocr(self.device.image)
+            )
+            if ticket is not None:
+                best_ticket = ticket if best_ticket is None else max(best_ticket, ticket)
+            if gold is not None:
+                best_gold = gold if best_gold is None else max(best_gold, gold)
             logger.info(
                 f'MartialArts boss tickets OCR {attempt}/{self.RESOURCE_OCR_RETRIES}: '
                 f'normal={ticket}, gold={gold}'
             )
-            if ticket >= self.TICKET_COST or gold >= self.TICKET_COST:
+            if (ticket is not None and ticket >= self.TICKET_COST) or \
+                    (gold is not None and gold >= self.TICKET_COST):
                 return ticket, gold
             if attempt < self.RESOURCE_OCR_RETRIES:
                 time.sleep(0.5)
@@ -177,24 +197,12 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         )
         return False
 
-    def search_boss(self) -> bool:
-        """打开已有首领；否则普通券优先、注灵券兜底搜寻新首领。"""
-        self.screenshot()
-        if self.appear(self.I_FIRE_OVER):
-            return self.open_existing_boss()
-
-        ticket, gold = self.read_boss_tickets()
-        if ticket >= self.TICKET_COST:
-            use_gold = False
-        elif gold >= self.TICKET_COST:
-            use_gold = True
-        else:
-            logger.info('MartialArts boss tickets are insufficient')
-            return False
-
+    def search_boss_in_mode(self, use_gold: bool) -> bool:
+        """使用指定门票对应的搜寻模式尝试进入首领小界面。"""
         if not self.select_boss_search_mode(use_gold):
             return False
         fire_rule = self.I_MAR_FIRE_BOSS_GOLD if use_gold else self.I_MAR_FIRE_BOSS
+        mode_name = 'gold' if use_gold else 'normal'
         for attempt in range(1, self.SEARCH_BOSS_MAX_ATTEMPTS + 1):
             self.screenshot()
             if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
@@ -208,7 +216,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
                 )
             else:
                 logger.info(
-                    f'MartialArts boss search clicked '
+                    f'MartialArts boss {mode_name} search clicked '
                     f'({attempt}/{self.SEARCH_BOSS_MAX_ATTEMPTS}), '
                     f'wait {self.SEARCH_BOSS_WAIT_SECONDS}s for challenge panel'
                 )
@@ -225,7 +233,44 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
                     continue
                 time.sleep(0.2)
 
-        logger.warning('Boss search rejected, ticket may be insufficient')
+        logger.warning(
+            f'MartialArts boss {mode_name} search rejected, '
+            'corresponding ticket may be insufficient'
+        )
+        return False
+
+    def search_boss(self) -> bool:
+        """按各自门票状态执行普通搜寻或注灵搜寻。"""
+        self.screenshot()
+        if self.appear(self.I_FIRE_OVER):
+            return self.open_existing_boss()
+
+        ticket, gold = self.read_boss_tickets()
+        candidates: list[bool] = []
+
+        # 明确认出有票的模式优先；普通搜寻只对应普通票，注灵只对应金票。
+        if ticket is not None and ticket >= self.TICKET_COST:
+            candidates.append(False)
+        if gold is not None and gold >= self.TICKET_COST:
+            candidates.append(True)
+
+        # OCR 空值是不确定，而不是零；实际点击对应模式验证是否可搜寻。
+        if ticket is None:
+            candidates.append(False)
+        if gold is None:
+            candidates.append(True)
+
+        if not candidates:
+            logger.info('MartialArts boss tickets are both explicitly zero')
+            return False
+
+        for use_gold in candidates:
+            mode_name = 'gold' if use_gold else 'normal'
+            logger.info(f'Try MartialArts boss {mode_name} search')
+            if self.search_boss_in_mode(use_gold):
+                return True
+
+        logger.info('No MartialArts boss search mode succeeded')
         return False
 
     def switch_soul_before_battle(self, battle_type: str):

@@ -44,9 +44,9 @@ class MartialArtsAssets:
 
 	# Ocr Rule Assets
 	#  
-	O_AP_TICKET = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Single", method="Default", keyword="", name="ap_ticket")
+	O_AP_TICKET = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Digit", method="Default", keyword="", name="ap_ticket")
 	#  
-	O_AP_COUNT = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Single", method="Default", keyword="", name="ap_count")
+	O_AP_COUNT = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Digit", method="Default", keyword="", name="ap_count")
 	#  
 	O_BOSS_TICKET_GOLD = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Single", method="Default", keyword="", name="boss_ticket_gold")
 	#  
