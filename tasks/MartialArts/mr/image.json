@@ -3,7 +3,7 @@
     "itemName": "battle_main_to_records",
     "imageName": "mr_battle_main_to_records.png",
     "roiFront": "996,552,45,49",
-    "roiBack": "996,552,45,49",
+    "roiBack": "991,547,55,59",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -12,7 +12,7 @@
     "itemName": "ap_unlock",
     "imageName": "mr_ap_unlock.png",
     "roiFront": "868,637,31,30",
-    "roiBack": "868,637,31,30",
+    "roiBack": "863,632,41,40",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -21,7 +21,7 @@
     "itemName": "mar_fire_ap",
     "imageName": "mr_mar_fire_ap.png",
     "roiFront": "1134,598,90,47",
-    "roiBack": "1134,598,90,47",
+    "roiBack": "1129,593,100,57",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -30,7 +30,7 @@
     "itemName": "ap_lock",
     "imageName": "mr_ap_lock.png",
     "roiFront": "868,637,31,30",
-    "roiBack": "868,637,31,30",
+    "roiBack": "863,632,41,40",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -39,7 +39,7 @@
     "itemName": "boss_unlock",
     "imageName": "mr_boss_unlock.png",
     "roiFront": "1094,452,31,30",
-    "roiBack": "1094,452,31,30",
+    "roiBack": "1089,447,41,40",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -48,7 +48,7 @@
     "itemName": "boss_lock",
     "imageName": "mr_boss_lock.png",
     "roiFront": "1094,452,31,30",
-    "roiBack": "1094,452,31,30",
+    "roiBack": "1089,447,41,40",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -57,7 +57,7 @@
     "itemName": "battle_boss_to_records",
     "imageName": "mr_battle_boss_to_records.png",
     "roiFront": "995,590,45,49",
-    "roiBack": "995,590,45,49",
+    "roiBack": "990,585,55,59",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -66,7 +66,7 @@
     "itemName": "mar_fire_boss",
     "imageName": "mr_mar_fire_boss.png",
     "roiFront": "1099,601,90,47",
-    "roiBack": "1099,601,90,47",
+    "roiBack": "1094,596,100,57",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -75,7 +75,7 @@
     "itemName": "mar_fire_boss_gold",
     "imageName": "mr_mar_fire_boss_gold.png",
     "roiFront": "1104,579,76,90",
-    "roiBack": "1104,579,76,90",
+    "roiBack": "1099,574,86,100",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -84,7 +84,7 @@
     "itemName": "mar_change_boss_mode",
     "imageName": "mr_mar_change_boss_mode.png",
     "roiFront": "1163,539,29,30",
-    "roiBack": "1163,539,29,30",
+    "roiBack": "1158,534,39,40",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -93,7 +93,7 @@
     "itemName": "mar_fire_boss_main",
     "imageName": "mr_mar_fire_boss_main.png",
     "roiFront": "1106,529,70,82",
-    "roiBack": "1106,529,70,82",
+    "roiBack": "1101,524,80,92",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
@@ -102,7 +102,16 @@
     "itemName": "fire_over",
     "imageName": "mr_fire_over.png",
     "roiFront": "1126,606,30,35",
-    "roiBack": "1126,606,30,35",
+    "roiBack": "1121,601,40,45",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "boss_main_goto_boss",
+    "imageName": "mr_boss_main_goto_boss.png",
+    "roiFront": "1189,80,30,35",
+    "roiBack": "1184,75,40,45",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""

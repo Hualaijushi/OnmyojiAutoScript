@@ -70,7 +70,7 @@ page_martial_arts.connect(page_martial_arts_boss, MartialArtsAssets.I_TO_BATTLE_
 page_martial_arts_boss_main = Page(MartialArtsAssets.I_CHECK_BATTLE_BOSS_MAIN)
 page_martial_arts_boss_main.connect(
     page_martial_arts_boss,
-    GlobalGameAssets.I_UI_BACK_YELLOW,
+    MartialArtsAssets.I_BOSS_MAIN_GOTO_BOSS,
     key="page_martial_arts_boss_main->page_martial_arts_boss",
 )
 
