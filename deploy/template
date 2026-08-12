@@ -77,9 +77,9 @@ Deploy:
     # Address of ocr server for alas instance to connect
     # [Default] 127.0.0.1:22268
     OcrClientAddress: 127.0.0.1:22268
-    # OCR server worker count. One worker minimizes model memory usage.
-    # [Default] 1
-    OcrServerWorkerCount: 1
+    # OCR server worker count, 0 means auto detect
+    # [Default] 0
+    OcrServerWorkerCount: 0
 
   Image:
     # Run image recognition as a service. This service is mandatory and all image rules use it.

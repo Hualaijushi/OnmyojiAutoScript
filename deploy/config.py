@@ -37,7 +37,7 @@ class ConfigModel:
     StartOcrServer: bool = True
     OcrServerPort: int = 22268
     OcrClientAddress: str = "127.0.0.1:22268"
-    OcrServerWorkerCount: int = 1
+    OcrServerWorkerCount: int = 0
 
     # Image
     StartImageServer: bool = True

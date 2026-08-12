@@ -101,18 +101,21 @@ def _is_port_in_use(host: str, port: int) -> bool:
 
 @dataclass(slots=True)
 class OcrServerSettings:
-    worker_count: int = 1
+    worker_count: int = 0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "OcrServerSettings":
         if not data:
             return cls()
-        return cls(worker_count=int(data.get("worker_count", 1)))
+        return cls(worker_count=int(data.get("worker_count", 0)))
 
 
 class OcrTaskScheduler:
-    def __init__(self, worker_count: int = 1) -> None:
-        self.worker_count = max(1, worker_count or 1)
+    def __init__(self, worker_count: int = 0) -> None:
+        self.worker_count = max(
+            1,
+            worker_count or (multiprocessing.cpu_count() or 1),
+        )
         self._executor = ThreadPoolExecutor(
             max_workers=self.worker_count,
             thread_name_prefix="ocr_worker",
