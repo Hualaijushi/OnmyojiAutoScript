@@ -1,9 +1,9 @@
 [
   {
     "itemName": "ap_ticket",
-    "roiFront": "1138,19,83,27",
-    "roiBack": "1138,19,83,27",
-    "mode": "DigitCounter",
+    "roiFront": "1138,20,85,32",
+    "roiBack": "1138,20,85,32",
+    "mode": "Digit",
     "method": "Default",
     "keyword": "",
     "description": ""
@@ -21,7 +21,7 @@
     "itemName": "boss_ticket_gold",
     "roiFront": "1138,19,83,27",
     "roiBack": "1138,19,83,27",
-    "mode": "DigitCounter",
+    "mode": "Digit",
     "method": "Default",
     "keyword": "",
     "description": ""
@@ -30,7 +30,7 @@
     "itemName": "boss_ticket",
     "roiFront": "941,18,83,27",
     "roiBack": "941,18,83,27",
-    "mode": "DigitCounter",
+    "mode": "Digit",
     "method": "Default",
     "keyword": "",
     "description": ""
