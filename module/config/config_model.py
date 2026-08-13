@@ -56,6 +56,7 @@ from tasks.GuildActivityMonitor.config import GuildActivityMonitor
 
 # 这一部分是活动的配置-----------------------------------------------------------------------------------------------------
 from tasks.ActivityShikigami.config import ActivityShikigami
+from tasks.Fakegod.config import Fakegod
 from tasks.RichMan.config import RichMan
 from tasks.MartialArts.config import MartialArts
 from tasks.MetaDemon.config import MetaDemon
@@ -124,6 +125,7 @@ class ConfigModel(ConfigBase):
 
     # 这些是活动的
     activity_shikigami: ActivityShikigami = Field(default_factory=ActivityShikigami)
+    fakegod: Fakegod = Field(default_factory=Fakegod)
     rich_man: RichMan = Field(default_factory=RichMan)
     martial_arts: MartialArts = Field(default_factory=MartialArts)
     meta_demon: MetaDemon = Field(default_factory=MetaDemon)

@@ -11,7 +11,6 @@ from module.logger import logger
 from tasks.base_task import BaseTask
 from tasks.RichMan.assets import RichManAssets
 from tasks.RichMan.config import RichMan
-from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 import tasks.RichMan.page as pages
@@ -99,7 +98,7 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, RichManAssets):
         return 'RichMan'
 
     def _exit_matcher(self) -> ExitMatcher | None:
-        return self.I_ACT_FIRE
+        return self.I_RM_MODE_FIGHT
 
     def before_run(self):
         pages.page_battle_result = self.navigator.resolve_page(pages.page_battle_result)
@@ -130,7 +129,6 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, RichManAssets):
             if cur_battle_conf is None:
                 logger.warning(f'{climb_type} battle config is not supported')
                 continue
-            self.lock_team(cur_battle_conf)
             try:
                 while True:
                     self.screenshot()
@@ -173,15 +171,3 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, RichManAssets):
             group_team = getattr(conf, f"{self.climb_type}_group_team")
             self.run_switch_soul(group_team)
         self.goto_page(getattr(pages, f"page_act_{self.climb_type}"))
-
-    def lock_team(self, battle_conf: GeneralBattleConfig):
-        """
-        根据配置判断当前爬塔类型是否锁定阵容, 并执行锁定或解锁
-        """
-        enable = battle_conf.lock_team_enable
-        if enable:
-            logger.info('Lock RichMan battle team')
-            self.ui_click(self.I_UNLOCK, stop=self.I_LOCK, interval=1.5)
-            return
-        logger.info('Unlock RichMan battle team')
-        self.ui_click(self.I_LOCK, stop=self.I_UNLOCK, interval=1.5)

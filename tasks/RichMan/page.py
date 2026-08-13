@@ -41,7 +41,7 @@ def find_activity_entry(task) -> bool:
     )
 
 
-page_act = Page(RichManAssets.I_TO_BATTLE_MAIN)
+page_act = Page(RichManAssets.I_CHECK_RM_MAIN)
 page_act.add_enter_failure_hooks(
     find_activity_entry,
     conditional_action(GlobalGameAssets.I_UI_REWARD, random_click),
@@ -51,6 +51,6 @@ page_act.add_enter_failure_hooks(
 page_act.connect(page_main, GlobalGameAssets.I_UI_BACK_YELLOW, key='rich_man_act->page_main')
 page_main.connect(page_act, RichManAssets.I_MAIN_GOTO_ACT, key='page_main->rich_man_act')
 
-page_act_pass = Page(RichManAssets.I_CLIMB_MODE_PASS)
+page_act_pass = Page(RichManAssets.I_CHECK_RM_RICHMAN)
 page_act_pass.connect(page_act, GlobalGameAssets.I_UI_BACK_YELLOW, key='rich_man_pass->rich_man_act')
-page_act.connect(page_act_pass, RichManAssets.I_AS_TO_PASS, key='rich_man_act->rich_man_pass')
+page_act.connect(page_act_pass, RichManAssets.I_TO_BATTLE_MAIN, key='rich_man_act->rich_man_pass')

@@ -22,5 +22,11 @@
     "roiFront": "1015,369,100,100",
     "roiBack": "1015,369,100,100",
     "description": ""
+  },
+  {
+    "itemName": "rm_fight_boss_enter",
+    "roiFront": "561,347,49,73",
+    "roiBack": "561,347,49,73",
+    "description": ""
   }
 ]

@@ -12,11 +12,11 @@ from module.exception import TaskEnd
 from module.logger import logger
 
 from tasks.base_task import BaseTask
-from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
-from tasks.ActivityShikigami.config import GeneralBattleConfig, ActivityShikigami
+from tasks.Fakegod.assets import FakegodAssets
+from tasks.Fakegod.config import GeneralBattleConfig, Fakegod
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
-import tasks.ActivityShikigami.page as pages
+import tasks.Fakegod.page as pages
 from typing import Optional, Callable
 
 
@@ -39,8 +39,8 @@ class StateMachine(BaseTask):
     switch_souled: dict[str, bool] = {}
 
     @cached_property
-    def conf(self) -> ActivityShikigami:
-        return self.config.model.activity_shikigami
+    def conf(self) -> Fakegod:
+        return self.config.model.fakegod
 
     @property
     def climb_type(self) -> str:
@@ -102,13 +102,13 @@ class StateMachine(BaseTask):
         return True
 
 
-class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigamiAssets):
-    """爬塔活动基类"""
+class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, FakegodAssets):
+    """伪神降临独立任务基类。"""
 
     @property
     def scheduled_task_name(self) -> str:
         """运行结束后需要重新调度的任务名。"""
-        return 'ActivityShikigami'
+        return 'Fakegod'
 
     def _exit_matcher(self) -> ExitMatcher | None:
         return self.I_ACT_FIRE

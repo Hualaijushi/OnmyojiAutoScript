@@ -1,17 +1,8 @@
 [
   {
-    "itemName": "fire",
-    "roiFront": "962,529,308,171",
-    "roiBack": "964,530,309,171",
-    "mode": "Full",
-    "method": "Default",
-    "keyword": "挑战",
-    "description": "挑战"
-  },
-  {
     "itemName": "remain_ap",
-    "roiFront": "748,14,95,34",
-    "roiBack": "748,14,95,34",
+    "roiFront": "1123,24,95,34",
+    "roiBack": "1123,24,95,34",
     "mode": "DigitCounter",
     "method": "Default",
     "keyword": "",
@@ -19,30 +10,12 @@
   },
   {
     "itemName": "remain_pass",
-    "roiFront": "563,15,88,31",
-    "roiBack": "563,15,88,31",
+    "roiFront": "539,23,88,31",
+    "roiBack": "539,23,88,31",
     "mode": "DigitCounter",
     "method": "Default",
     "keyword": "",
     "description": "活动体力的剩余检测"
-  },
-  {
-    "itemName": "remain_buy",
-    "roiFront": "808,531,39,42",
-    "roiBack": "808,531,39,42",
-    "mode": "DigitCounter",
-    "method": "Default",
-    "keyword": "",
-    "description": "还有多少次购买体力的机会"
-  },
-  {
-    "itemName": "remain_pass2",
-    "roiFront": "750,17,88,29",
-    "roiBack": "750,17,88,29",
-    "mode": "Digit",
-    "method": "Default",
-    "keyword": "",
-    "description": "活动票数（没有百分比）"
   },
   {
     "itemName": "remain_boss",
@@ -61,14 +34,5 @@
     "method": "Default",
     "keyword": "",
     "description": "100体活动门票检测"
-  },
-  {
-    "itemName": "enter_ap100",
-    "roiFront": "67,99,92,359",
-    "roiBack": "67,99,92,359",
-    "mode": "Full",
-    "method": "Default",
-    "keyword": "雪山修行",
-    "description": "进入100体活动标识"
   }
 ]

@@ -36,13 +36,13 @@
     "description": "点击进入boss战斗页面"
   },
   {
-    "itemName": "check_battle_boss",
-    "imageName": "as_check_battle_boss.png",
-    "roiFront": "151,18,129,46",
-    "roiBack": "141,0,151,85",
+    "itemName": "check_battle_main",
+    "imageName": "as_check_battle_main.png",
+    "roiFront": "151,18,164,40",
+    "roiBack": "141,0,192,69",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "boss界面标志"
+    "description": "活动主界面标志"
   },
   {
     "itemName": "battle_main_to_records",
@@ -54,15 +54,6 @@
     "description": "从main进入到式神录"
   },
   {
-    "itemName": "as_to_pass",
-    "imageName": "as_as_to_pass.png",
-    "roiFront": "624,505,38,35",
-    "roiBack": "273,141,759,475",
-    "method": "Template matching",
-    "threshold": 0.65,
-    "description": "进入门票活动的按钮"
-  },
-  {
     "itemName": "confirm_skip",
     "imageName": "as_confirm_skip.png",
     "roiFront": "707,442,137,38",
@@ -72,57 +63,12 @@
     "description": "确认跳过"
   },
   {
-    "itemName": "rm_check_boss",
-    "imageName": "as_rm_check_boss.png",
-    "roiFront": "988,599,75,29",
-    "roiBack": "952,546,142,115",
+    "itemName": "check_battle_pass",
+    "imageName": "as_check_battle_pass.png",
+    "roiFront": "151,18,134,40",
+    "roiBack": "141,0,157,67",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": ""
-  },
-  {
-    "itemName": "as_check_main_2",
-    "imageName": "as_as_check_main_2.png",
-    "roiFront": "153,19,164,39",
-    "roiBack": "116,0,256,92",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "活动页2标志"
-  },
-  {
-    "itemName": "as_open_eye",
-    "imageName": "as_as_open_eye.png",
-    "roiFront": "1198,300,60,54",
-    "roiBack": "1146,253,134,217",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "打开眼睛按钮"
-  },
-  {
-    "itemName": "as_locate",
-    "imageName": "as_as_locate.png",
-    "roiFront": "1212,394,34,36",
-    "roiBack": "1146,253,134,217",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "活动定位按钮"
-  },
-  {
-    "itemName": "as_close_eye",
-    "imageName": "as_as_close_eye.png",
-    "roiFront": "1197,297,63,57",
-    "roiBack": "1146,253,134,217",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "关闭眼睛按钮"
-  },
-  {
-    "itemName": "to_battle_ap",
-    "imageName": "as_to_battle_ap.png",
-    "roiFront": "825,321,39,139",
-    "roiBack": "720,255,238,269",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "活动主界面进入体力爬塔标志"
+    "description": "爬塔主界面标志"
   }
 ]
