@@ -13,6 +13,8 @@ class MartialArtsAssets:
 	# Click Rule Assets
 	#  
 	C_SELECT_FIRE_BOSS = RuleClick(roi_front=(28,88,254,99), roi_back=(28,88,254,99), name="select_fire_boss")
+	#  
+	C_MR_QUICK_LOADOUT_CLOSE = RuleClick(roi_front=(491,595,189,73), roi_back=(491,595,189,73), name="mr_quick_loadout_close")
 
 
 	# Image Rule Assets
@@ -42,17 +44,25 @@ class MartialArtsAssets:
 	I_FIRE_OVER = RuleImage(roi_front=(1126,606,30,35), roi_back=(1121,601,40,45), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_fire_over.png")
 	#  
 	I_BOSS_MAIN_GOTO_BOSS = RuleImage(roi_front=(1189,80,30,35), roi_back=(1184,75,40,45), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_boss_main_goto_boss.png")
+	#  
+	I_MR_BOSS_GOTO_QUICK_LOADOUT = RuleImage(roi_front=(910,597,32,36), roi_back=(900,586,52,56), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_boss_goto_quick_loadout.png")
+	#  
+	I_MR_BOSS_QUICK_LOADOUT_FIGHT = RuleImage(roi_front=(809,518,119,42), roi_back=(804,513,129,52), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_boss_quick_loadout_fight.png")
 
 
 	# Ocr Rule Assets
 	#  
 	O_AP_TICKET = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Digit", method="Default", keyword="", name="ap_ticket")
-	#  
-	O_AP_COUNT = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Digit", method="Default", keyword="", name="ap_count")
+	# 体力战斗体力数量 
+	O_AP_COUNT = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Single", method="Default", keyword="", name="ap_count")
 	#  
 	O_BOSS_TICKET_GOLD = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Single", method="Default", keyword="", name="boss_ticket_gold")
 	#  
 	O_BOSS_TICKET = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Single", method="Default", keyword="", name="boss_ticket")
+	# 首领体力识别 
+	O_BOSS_AP_COUNT = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Single", method="Default", keyword="", name="boss_ap_count")
+	#  
+	O_BOSS_NAME = RuleOcr(roi=(364,212,32,139), area=(364,212,32,139), mode="Single", method="Default", keyword="", name="boss_name")
 
 
 	# Image Rule Assets

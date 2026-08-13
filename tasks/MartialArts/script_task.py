@@ -2,6 +2,7 @@
 """武道大会战斗任务。"""
 
 import time
+import re
 
 from cached_property import cached_property
 
@@ -10,6 +11,7 @@ from module.exception import TaskEnd
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBattle.general_battle import BattleBehaviorScope, GeneralBattle
+from tasks.Component.QuickLoadout.quick_loadout import QuickLoadout
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.matcher import any_of
@@ -18,7 +20,7 @@ from tasks.MartialArts.config import MartialArts
 import tasks.MartialArts.page as pages
 
 
-class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
+class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAssets):
     AP_COST = 30
     TICKET_COST = 1
     BATTLE_TIMEOUT = 600
@@ -79,7 +81,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
 
     @staticmethod
     def _parse_ocr_number(value) -> int:
-        """从 OCR 返回值中提取整数；空值或无法识别时返回 0。"""
+        """解析资源数量，兼容 Single OCR 返回的 ``x.x万`` 等缩写。"""
         text = str(value)
         replacements = {
             'I': '1', 'l': '1', 'D': '0', 'O': '0', 'o': '0',
@@ -87,8 +89,19 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         }
         for old, new in replacements.items():
             text = text.replace(old, new)
-        digits = ''.join(char for char in text if char.isdigit())
-        return int(digits) if digits else 0
+        match = re.search(r'(\d+(?:\.\d+)?)\s*([千萬万亿億]?)', text)
+        if match is None:
+            return 0
+        number = float(match.group(1))
+        multiplier = {
+            '': 1,
+            '千': 1_000,
+            '万': 10_000,
+            '萬': 10_000,
+            '亿': 100_000_000,
+            '億': 100_000_000,
+        }[match.group(2)]
+        return int(number * multiplier)
 
     @classmethod
     def _parse_optional_ocr_number(cls, value) -> int | None:
@@ -129,6 +142,34 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         logger.info(
             f'MartialArts resources: AP={ap} (need > {self.AP_COST}), '
             f'ticket={ticket} (need >= {self.TICKET_COST}), enough={enough}'
+        )
+        return enough
+
+    def read_boss_ap(self) -> int:
+        """在首领战斗小界面读取体力，多次识别取最大值。"""
+        best_ap = 0
+        for attempt in range(1, self.RESOURCE_OCR_RETRIES + 1):
+            self.screenshot()
+            ap = self._parse_ocr_number(
+                self.O_BOSS_AP_COUNT.ocr(self.device.image)
+            )
+            best_ap = max(best_ap, ap)
+            logger.info(
+                f'MartialArts boss AP OCR {attempt}/{self.RESOURCE_OCR_RETRIES}: '
+                f'AP={ap}'
+            )
+            if ap > self.AP_COST:
+                return ap
+            if attempt < self.RESOURCE_OCR_RETRIES:
+                time.sleep(0.5)
+        return best_ap
+
+    def boss_ap_enough(self) -> bool:
+        """首领战每轮开始前要求体力严格大于单次消耗。"""
+        ap = self.read_boss_ap()
+        enough = ap > self.AP_COST
+        logger.info(
+            f'MartialArts boss AP={ap} (need > {self.AP_COST}), enough={enough}'
         )
         return enough
 
@@ -410,7 +451,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
         self.battle_type = 'boss'
         self.current_count = 0
         limit = self.conf.general_climb.boss_limit
+        quick_loadout_conf = self.conf.boss_quick_loadout_config
         battle_conf = self.conf.boss_battle_conf
+        if quick_loadout_conf.enable and battle_conf.preset_enable:
+            logger.warning('Boss quick loadout enabled, disable legacy battle preset for this MartialArts run')
+            battle_conf = battle_conf.model_copy(update={'preset_enable': False})
         soul_switched = False
 
         self.enter_boss_battle()
@@ -418,9 +463,21 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, MartialArtsAssets):
             self.goto_page(pages.page_martial_arts_boss)
             if not self.search_boss():
                 break
-            if not soul_switched:
+            if not self.boss_ap_enough():
+                logger.info('MartialArts AP is insufficient, stop boss battles')
+                break
+            if not quick_loadout_conf.enable and not soul_switched:
                 self.switch_soul_before_battle('boss')
                 soul_switched = True
+            if quick_loadout_conf.enable and not self.run_quick_loadout(
+                quick_loadout_conf,
+                entry=self.I_MR_BOSS_GOTO_QUICK_LOADOUT,
+                fight_anchor=self.I_MR_BOSS_QUICK_LOADOUT_FIGHT,
+                dismiss=self.C_MR_QUICK_LOADOUT_CLOSE,
+                name_ocr=self.O_BOSS_NAME,
+            ):
+                logger.warning('MartialArts boss quick loadout failed, stop boss battles')
+                break
             self.lock_team(battle_conf)
             if not self.run_boss_battle_round(battle_conf):
                 break

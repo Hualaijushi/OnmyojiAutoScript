@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from tasks.ActivityShikigami.config import check_soul_by_number, check_soul_by_ocr
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+from tasks.Component.QuickLoadout.config_quick_loadout import NamedQuickLoadoutConfig
 from tasks.Component.config_base import ConfigBase
 from tasks.Component.config_scheduler import Scheduler
 
@@ -72,6 +73,7 @@ class MartialArts(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     general_climb: GeneralClimb = Field(default_factory=GeneralClimb)
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
+    boss_quick_loadout_config: NamedQuickLoadoutConfig = Field(default_factory=NamedQuickLoadoutConfig)
     ap_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     boss_battle_conf: GeneralBattleConfig = Field(
         default_factory=lambda: GeneralBattleConfig(battle_timeout=600)

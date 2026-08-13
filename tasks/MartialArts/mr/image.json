@@ -115,5 +115,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "mr_boss_goto_quick_loadout",
+    "imageName": "mr_mr_boss_goto_quick_loadout.png",
+    "roiFront": "910,597,32,36",
+    "roiBack": "900,586,52,56",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "mr_boss_quick_loadout_fight",
+    "imageName": "mr_mr_boss_quick_loadout_fight.png",
+    "roiFront": "809,518,119,42",
+    "roiBack": "804,513,129,52",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]

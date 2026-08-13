@@ -12,10 +12,10 @@
     "itemName": "ap_count",
     "roiFront": "941,18,83,27",
     "roiBack": "941,18,83,27",
-    "mode": "Digit",
+    "mode": "Single",
     "method": "Default",
     "keyword": "",
-    "description": ""
+    "description": "体力战斗体力数量"
   },
   {
     "itemName": "boss_ticket_gold",
@@ -30,6 +30,24 @@
     "itemName": "boss_ticket",
     "roiFront": "941,18,83,27",
     "roiBack": "941,18,83,27",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": ""
+  },
+  {
+    "itemName": "boss_ap_count",
+    "roiFront": "1138,19,83,27",
+    "roiBack": "1138,19,83,27",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "首领体力识别"
+  },
+  {
+    "itemName": "boss_name",
+    "roiFront": "364,212,32,139",
+    "roiBack": "364,212,32,139",
     "mode": "Single",
     "method": "Default",
     "keyword": "",

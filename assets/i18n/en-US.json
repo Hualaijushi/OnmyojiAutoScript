@@ -2,5 +2,17 @@
   "ocr": "OCR Logs",
   "save_ocr_log": "Save OCR recognition logs",
   "save_ocr_log_help": "Disabled by default. When enabled, saves OCR input images and recognized text for debugging.",
-  "utilize_harvest": "Collect foster rewards"
+  "utilize_harvest": "Collect foster rewards",
+  "quick_loadout_config": "Quick Loadout",
+  "boss_quick_loadout_config": "Boss Quick Loadout",
+  "quick_loadout_enable_help": "Equip preset souls and deploy the preset from the in-battle quick loadout panel; skips the legacy soul switch and battle preset, then applies the team-lock state from general battle settings",
+  "quick_loadout_mode_help": "number selects by group and preset number; ocr selects by group and preset name",
+  "quick_loadout_group_number_help": "Preset group number in the quick loadout panel",
+  "quick_loadout_preset_number_help": "Preset number in the selected group",
+  "quick_loadout_group_name_help": "Preset group name used in OCR mode",
+  "quick_loadout_preset_name_help": "Preset name used in OCR mode",
+  "custom_preset_enable": "Enable Custom Preset Deployment",
+  "custom_preset": "Custom Preset Deployment",
+  "quick_loadout_custom_preset_enable_help": "Select quick-loadout presets by stage name; deploy the preset and equip its souls once for each new boss challenge",
+  "quick_loadout_custom_preset_help": "Format: boss_name:(\"group number or name\",\"preset number or name\"); separate entries with semicolons; ALL matches every monster not explicitly configured; OCR mode treats both values as names"
 }

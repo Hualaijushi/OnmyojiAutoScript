@@ -1047,6 +1047,16 @@
       "enable_switch_boss_by_name": false,
       "boss_group_team_name": ""
     },
+    "boss_quick_loadout_config": {
+      "enable": false,
+      "mode": "number",
+      "group_number": 1,
+      "preset_number": 1,
+      "group_name": "",
+      "preset_name": "",
+      "custom_preset_enable": false,
+      "custom_preset": "ALL:(1,1);"
+    },
     "ap_battle_conf": {
       "lock_team_enable": false,
       "preset_enable": false,
@@ -1808,6 +1818,7 @@
       "lineup_bond": "七角山",
       "rank_protection": false,
       "run_count": 1,
+      "matchmaking_timeout_seconds": 60,
       "coin_full_exit": false
     }
   },

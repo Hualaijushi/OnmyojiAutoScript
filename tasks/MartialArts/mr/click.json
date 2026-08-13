@@ -4,5 +4,11 @@
     "roiFront": "28,88,254,99",
     "roiBack": "28,88,254,99",
     "description": ""
+  },
+  {
+    "itemName": "mr_quick_loadout_close",
+    "roiFront": "491,595,189,73",
+    "roiBack": "491,595,189,73",
+    "description": ""
   }
 ]
