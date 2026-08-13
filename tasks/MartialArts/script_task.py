@@ -2,7 +2,6 @@
 """武道大会战斗任务。"""
 
 import time
-import re
 
 from cached_property import cached_property
 
@@ -79,51 +78,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
         self.goto_page(pages.page_martial_arts_boss)
         logger.info('Entered MartialArts boss map')
 
-    @staticmethod
-    def _parse_ocr_number(value) -> int:
-        """解析资源数量，兼容 Single OCR 返回的 ``x.x万`` 等缩写。"""
-        text = str(value)
-        replacements = {
-            'I': '1', 'l': '1', 'D': '0', 'O': '0', 'o': '0',
-            'S': '5', 'B': '8', 'd': '6', '?': '2', '？': '2',
-        }
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        match = re.search(r'(\d+(?:\.\d+)?)\s*([千萬万亿億]?)', text)
-        if match is None:
-            return 0
-        number = float(match.group(1))
-        multiplier = {
-            '': 1,
-            '千': 1_000,
-            '万': 10_000,
-            '萬': 10_000,
-            '亿': 100_000_000,
-            '億': 100_000_000,
-        }[match.group(2)]
-        return int(number * multiplier)
-
-    @classmethod
-    def _parse_optional_ocr_number(cls, value) -> int | None:
-        """解析门票 OCR；无法识别时返回 None，避免误判为零。"""
-        text = str(value).strip()
-        if not text:
-            return None
-        number = cls._parse_ocr_number(text)
-        has_digit = any(char.isdigit() for char in text)
-        replacements = {'I', 'l', 'D', 'O', 'o', 'S', 'B', 'd', '?', '？'}
-        if not has_digit and not any(char in replacements for char in text):
-            return None
-        return number
-
     def read_resources(self) -> tuple[int, int]:
         """读取体力和门票，多次识别取最大值以降低偶发空识别影响。"""
         best_ap = 0
         best_ticket = 0
         for attempt in range(1, self.RESOURCE_OCR_RETRIES + 1):
             self.screenshot()
-            ap = self._parse_ocr_number(self.O_AP_COUNT.ocr(self.device.image))
-            ticket = self._parse_ocr_number(self.O_AP_TICKET.ocr(self.device.image))
+            ap = self.O_AP_COUNT.ocr(self.device.image)
+            ticket = self.O_AP_TICKET.ocr_digit(self.device.image)
             best_ap = max(best_ap, ap)
             best_ticket = max(best_ticket, ticket)
             logger.info(
@@ -150,9 +112,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
         best_ap = 0
         for attempt in range(1, self.RESOURCE_OCR_RETRIES + 1):
             self.screenshot()
-            ap = self._parse_ocr_number(
-                self.O_BOSS_AP_COUNT.ocr(self.device.image)
-            )
+            ap = self.O_BOSS_AP_COUNT.ocr(self.device.image)
             best_ap = max(best_ap, ap)
             logger.info(
                 f'MartialArts boss AP OCR {attempt}/{self.RESOURCE_OCR_RETRIES}: '
@@ -173,28 +133,21 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
         )
         return enough
 
-    def read_boss_tickets(self) -> tuple[int | None, int | None]:
-        """读取两种门票；None 表示 OCR 不确定，不等同于门票为零。"""
-        best_ticket = None
-        best_gold = None
+    def read_boss_tickets(self) -> tuple[int, int]:
+        """读取普通和注灵门票，多次识别取最大值。"""
+        best_ticket = 0
+        best_gold = 0
         for attempt in range(1, self.RESOURCE_OCR_RETRIES + 1):
             self.screenshot()
-            ticket = self._parse_optional_ocr_number(
-                self.O_BOSS_TICKET.ocr(self.device.image)
-            )
-            gold = self._parse_optional_ocr_number(
-                self.O_BOSS_TICKET_GOLD.ocr(self.device.image)
-            )
-            if ticket is not None:
-                best_ticket = ticket if best_ticket is None else max(best_ticket, ticket)
-            if gold is not None:
-                best_gold = gold if best_gold is None else max(best_gold, gold)
+            ticket = self.O_BOSS_TICKET.ocr_digit(self.device.image)
+            gold = self.O_BOSS_TICKET_GOLD.ocr_digit(self.device.image)
+            best_ticket = max(best_ticket, ticket)
+            best_gold = max(best_gold, gold)
             logger.info(
                 f'MartialArts boss tickets OCR {attempt}/{self.RESOURCE_OCR_RETRIES}: '
                 f'normal={ticket}, gold={gold}'
             )
-            if (ticket is not None and ticket >= self.TICKET_COST) or \
-                    (gold is not None and gold >= self.TICKET_COST):
+            if ticket >= self.TICKET_COST or gold >= self.TICKET_COST:
                 return ticket, gold
             if attempt < self.RESOURCE_OCR_RETRIES:
                 time.sleep(0.5)
@@ -290,19 +243,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
         candidates: list[bool] = []
 
         # 明确认出有票的模式优先；普通搜寻只对应普通票，注灵只对应金票。
-        if ticket is not None and ticket >= self.TICKET_COST:
+        if ticket >= self.TICKET_COST:
             candidates.append(False)
-        if gold is not None and gold >= self.TICKET_COST:
-            candidates.append(True)
-
-        # OCR 空值是不确定，而不是零；实际点击对应模式验证是否可搜寻。
-        if ticket is None:
-            candidates.append(False)
-        if gold is None:
+        if gold >= self.TICKET_COST:
             candidates.append(True)
 
         if not candidates:
-            logger.info('MartialArts boss tickets are both explicitly zero')
+            logger.info('MartialArts boss tickets are both zero')
             return False
 
         for use_gold in candidates:
