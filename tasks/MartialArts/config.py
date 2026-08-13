@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from tasks.ActivityShikigami.config import check_soul_by_number, check_soul_by_ocr
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
-from tasks.Component.QuickLoadout.config_quick_loadout import NamedQuickLoadoutConfig
+from tasks.Component.QuickLoadout.config import NamedQuickLoadoutConfig
 from tasks.Component.config_base import ConfigBase
 from tasks.Component.config_scheduler import Scheduler
 

@@ -149,7 +149,7 @@ def test_custom_preset_parser_accepts_multiple_bosses():
 
 def test_named_fields_are_only_exposed_by_opt_in_config():
     source = (
-        ROOT / 'tasks' / 'Component' / 'QuickLoadout' / 'config_quick_loadout.py'
+        ROOT / 'tasks' / 'Component' / 'QuickLoadout' / 'config.py'
     ).read_text(encoding='utf-8')
     tree = ast.parse(source)
     classes = {
@@ -165,6 +165,14 @@ def test_named_fields_are_only_exposed_by_opt_in_config():
 
     assert 'custom_preset' not in fields('QuickLoadoutConfig')
     assert {'custom_preset_enable', 'custom_preset'} <= fields('NamedQuickLoadoutConfig')
+
+
+def test_quick_loadout_mode_uses_translated_enum_values():
+    source = (
+        ROOT / 'tasks' / 'Component' / 'QuickLoadout' / 'config.py'
+    ).read_text(encoding='utf-8')
+    assert "NUMBER = 'mode_number'" in source
+    assert "OCR = 'mode_ocr'" in source
 
 
 def test_martial_arts_opts_into_named_quick_loadout_and_passes_boss_ocr():

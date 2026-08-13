@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 
 
 class QuickLoadoutMode(str, Enum):
-    NUMBER = 'number'
-    OCR = 'ocr'
+    NUMBER = 'mode_number'
+    OCR = 'mode_ocr'
 
 
 class QuickLoadoutConfig(BaseModel):

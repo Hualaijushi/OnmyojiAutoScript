@@ -229,7 +229,7 @@
   "quick_loadout_config": "一键配置",
   "boss_quick_loadout_config": "首领战一键配置",
   "quick_loadout_enable_help": "使用战斗界面的一键配置装配御魂并上阵预设；启用后跳过执行任务前切换御魂和旧战斗预设，切换完成后仍按通用战斗配置确认阵容锁定状态",
-  "quick_loadout_mode_help": "number按分组和预设编号选择；ocr按分组和预设名称识别",
+  "quick_loadout_mode_help": "mode_number按分组和预设编号选择；mode_ocr按分组和预设名称识别",
   "quick_loadout_group_number_help": "一键配置左侧预设组编号",
   "quick_loadout_preset_number_help": "所选预设组中的预设编号",
   "quick_loadout_group_name_help": "OCR模式使用的预设组名称",
@@ -239,5 +239,11 @@
   "quick_loadout_custom_preset_enable_help": "按任务关卡名称选择不同的一键配置预设；每次挑战新首领时上阵对应预设并装配一次御魂",
   "quick_loadout_custom_preset_help": "格式：boss_name:(\"预设组数或名\",\"预设序号或名字\"); 多项配置以分号分隔；ALL匹配除特别指定外的所有怪物；一键配置为OCR模式时组和预设均按名称识别",
   "martial_arts": "武道大会",
-  "MartialArts": "武道大会"
+  "MartialArts": "武道大会",
+  "mode": "配置选择模式",
+  "group_number": "分组编号",
+  "preset_number": "预设编号",
+  "preset_name": "预设名",
+  "mode_number": "编号",
+  "mode_ocr": "OCR"
 }

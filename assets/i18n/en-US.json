@@ -6,7 +6,7 @@
   "quick_loadout_config": "Quick Loadout",
   "boss_quick_loadout_config": "Boss Quick Loadout",
   "quick_loadout_enable_help": "Equip preset souls and deploy the preset from the in-battle quick loadout panel; skips the legacy soul switch and battle preset, then applies the team-lock state from general battle settings",
-  "quick_loadout_mode_help": "number selects by group and preset number; ocr selects by group and preset name",
+  "quick_loadout_mode_help": "mode_number selects by group and preset number; mode_ocr selects by group and preset name",
   "quick_loadout_group_number_help": "Preset group number in the quick loadout panel",
   "quick_loadout_preset_number_help": "Preset number in the selected group",
   "quick_loadout_group_name_help": "Preset group name used in OCR mode",

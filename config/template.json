@@ -1049,7 +1049,7 @@
     },
     "boss_quick_loadout_config": {
       "enable": false,
-      "mode": "number",
+      "mode": "mode_number",
       "group_number": 1,
       "preset_number": 1,
       "group_name": "",
