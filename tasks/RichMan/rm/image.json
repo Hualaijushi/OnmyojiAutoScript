@@ -1,0 +1,38 @@
+[
+  {
+    "itemName": "lock",
+    "imageName": "as_lock.png",
+    "roiFront": "886,646,31,30",
+    "roiBack": "871,620,69,76",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "上锁图标"
+  },
+  {
+    "itemName": "unlock",
+    "imageName": "as_unlock.png",
+    "roiFront": "886,646,31,30",
+    "roiBack": "871,620,69,76",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "还未上锁图片"
+  },
+  {
+    "itemName": "climb_mode_pass",
+    "imageName": "as_climb_mode_pass.png",
+    "roiFront": "1141,544,21,21",
+    "roiBack": "1118,510,119,186",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "活动爬塔标志"
+  },
+  {
+    "itemName": "act_fire",
+    "imageName": "as_act_fire.png",
+    "roiFront": "1132,602,84,45",
+    "roiBack": "1080,530,192,190",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "活动通用挑战图标"
+  }
+]

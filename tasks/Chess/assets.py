@@ -57,7 +57,7 @@ class ChessAssets:
 	# 购买经验 
 	I_EXPERIENCE = RuleImage(roi_front=(37,641,102,26), roi_back=(32,636,112,36), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_experience.png")
 	# 打开阵容预设 
-	I_OPEN_LINEUP = RuleImage(roi_front=(264,12,47,44), roi_back=(259,7,57,44), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_open_lineup.png")
+	I_OPEN_LINEUP = RuleImage(roi_front=(271,17,33,34), roi_back=(259,7,57,53), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_open_lineup.png")
 	# 商店刷新 
 	I_REFRESH = RuleImage(roi_front=(1169,419,65,64), roi_back=(1164,414,75,74), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_refresh.png")
 	#  
@@ -84,6 +84,8 @@ class ChessAssets:
 	I_CHECK_GOLDFISH = RuleImage(roi_front=(924,291,192,49), roi_back=(919,286,202,59), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_check_goldfish.png")
 	#  
 	I_BACK_RED = RuleImage(roi_front=(977,67,41,46), roi_back=(972,62,51,56), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_back_red.png")
+	#  
+	I_QUESTION_CHECK = RuleImage(roi_front=(209,16,33,34), roi_back=(199,5,57,53), threshold=0.8, method="Template matching", file="./tasks/Chess/c/c_question_check.png")
 
 
 	# Ocr Rule Assets

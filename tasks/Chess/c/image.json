@@ -74,8 +74,8 @@
   {
     "itemName": "open_lineup",
     "imageName": "c_open_lineup.png",
-    "roiFront": "264,12,47,44",
-    "roiBack": "259,7,57,44",
+    "roiFront": "271,17,33,34",
+    "roiBack": "259,7,57,53",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "打开阵容预设"
@@ -193,6 +193,15 @@
     "imageName": "c_back_red.png",
     "roiFront": "977,67,41,46",
     "roiBack": "972,62,51,56",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "question_check",
+    "imageName": "c_question_check.png",
+    "roiFront": "209,16,33,34",
+    "roiBack": "199,5,57,53",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""

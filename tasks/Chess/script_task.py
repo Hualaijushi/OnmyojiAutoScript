@@ -170,7 +170,7 @@ class ScriptTask(
             if self._refresh_round_state_screenshot():
                 time.sleep(self.SLOW_POLL_INTERVAL)
                 continue
-            if self._finish_chess_game_after_open_lineup_missing(
+            if self._finish_chess_game_after_markers_missing(
                 f'round_{round_no}'
             ):
                 return None
@@ -434,36 +434,36 @@ class ScriptTask(
         self.screenshot()
         return True
 
-    def _finish_chess_game_after_open_lineup_missing(
+    def _finish_chess_game_after_markers_missing(
         self,
         context: str,
     ) -> bool:
-        """阵容入口连续三帧消失后，等待结算页并读取实际名次。"""
-        if self.appear(self.I_OPEN_LINEUP):
+        """两个局内标志连续三帧消失后，等待结算页并读取实际名次。"""
+        if self._is_in_chess_game():
             return False
 
         for frame in range(2, self.GAME_END_CONFIRM_FRAMES + 1):
             time.sleep(2 * self.SLOW_POLL_INTERVAL)
             self.device.stuck_record_clear()
             self.screenshot()
-            if self.appear(self.I_OPEN_LINEUP):
+            if self._is_in_chess_game():
                 logger.debug(
                     'Chess game-end confirmation cancelled: '
-                    f'I_OPEN_LINEUP recovered at frame={frame}, '
+                    f'in-game marker recovered at frame={frame}, '
                     f'context={context}'
                 )
                 return False
 
         logger.info(
-            'Chess game end detected: I_OPEN_LINEUP absent for '
+            'Chess game end detected: all in-game markers absent for '
             f'{self.GAME_END_CONFIRM_FRAMES} frames, context={context}'
         )
         deadline = time.monotonic() + self.GAME_OVER_WAIT_TIMEOUT
         while time.monotonic() < deadline:
             self.device.stuck_record_clear()
-            if self.appear(self.I_OPEN_LINEUP):
+            if self._is_in_chess_game():
                 logger.info(
-                    'Chess game-end wait cancelled: I_OPEN_LINEUP recovered; '
+                    'Chess game-end wait cancelled: in-game marker recovered; '
                     f'reset missing-frame count, context={context}'
                 )
                 return False
@@ -484,7 +484,7 @@ class ScriptTask(
             self.screenshot()
 
         raise GameStuckError(
-            'Chess: I_OPEN_LINEUP disappeared, but I_GAME_OVER did not '
+            'Chess: all in-game markers disappeared, but I_GAME_OVER did not '
             f'appear within {self.GAME_OVER_WAIT_TIMEOUT:.0f}s'
         )
 
@@ -499,7 +499,7 @@ class ScriptTask(
                 confirmed = 0
                 time.sleep(self.SLOW_POLL_INTERVAL)
                 continue
-            if self._finish_chess_game_after_open_lineup_missing(
+            if self._finish_chess_game_after_markers_missing(
                 'wait_for_round_start'
             ):
                 return None
@@ -519,8 +519,11 @@ class ScriptTask(
             time.sleep(self.SLOW_POLL_INTERVAL)
 
     def _is_in_chess_game(self) -> bool:
-        """只以阵容入口图片确认当前处于百鬼棋局对局内。"""
-        return self.appear(self.I_OPEN_LINEUP)
+        """以阵容入口或问号图标确认当前处于百鬼棋局对局内。"""
+        return (
+            self.appear(self.I_OPEN_LINEUP)
+            or self.appear(self.I_QUESTION_CHECK)
+        )
 
     def _close_chess_lobby_abnormal_page(self) -> bool:
         """关闭棋局大厅开战时偶发出现的红色返回键异常页面。"""
@@ -559,9 +562,9 @@ class ScriptTask(
             self.device.stuck_record_clear()
             self.screenshot()
 
-            # 只以阵容入口确认真正进入棋局，商店按钮不再作为开局成功
-            # 标志，避免大厅或匹配动画中的相似区域造成误判。
-            if self.appear(self.I_OPEN_LINEUP):
+            # 以阵容入口或问号图标确认真正进入棋局；商店按钮不再作为
+            # 开局成功标志，避免大厅或匹配动画中的相似区域造成误判。
+            if self._is_in_chess_game():
                 logger.info('Chess matchmaking complete: entered battle')
                 return
 
@@ -635,7 +638,8 @@ class ScriptTask(
             self.return_to_chess_lobby()
             return True
 
-        # 启动恢复属于全局页面判断，只允许使用 c_open_lineup.png。
+        # 启动恢复属于全局页面判断，只允许使用 c_open_lineup.png 或
+        # c_question_check.png。
         # chess_mode OCR 仅供已确认在局内后的回目状态机使用，不能拿来
         # 判断全局页面，否则庭院等页面中的任意非空误识别都会触发退出。
         if not self._is_in_chess_game():
@@ -643,7 +647,7 @@ class ScriptTask(
 
         logger.warning(
             'Chess startup recovery: interrupted in-game state detected '
-            'by I_OPEN_LINEUP'
+            'by I_OPEN_LINEUP or I_QUESTION_CHECK'
         )
         if not self.exit_chess_battle():
             raise GameStuckError(

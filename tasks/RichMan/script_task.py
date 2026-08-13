@@ -8,7 +8,7 @@ from cached_property import cached_property
 from module.base.protect import random_sleep
 from module.base.timer import Timer
 from module.logger import logger
-from tasks.ActivityShikigami.base_act import BaseAct, TicketsNotEnough
+from tasks.RichMan.base_act import BaseAct, TicketsNotEnough
 from tasks.DemonEncounter.data.answer import Answer
 from tasks.RichMan.config import RichMan
 from tasks.Quiz.debug import Debugger, remove_symbols
@@ -34,7 +34,6 @@ class ScriptTask(BaseAct, Debugger):
         switch_souled = False
         click_ticket, no_tickets = 0, random.randint(4, 6)
         click_fire, no_fire = 0, random.randint(3, 5)
-        already_passed = False
         while True:
             self.screenshot()
             self.update_status()
@@ -48,16 +47,11 @@ class ScriptTask(BaseAct, Debugger):
                 continue
             if self.appear(self.I_RM_FORWARD, interval=1.2):
                 continue
-            if self.appear(self.I_RM_CHECK_BOSS, interval=1.5):
-                already_passed = True
-                logger.info('Already passed')
-            if already_passed and self.appear(self.I_RM_BOSS, interval=1.2):
-                logger.info('Boss passed, exit')
-                self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1.2)
-                continue
-            already_passed = False
             if self.appear_then_click(self.I_UI_CONFIRM, interval=2):
                 continue
+            # TODO: 首领战斗暂不处理。后续应在跟随人物的地图视角中 OCR
+            # 检测固定范围内的“起点”，同时 OCR 判断经验是否已满；满足
+            # 两项条件后设置待挑战状态，并在下一次投骰前插入首领战斗。
             if self.appear_then_click(self.I_RM_THROW, interval=2):
                 logger.hr('Throw ticket', 3)
                 self.count_map[self.climb_type] += 1

@@ -1,0 +1,65 @@
+[
+  {
+    "itemName": "main_goto_act",
+    "imageName": "as_main_goto_act.png",
+    "roiFront": "1188,228,35,28",
+    "roiBack": "1164,134,83,393",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "庭院进入活动"
+  },
+  {
+    "itemName": "skip_button",
+    "imageName": "as_skip_button.png",
+    "roiFront": "1159,37,51,22",
+    "roiBack": "1141,27,86,43",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "右上跳过按钮"
+  },
+  {
+    "itemName": "to_battle_main",
+    "imageName": "as_to_battle_main.png",
+    "roiFront": "1064,178,39,139",
+    "roiBack": "991,88,155,370",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "进入主要的战斗界面"
+  },
+  {
+    "itemName": "battle_main_to_records",
+    "imageName": "as_battle_main_to_records.png",
+    "roiFront": "1015,560,39,42",
+    "roiBack": "674,539,439,157",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "从main进入到式神录"
+  },
+  {
+    "itemName": "as_to_pass",
+    "imageName": "as_as_to_pass.png",
+    "roiFront": "624,505,38,35",
+    "roiBack": "273,141,759,475",
+    "method": "Template matching",
+    "threshold": 0.65,
+    "description": "进入门票活动的按钮"
+  },
+  {
+    "itemName": "check_rm_main",
+    "imageName": "rm_check_rm_main.png",
+    "roiFront": "148,13,174,47",
+    "roiBack": "121,0,227,72",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  },
+  {
+    "itemName": "check_rm_richman",
+    "imageName": "rm_check_rm_richman.png",
+    "roiFront": "148,13,140,47",
+    "roiBack": "121,0,227,72",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
+  }
+]
