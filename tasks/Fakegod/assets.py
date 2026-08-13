@@ -30,7 +30,7 @@ class FakegodAssets:
     I_TO_BATTLE_AP = RuleImage(roi_front=(825,321,39,139), roi_back=(720,255,238,269), threshold=0.8, method="Template matching", file="./tasks/Fakegod/fg/as_to_battle_ap.png")
 
     # 资源数量与百体入口 OCR
-    O_REMAIN_AP = RuleOcr(roi=(1123,24,95,34), area=(1123,24,95,34), mode="DigitCounter", method="Default", keyword="", name="remain_ap")
+    O_REMAIN_AP = RuleOcr(roi=(1123,24,95,34), area=(1123,24,95,34), mode="Quantity", method="Default", keyword="", name="remain_ap")
     O_REMAIN_PASS = RuleOcr(roi=(539,23,88,31), area=(539,23,88,31), mode="DigitCounter", method="Default", keyword="", name="remain_pass")
     O_REMAIN_BOSS = RuleOcr(roi=(1169,668,70,30), area=(1169,668,70,30), mode="DigitCounter", method="Default", keyword="", name="remain_boss")
     O_REMAIN_AP100 = RuleOcr(roi=(922,21,112,39), area=(913,8,131,62), mode="Digit", method="Default", keyword="", name="remain_ap100")

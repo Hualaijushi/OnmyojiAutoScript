@@ -52,17 +52,17 @@ class MartialArtsAssets:
 
 	# Ocr Rule Assets
 	#  
-	O_AP_TICKET = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Digit", method="Default", keyword="", name="ap_ticket")
+	O_AP_TICKET = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="DigitCounter", method="Default", keyword="", name="ap_ticket")
 	# 体力战斗体力数量 
-	O_AP_COUNT = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Single", method="Default", keyword="", name="ap_count")
+	O_AP_COUNT = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Quantity", method="Default", keyword="", name="ap_count")
 	#  
-	O_BOSS_TICKET_GOLD = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Single", method="Default", keyword="", name="boss_ticket_gold")
+	O_BOSS_TICKET_GOLD = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="DigitCounter", method="Default", keyword="", name="boss_ticket_gold")
 	#  
-	O_BOSS_TICKET = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="Single", method="Default", keyword="", name="boss_ticket")
+	O_BOSS_TICKET = RuleOcr(roi=(941,18,83,27), area=(941,18,83,27), mode="DigitCounter", method="Default", keyword="", name="boss_ticket")
 	# 首领体力识别 
-	O_BOSS_AP_COUNT = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Single", method="Default", keyword="", name="boss_ap_count")
+	O_BOSS_AP_COUNT = RuleOcr(roi=(1138,19,83,27), area=(1138,19,83,27), mode="Quantity", method="Default", keyword="", name="boss_ap_count")
 	#  
-	O_BOSS_NAME = RuleOcr(roi=(364,212,32,139), area=(364,212,32,139), mode="Single", method="Default", keyword="", name="boss_name")
+	O_BOSS_NAME = RuleOcr(roi=(365,210,32,138), area=(365,210,32,138), mode="Single", method="Default", keyword="", name="boss_name")
 
 
 	# Image Rule Assets

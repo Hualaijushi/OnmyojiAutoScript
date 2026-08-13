@@ -271,7 +271,8 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigami
         if self.climb_type == 'pass':
             remain_times = self.O_REMAIN_PASS.ocr_digit(self.device.image)
         if self.climb_type == 'ap':
-            remain_times = self.O_REMAIN_AP.ocr_digit(self.device.image)
+            # 体力可能显示为“1.2万”等缩写，Quantity OCR 会换算为 12000。
+            remain_times = self.O_REMAIN_AP.ocr_quantity(self.device.image)
         if self.climb_type == 'boss':
             cur, remain_times, total = self.O_REMAIN_BOSS.ocr_digit_counter(self.device.image)
         if self.climb_type == 'ap100':

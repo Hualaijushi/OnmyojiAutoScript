@@ -48,7 +48,7 @@ class ActivityShikigamiAssets:
 
 	# Ocr Rule Assets
 	# 体力的数量检测 
-	O_REMAIN_AP = RuleOcr(roi=(1123,24,95,34), area=(1123,24,95,34), mode="DigitCounter", method="Default", keyword="", name="remain_ap")
+	O_REMAIN_AP = RuleOcr(roi=(1123,24,95,34), area=(1123,24,95,34), mode="Quantity", method="Default", keyword="", name="remain_ap")
 	# 活动体力的剩余检测 
 	O_REMAIN_PASS = RuleOcr(roi=(539,23,88,31), area=(539,23,88,31), mode="DigitCounter", method="Default", keyword="", name="remain_pass")
 	# boss剩余攻击次数 
@@ -74,4 +74,3 @@ class ActivityShikigamiAssets:
 	I_CONFIRM_SKIP = RuleImage(roi_front=(707,442,137,38), roi_back=(656,397,231,124), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_confirm_skip.png")
 	# 爬塔主界面标志 
 	I_CHECK_BATTLE_PASS = RuleImage(roi_front=(151,18,134,40), roi_back=(141,0,157,67), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_check_battle_pass.png")
-

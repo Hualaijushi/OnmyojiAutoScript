@@ -3,7 +3,7 @@
     "itemName": "remain_ap",
     "roiFront": "1123,24,95,34",
     "roiBack": "1123,24,95,34",
-    "mode": "DigitCounter",
+    "mode": "Quantity",
     "method": "Default",
     "keyword": "",
     "description": "体力的数量检测"
