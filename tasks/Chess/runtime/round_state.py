@@ -46,7 +46,15 @@ class ChessRoundStateMixin:
             ('copper', self.I_GRIGRI_COPPER),
         ):
             if self.appear(rule):
+                self._grigri_quality_cache = quality
                 return quality
+        cached_quality = getattr(self, '_grigri_quality_cache', None)
+        if cached_quality is not None:
+            logger.warning(
+                'Chess grigri quality was not recognized after refresh; '
+                f'reuse current selection quality={cached_quality}'
+            )
+            return cached_quality
         logger.warning('Chess grigri quality was not recognized')
         return None
 
@@ -182,7 +190,8 @@ class ChessRoundStateMixin:
             f'Chess grigri refresh recorded: '
             f'option={index}, remaining={remaining}'
         )
-        time.sleep(self.FAST_OPERATION_INTERVAL)
+        # 两次刷新点击后等待卡面、品质标志和文字动画稳定，再重新识别。
+        time.sleep(self.ACTION_SETTLE_INTERVAL)
         self.screenshot()
         return True
 
@@ -253,6 +262,7 @@ class ChessRoundStateMixin:
             return False
 
         # 每次进入新的选符咒界面，三个位置各允许刷新一次。
+        self._grigri_quality_cache = None
         self._grigri_refresh_remaining = [1, 1, 1]
         options = self._recognize_grigri_options()
         for _ in range(self.GRIGRI_REFRESH_MAXIMUM):
