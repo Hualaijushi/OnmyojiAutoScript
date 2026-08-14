@@ -2,7 +2,7 @@
   {
     "itemName": "check_chess_battle",
     "imageName": "page_check_chess_battle.png",
-    "roiFront": "85,15,137,43",
+    "roiFront": "270,19,37,32",
     "roiBack": "264,12,47,44",
     "method": "Template matching",
     "threshold": 0.8,

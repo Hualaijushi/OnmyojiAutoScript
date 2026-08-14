@@ -9,6 +9,7 @@ from __future__ import annotations
 from tasks.GameUi.action import ActionSequence, ConditionalAction, conditional_action, sequence
 from tasks.GameUi.default_pages import (
     page_act_list,
+    page_activity,
     page_area_boss,
     page_awake_zones,
     page_battle,
@@ -78,6 +79,7 @@ __all__ = [
     "ensure_matcher",
     "not_",
     "page_act_list",
+    "page_activity",
     "page_area_boss",
     "page_awake_zones",
     "page_battle",

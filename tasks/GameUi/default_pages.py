@@ -12,9 +12,14 @@ from typing import Union
 """GameUi 全局页面定义。"""
 
 import random
+import time
 
+from module.exception import GamePageUnknownError
+from module.logger import logger
 from module.atom.click import RuleClick
+from module.base.timer import Timer
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
+from tasks.Component.RightActivity.assets import RightActivityAssets
 from tasks.Chess.assets import ChessAssets
 from tasks.Component.Login.service import LoginService
 from tasks.DailyTrifles.assets import DailyTriflesAssets
@@ -56,6 +61,70 @@ def handle_login_page(task) -> bool:
     return LoginService(config=task.config, device=task.device).app_handle_login()
 
 
+ACTIVITY_COLUMN_SWITCH_MAX_TRIES = 8
+
+
+def find_activity_entry(task) -> bool:
+    """循环切换庭院右侧活动栏目，直到公共活动入口出现。"""
+    switched = 0
+    for _ in range(ACTIVITY_COLUMN_SWITCH_MAX_TRIES):
+        task.screenshot()
+        if not task.appear(GameUiAssets.I_CHECK_MAIN):
+            return False
+        if task.appear(GameUiAssets.I_MAIN_GOTO_ACTIVITY):
+            return True
+        if task.appear_then_click(RightActivityAssets.I_TOGGLE_BUTTON, interval=0.5):
+            switched += 1
+        time.sleep(0.5)
+
+    task.screenshot()
+    if task.appear(GameUiAssets.I_MAIN_GOTO_ACTIVITY):
+        return True
+    logger.warning(
+        f'Activity entry not found after switching columns {switched} times '
+        f'({ACTIVITY_COLUMN_SWITCH_MAX_TRIES} checks)'
+    )
+    raise GamePageUnknownError('Cannot find common activity entry')
+
+
+def handle_activity_overlay(task) -> bool:
+    """清理活动奖励页和签到弹窗，直到稳定显示活动主页。"""
+    timer = Timer(15).start()
+    award_clicked = False
+    while not timer.reached():
+        task.screenshot()
+
+        if task.appear(GameUiAssets.I_ACTIVITY_AWARD):
+            if not award_clicked:
+                click = random.choice([
+                    GameUiAssets.C_RANDOM_TOP,
+                    GameUiAssets.C_RANDOM_DOWN,
+                    GameUiAssets.C_RANDOM_LEFT,
+                    GameUiAssets.C_RANDOM_RIGHT,
+                ])
+                logger.info(f'Clear activity award overlay via {click.name}')
+                task.click(click, interval=0)
+                task.device.click_record_clear()
+                award_clicked = True
+            time.sleep(0.2)
+            continue
+
+        if task.appear_then_click(GameUiAssets.I_ACTIVITY_SIGNIN_CLOSE, interval=0):
+            logger.info('Close activity sign-in overlay')
+            task.device.click_record_clear()
+            time.sleep(0.2)
+            continue
+
+        if task.appear(GameUiAssets.I_CHECK_ACTIVITY):
+            logger.info('Activity main page ready')
+            return True
+
+        time.sleep(0.2)
+
+    logger.warning('Activity main page overlays did not finish within 15s')
+    return False
+
+
 # 登录页。
 page_login = Page(SwitchAccountAssets.I_CHECK_LOGIN_FORM, category="global")
 page_login.add_enter_success_hooks(handle_login_page)
@@ -65,6 +134,25 @@ page_main = Page(GameUiAssets.I_CHECK_MAIN, category="global")
 page_main.add_enter_success_hooks(
     GameUiAssets.I_AD_CLOSE_RED, GlobalGameAssets.I_UI_BACK_RED, RestartAssets.I_CANCEL_BATTLE,
 )
+
+# 公共活动主页。各活动任务只负责从这里继续导航到各自玩法页面。
+page_activity = Page(
+    any_of(
+        GameUiAssets.I_CHECK_ACTIVITY,
+        GameUiAssets.I_ACTIVITY_AWARD,
+        GameUiAssets.I_ACTIVITY_SIGNIN_CLOSE,
+    ),
+    category="global",
+)
+page_activity.add_enter_success_hooks(handle_activity_overlay)
+page_activity.add_enter_failure_hooks(
+    find_activity_entry,
+    conditional_action(GlobalGameAssets.I_UI_REWARD, random_click),
+    GlobalGameAssets.I_UI_BACK_RED,
+    GameUiAssets.I_ACTIVITY_SKIP,
+)
+page_activity.connect(page_main, GlobalGameAssets.I_UI_BACK_YELLOW, key="page_activity->page_main")
+page_main.connect(page_activity, GameUiAssets.I_MAIN_GOTO_ACTIVITY, key="page_main->page_activity")
 
 # 闲庭仍会命中庭院主页标志，因此使用更高优先级先识别闲庭，再点击左上角返回庭院。
 page_relax = Page(

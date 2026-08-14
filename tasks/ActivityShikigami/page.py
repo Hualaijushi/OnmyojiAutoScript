@@ -1,52 +1,10 @@
-import time
-
-from module.exception import GamePageUnknownError
-from module.logger import logger
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
-from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
-from tasks.Component.RightActivity.assets import RightActivityAssets
-from tasks.GameUi.action import conditional_action
-from tasks.GameUi.default_pages import random_click
-from tasks.GameUi.page import (Page, all_of, page_main, page_battle, page_battle_prepare,
-                               page_reward, page_battle_result, any_of)
+from tasks.GameUi.page import Page, all_of, page_activity
 from tasks.GlobalGame.assets import GlobalGameAssets
 
 
-ACTIVITY_COLUMN_SWITCH_MAX_TRIES = 8
-
-
-def find_activity_entry(task) -> bool:
-    """循环切换庭院右侧活动栏目，直到目标活动入口出现。"""
-    switched = 0
-    for _ in range(ACTIVITY_COLUMN_SWITCH_MAX_TRIES):
-        task.screenshot()
-        if task.appear(ActivityShikigamiAssets.I_MAIN_GOTO_ACT):
-            return True
-        if task.appear_then_click(RightActivityAssets.I_TOGGLE_BUTTON, interval=0.5):
-            switched += 1
-        time.sleep(0.5)
-
-    task.screenshot()
-    if task.appear(ActivityShikigamiAssets.I_MAIN_GOTO_ACT):
-        return True
-
-    logger.warning(
-        f'Activity entry not found after switching columns '
-        f'{switched} times ({ACTIVITY_COLUMN_SWITCH_MAX_TRIES} checks)'
-    )
-    raise GamePageUnknownError(
-        f'Cannot find ActivityShikigami entry after '
-        f'{ACTIVITY_COLUMN_SWITCH_MAX_TRIES} column switches'
-    )
-
-
-# 爬塔活动主界面
-page_act = Page(ActivityShikigamiAssets.I_CHECK_BATTLE_MAIN)
-page_act.add_enter_failure_hooks(find_activity_entry,
-                                 conditional_action(GlobalGameAssets.I_UI_REWARD, random_click),
-                                 GlobalGameAssets.I_UI_BACK_RED, ActivityShikigamiAssets.I_SKIP_BUTTON)
-page_act.connect(page_main, GlobalGameAssets.I_UI_BACK_YELLOW, key="page_act->page_main")
-page_main.connect(page_act, ActivityShikigamiAssets.I_MAIN_GOTO_ACT, key="page_main->page_act")
+# 活动主界面统一由 GameUi 定义。
+page_act = page_activity
 # 体力爬塔页面
 page_act_ap = Page(all_of(ActivityShikigamiAssets.I_CHECK_BATTLE_PASS,
                           ActivityShikigamiAssets.I_CLIMB_MODE_AP))

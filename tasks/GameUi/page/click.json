@@ -1,0 +1,26 @@
+[
+  {
+    "itemName": "random_top",
+    "roiFront": "344,0,625,113",
+    "roiBack": "344,0,625,113",
+    "description": ""
+  },
+  {
+    "itemName": "random_down",
+    "roiFront": "350,607,625,113",
+    "roiBack": "350,607,625,113",
+    "description": ""
+  },
+  {
+    "itemName": "random_left",
+    "roiFront": "34,169,140,437",
+    "roiBack": "34,169,140,437",
+    "description": ""
+  },
+  {
+    "itemName": "random_right",
+    "roiFront": "1100,158,140,437",
+    "roiBack": "1100,158,140,437",
+    "description": ""
+  }
+]
