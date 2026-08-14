@@ -10,6 +10,7 @@ from module.exception import TaskEnd
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBattle.general_battle import BattleBehaviorScope, GeneralBattle
+from tasks.Component.BaseActivity.base_activity import BaseActivity
 from tasks.Component.QuickLoadout.quick_loadout import QuickLoadout
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
@@ -19,7 +20,7 @@ from tasks.MartialArts.config import MartialArts
 import tasks.MartialArts.page as pages
 
 
-class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAssets):
+class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, MartialArtsAssets):
     AP_COST = 30
     TICKET_COST = 1
     BATTLE_TIMEOUT = 600
@@ -100,12 +101,24 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
 
     def resources_enough(self) -> bool:
         ap, ticket = self.read_resources()
-        enough = ap > self.AP_COST and ticket >= self.TICKET_COST
+        ap_enough = ap > self.AP_COST
+        ticket_enough = ticket >= self.TICKET_COST
         logger.info(
             f'MartialArts resources: AP={ap} (need > {self.AP_COST}), '
-            f'ticket={ticket} (need >= {self.TICKET_COST}), enough={enough}'
+            f'ticket={ticket} (need >= {self.TICKET_COST}), '
+            f'enough={ap_enough and ticket_enough}'
         )
-        return enough
+        if not ap_enough:
+            return False
+        if ticket_enough:
+            return True
+
+        entered = self.verify_ocr_zero_resource(
+            'MartialArts AP ticket',
+            lambda: self.enter_battle(max_attempts=1),
+        )
+        self._ap_battle_preentered = entered
+        return entered
 
     def read_boss_ap(self) -> int:
         """在首领战斗小界面读取体力，多次识别取最大值。"""
@@ -147,7 +160,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
                 f'MartialArts boss tickets OCR {attempt}/{self.RESOURCE_OCR_RETRIES}: '
                 f'normal={ticket}, gold={gold}'
             )
-            if ticket >= self.TICKET_COST or gold >= self.TICKET_COST:
+            # 普通票优先；即使已识别到金票，也继续重试可能漏识别的普通票。
+            if ticket >= self.TICKET_COST:
                 return ticket, gold
             if attempt < self.RESOURCE_OCR_RETRIES:
                 time.sleep(0.5)
@@ -191,13 +205,18 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
         )
         return False
 
-    def search_boss_in_mode(self, use_gold: bool) -> bool:
+    def search_boss_in_mode(
+        self,
+        use_gold: bool,
+        max_attempts: int | None = None,
+    ) -> bool:
         """使用指定门票对应的搜寻模式尝试进入首领小界面。"""
         if not self.select_boss_search_mode(use_gold):
             return False
         fire_rule = self.I_MAR_FIRE_BOSS_GOLD if use_gold else self.I_MAR_FIRE_BOSS
         mode_name = 'gold' if use_gold else 'normal'
-        for attempt in range(1, self.SEARCH_BOSS_MAX_ATTEMPTS + 1):
+        max_attempts = max_attempts or self.SEARCH_BOSS_MAX_ATTEMPTS
+        for attempt in range(1, max_attempts + 1):
             self.screenshot()
             if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
                 logger.info('MartialArts boss found, entered challenge panel')
@@ -206,12 +225,12 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
             if not self.appear_then_click(fire_rule, interval=0):
                 logger.warning(
                     f'MartialArts boss search button not found '
-                    f'({attempt}/{self.SEARCH_BOSS_MAX_ATTEMPTS})'
+                    f'({attempt}/{max_attempts})'
                 )
             else:
                 logger.info(
                     f'MartialArts boss {mode_name} search clicked '
-                    f'({attempt}/{self.SEARCH_BOSS_MAX_ATTEMPTS}), '
+                    f'({attempt}/{max_attempts}), '
                     f'wait {self.SEARCH_BOSS_WAIT_SECONDS}s for challenge panel'
                 )
                 self.device.click_record_clear()
@@ -240,23 +259,31 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
             return self.open_existing_boss()
 
         ticket, gold = self.read_boss_tickets()
-        candidates: list[bool] = []
-
-        # 明确认出有票的模式优先；普通搜寻只对应普通票，注灵只对应金票。
+        # 普通票始终优先。
         if ticket >= self.TICKET_COST:
-            candidates.append(False)
-        if gold >= self.TICKET_COST:
-            candidates.append(True)
-
-        if not candidates:
-            logger.info('MartialArts boss tickets are both zero')
-            return False
-
-        for use_gold in candidates:
-            mode_name = 'gold' if use_gold else 'normal'
-            logger.info(f'Try MartialArts boss {mode_name} search')
-            if self.search_boss_in_mode(use_gold):
+            logger.info('Try MartialArts boss normal search')
+            if self.search_boss_in_mode(False):
                 return True
+        else:
+            # OCR 为 0 可能是漏识别。实际探查一次，未进入首领小界面才确认无票。
+            if self.verify_ocr_zero_resource(
+                'MartialArts normal boss ticket',
+                lambda: self.search_boss_in_mode(False, max_attempts=1),
+            ):
+                return True
+
+        if gold >= self.TICKET_COST:
+            logger.info('Try MartialArts boss gold search')
+            if self.search_boss_in_mode(True):
+                return True
+        else:
+            if self.verify_ocr_zero_resource(
+                'MartialArts gold boss ticket',
+                lambda: self.search_boss_in_mode(True, max_attempts=1),
+            ):
+                return True
+            logger.info('MartialArts boss tickets are unavailable, stop boss search')
+            return False
 
         logger.info('No MartialArts boss search mode succeeded')
         return False
@@ -299,7 +326,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
         logger.info(f'Unlock MartialArts {self.battle_type} team')
         self.ui_click(lock_rule, stop=unlock_rule, interval=1.5)
 
-    def enter_battle(self) -> bool:
+    def enter_battle(self, max_attempts: int | None = None) -> bool:
         """点击体力挑战并等待进入通用准备/战斗页面。"""
         timer = Timer(self.ENTER_BATTLE_TIMEOUT).start()
         click_count = 0
@@ -314,7 +341,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
                 logger.warning('Challenge rejected, AP or ticket may be insufficient')
                 return False
-            if self.appear_then_click(self.I_MAR_FIRE_AP, interval=1.5):
+            if self.appear(self.I_MAR_FIRE_AP):
+                if max_attempts is not None and click_count >= max_attempts:
+                    logger.warning('AP challenge fallback did not enter battle after one click')
+                    return False
+                self.click(self.I_MAR_FIRE_AP, interval=1.5)
                 click_count += 1
                 self.device.click_record_clear()
                 continue
@@ -324,7 +355,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
 
     def run_battle_round(self, battle_conf: GeneralBattleConfig) -> bool:
         """执行一轮体力挑战并等待结算返回日常训练页面。"""
-        if not self.enter_battle():
+        if self._ap_battle_preentered:
+            self._ap_battle_preentered = False
+        elif not self.enter_battle():
             return False
         win = self.run_general_battle(
             battle_conf,
@@ -338,6 +371,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, MartialArtsAss
         """按体力战配置执行完整循环。"""
         self.battle_type = 'ap'
         self.current_count = 0
+        self._ap_battle_preentered = False
         limit = self.conf.general_climb.ap_limit
         battle_conf = self.conf.ap_battle_conf
 

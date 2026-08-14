@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timedelta
 import random
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle, ExitMatcher, BattleContext, BattleAction
+from tasks.Component.BaseActivity.base_activity import BaseActivity
 from cached_property import cached_property
 
 from module.atom.image import RuleImage
@@ -102,7 +103,7 @@ class StateMachine(BaseTask):
         return True
 
 
-class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, FakegodAssets):
+class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, FakegodAssets):
     """伪神降临独立任务基类。"""
 
     @property

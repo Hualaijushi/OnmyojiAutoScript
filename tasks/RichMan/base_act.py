@@ -2,6 +2,7 @@ import time
 
 from datetime import datetime
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle, ExitMatcher
+from tasks.Component.BaseActivity.base_activity import BaseActivity
 from cached_property import cached_property
 
 from module.atom.image import RuleImage
@@ -89,7 +90,7 @@ class StateMachine(BaseTask):
         return True
 
 
-class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, RichManAssets):
+class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, RichManAssets):
     """大富翁独立运行基类。"""
 
     @property
