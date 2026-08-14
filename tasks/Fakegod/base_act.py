@@ -194,23 +194,38 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, Fak
         self.switch_soul(self.I_BATTLE_MAIN_TO_RECORDS)
         if self.conf.general_climb.random_sleep:
             random_sleep(probability=0.2)
-        if self.enter_battle():
-            self.count_map[self.climb_type] += 1
-            self.run_general_battle(getattr(self.conf, f'{self.climb_type}_battle_conf'),
-                                    battle_key=f'act_{self.climb_type}')
+        if self._ticket_needs_verification:
+            self._ticket_needs_verification = False
+            entered = self.verify_zero_ticket(
+                f'Fakegod {self.climb_type} ticket',
+                lambda: self.enter_battle(max_times=1),
+            )
+        else:
+            entered = self.enter_battle()
+        if not entered:
+            raise TicketsNotEnough
+        self.count_map[self.climb_type] += 1
+        self.run_general_battle(getattr(self.conf, f'{self.climb_type}_battle_conf'),
+                                battle_key=f'act_{self.climb_type}')
 
-    def enter_battle(self):
-        click_times, max_times = 0, random.randint(3, 5)
+    def enter_battle(self, max_times: int | None = None):
+        click_times = 0
+        fallback = max_times is not None
+        max_times = max_times or random.randint(3, 5)
         while True:
             self.screenshot()
             if self.is_in_battle(False):
                 return True
             if click_times >= max_times:
                 logger.warning(f'{self.climb_type} cannot enter battle, click reach max times')
+                if fallback:
+                    return False
                 raise TicketsNotEnough
             if self.appear(self.I_UI_BACK_RED, interval=1):
                 logger.warning(
                     f'{self.climb_type} cannot enter battle, appear red close button, maybe not enough tickets')
+                if fallback:
+                    return False
                 raise TicketsNotEnough
             if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or \
                     self.appear_then_click(self.I_UI_CONFIRM, interval=1):
@@ -268,6 +283,7 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, Fak
         """
         logger.hr(f'Check {self.climb_type} tickets')
         self.screenshot()
+        self._ticket_needs_verification = False
         remain_times = 0
         if self.climb_type == 'pass':
             remain_times = self.O_REMAIN_PASS.ocr_digit(self.device.image)
@@ -278,6 +294,9 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, Fak
             cur, remain_times, total = self.O_REMAIN_BOSS.ocr_digit_counter(self.device.image)
         if self.climb_type == 'ap100':
             remain_times = self.O_REMAIN_AP100.ocr_digit(self.device.image)
+        if self.climb_type in ('pass', 'boss') and remain_times <= 0:
+            self._ticket_needs_verification = True
+            return True
         # 上一次识别的票的数量和这一次识别的数量差距大于1, 则认为票数量有误, 允许继续挑战
         if self.pre_tickets_map[self.climb_type] - remain_times > 1:
             self.pre_tickets_map[self.climb_type] -= 1

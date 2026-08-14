@@ -2,6 +2,7 @@
 """武道大会战斗任务。"""
 
 import time
+import random
 
 from cached_property import cached_property
 
@@ -28,7 +29,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
     ENTER_BATTLE_TIMEOUT = 20
     SEARCH_BOSS_TIMEOUT = 20
     SEARCH_BOSS_MAX_ATTEMPTS = 3
-    SEARCH_BOSS_WAIT_SECONDS = 2
+    SEARCH_BOSS_WAIT_RANGE = (3, 5)
 
     battle_type = 'ap'
 
@@ -113,7 +114,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
         if ticket_enough:
             return True
 
-        entered = self.verify_ocr_zero_resource(
+        entered = self.verify_zero_ticket(
             'MartialArts AP ticket',
             lambda: self.enter_battle(max_attempts=1),
         )
@@ -217,6 +218,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
         mode_name = 'gold' if use_gold else 'normal'
         max_attempts = max_attempts or self.SEARCH_BOSS_MAX_ATTEMPTS
         for attempt in range(1, max_attempts + 1):
+            wait_seconds = random.randint(*self.SEARCH_BOSS_WAIT_RANGE)
             self.screenshot()
             if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
                 logger.info('MartialArts boss found, entered challenge panel')
@@ -231,11 +233,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
                 logger.info(
                     f'MartialArts boss {mode_name} search clicked '
                     f'({attempt}/{max_attempts}), '
-                    f'wait {self.SEARCH_BOSS_WAIT_SECONDS}s for challenge panel'
+                    f'wait up to {wait_seconds}s for challenge panel'
                 )
                 self.device.click_record_clear()
 
-            wait_timer = Timer(self.SEARCH_BOSS_WAIT_SECONDS).start()
+            wait_timer = Timer(wait_seconds).start()
             while not wait_timer.reached():
                 self.screenshot()
                 if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
@@ -266,7 +268,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
                 return True
         else:
             # OCR 为 0 可能是漏识别。实际探查一次，未进入首领小界面才确认无票。
-            if self.verify_ocr_zero_resource(
+            if self.verify_zero_ticket(
                 'MartialArts normal boss ticket',
                 lambda: self.search_boss_in_mode(False, max_attempts=1),
             ):
@@ -277,7 +279,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
             if self.search_boss_in_mode(True):
                 return True
         else:
-            if self.verify_ocr_zero_resource(
+            if self.verify_zero_ticket(
                 'MartialArts gold boss ticket',
                 lambda: self.search_boss_in_mode(True, max_attempts=1),
             ):
