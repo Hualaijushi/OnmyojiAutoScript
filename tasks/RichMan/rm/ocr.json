@@ -1,0 +1,11 @@
+[
+  {
+    "itemName": "cinque_count",
+    "roiFront": "1146,670,58,33",
+    "roiBack": "1146,670,58,33",
+    "mode": "Digit",
+    "method": "Default",
+    "keyword": "",
+    "description": "骰子数量"
+  }
+]

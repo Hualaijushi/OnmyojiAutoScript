@@ -49,6 +49,12 @@ def handle_martial_arts_overlay(task) -> bool:
     while not timer.reached():
         task.screenshot()
 
+        if task.appear_then_click(MartialArtsAssets.I_MR_REWARD_MAIN, interval=0):
+            logger.info('Claim MartialArts main-page reward')
+            task.device.click_record_clear()
+            time.sleep(0.2)
+            continue
+
         if task.appear(MartialArtsAssets.I_MR_MAIN_AWARDS):
             if not award_clicked:
                 click = random.choice([
@@ -76,13 +82,17 @@ def handle_martial_arts_overlay(task) -> bool:
 
         time.sleep(0.2)
 
-    logger.warning('MartialArts main page overlays did not finish within 15s')
+    logger.warning(
+        f'MartialArts main page overlays did not finish within '
+        f'{task.CLICK_WAIT_TIMEOUT}s'
+    )
     return False
 
 
 # 武道大会主页
 page_martial_arts = Page(any_of(
     MartialArtsAssets.I_CHECK_MAIN_MAR,
+    MartialArtsAssets.I_MR_REWARD_MAIN,
     MartialArtsAssets.I_MR_MAIN_AWARDS,
     MartialArtsAssets.I_MR_MAIN_SIGHIN_CLOSE,
 ))

@@ -60,6 +60,8 @@ class MartialArtsAssets:
 	I_MR_MAIN_AWARDS = RuleImage(roi_front=(480,232,321,42), roi_back=(397,150,477,137), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_main_awards.png")
 	#
 	I_MR_MAIN_SIGHIN_CLOSE = RuleImage(roi_front=(1082,122,30,35), roi_back=(1077,117,40,45), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_main_sighin_close.png")
+	#
+	I_MR_REWARD_MAIN = RuleImage(roi_front=(584,611,119,42), roi_back=(580,606,129,52), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_reward_main.png")
 
 
 	# Ocr Rule Assets
@@ -92,4 +94,3 @@ class MartialArtsAssets:
 	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(152,13,134,41), roi_back=(147,8,144,51), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_battle_boss.png")
 	#  
 	I_CHECK_BATTLE_BOSS_MAIN = RuleImage(roi_front=(555,63,164,47), roi_back=(550,58,174,57), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_battle_boss_main.png")
-

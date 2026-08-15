@@ -20,11 +20,11 @@
   {
     "itemName": "rm_mode_throw",
     "imageName": "rm_rm_mode_throw.png",
-    "roiFront": "1053,582,83,38",
-    "roiBack": "1034,562,121,76",
+    "roiFront": "532,312,215,130",
+    "roiBack": "490,233,320,264",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": ""
+    "description": "投掷对决模式标志"
   },
   {
     "itemName": "rm_fight_unlock",
@@ -106,5 +106,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "rm_throw_fight",
+    "imageName": "rm_rm_throw_fight.png",
+    "roiFront": "1053,582,83,38",
+    "roiBack": "1034,562,121,76",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "投掷按钮"
   }
 ]

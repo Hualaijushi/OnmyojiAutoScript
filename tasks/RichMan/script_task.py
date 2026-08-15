@@ -6,8 +6,9 @@ import time
 
 from cached_property import cached_property
 
+from module.exception import GameStuckError
 from module.logger import logger
-from tasks.RichMan.base_act import BaseAct
+from tasks.RichMan.base_act import BaseAct, TicketsNotEnough
 from tasks.RichMan.config import RichMan
 
 
@@ -40,56 +41,124 @@ class ScriptTask(BaseAct):
                 normal_loadout_required = True
                 continue
 
-            if self.appear_then_click(self.I_RM_THROW, interval=2):
+            if self.appear(self.I_RM_THROW):
+                dice_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
+                logger.info(f'RichMan dice count before throw: {dice_count}')
+                if not self.appear_then_click(self.I_RM_THROW, interval=2):
+                    continue
+
                 logger.hr('Throw ticket', 3)
-                self.count_map[self.climb_type] += 1
                 self.device.stuck_record_clear()
                 self.device.stuck_record_add('BATTLE_STATUS_S')
 
-                wait_seconds = random.uniform(3, 5)
-                logger.info(f'Wait {wait_seconds:.1f}s for RichMan mode')
-                time.sleep(wait_seconds)
-                self.screenshot()
-
-                if self.appear(self.I_RM_MODE_THROW):
+                # 先确认骰子数量发生变化，再衔接原有三模式检测。
+                mode = self._wait_for_dice_count_change(dice_count)
+                self.count_map[self.climb_type] += 1
+                if mode is None:
+                    mode = self._wait_for_mode_after_throw()
+                if mode == 'throw':
                     self._run_throw_task()
                     continue
-                if self.appear(self.I_RM_MODE_ROB):
+                if mode == 'rob':
                     self._run_rob_task()
                     continue
-                if self.appear(self.I_RM_MODE_FIGHT):
+                if mode == 'fight':
                     self._run_fight_task(switch_loadout=normal_loadout_required)
                     normal_loadout_required = False
                     continue
 
-                if self.appear(self.I_RM_THROW):
-                    logger.info('No RichMan mode detected, continue next throw')
-                    continue
+    def _wait_for_dice_count_change(self, previous_count: int) -> str | None:
+        """等待投骰消耗生效；初始读数为零时仅试投一次进行保底确认。"""
+        timeout = 5.0
+        deadline = time.monotonic() + timeout
+        zero_fallback = previous_count == 0
+        current_count = previous_count
 
-                logger.warning('No RichMan mode or throw button detected')
-                continue
+        while True:
+            self.screenshot()
+            current_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
+            if current_count != previous_count:
+                logger.info(f'RichMan dice count changed: {previous_count} -> {current_count}')
+                return None
+
+            # 初始 OCR 为零时，模式已经出现也能证明试投实际成功。
+            if zero_fallback:
+                mode = self._detect_richman_mode()
+                if mode is not None:
+                    logger.info('RichMan throw succeeded although initial dice OCR was zero')
+                    return mode
+
+            if time.monotonic() >= deadline:
+                self.update_status()
+                if zero_fallback and current_count == 0:
+                    logger.warning('RichMan dice count remains zero after fallback throw')
+                    raise TicketsNotEnough
+
+                if self.appear_then_click(self.I_RM_THROW, interval=2):
+                    logger.info('Dice count did not change, click throw again')
+                else:
+                    logger.info('RichMan is moving, continue waiting for dice count change')
+                deadline = time.monotonic() + timeout
+
+            time.sleep(0.3)
+
+    def _detect_richman_mode(self) -> str | None:
+        """返回当前出现的大富翁分支模式。"""
+        if self.appear(self.I_RM_MODE_THROW):
+            return 'throw'
+        if self.appear(self.I_RM_MODE_ROB):
+            return 'rob'
+        if self.appear(self.I_RM_MODE_FIGHT):
+            return 'fight'
+        return None
+
+    def _wait_for_mode_after_throw(self) -> str:
+        """投骰后持续截图，直到识别出投掷、抢夺或战斗模式。"""
+        timeout = 5.0
+        deadline = time.monotonic() + timeout
+
+        while True:
+            self.screenshot()
+            mode = self._detect_richman_mode()
+            if mode is not None:
+                return mode
+
+            if time.monotonic() >= deadline:
+                self.update_status()
+                if self.appear_then_click(self.I_RM_THROW, interval=2):
+                    logger.info('RichMan mode wait timed out, click throw again')
+                else:
+                    logger.info('RichMan is moving, continue waiting for mode')
+                deadline = time.monotonic() + timeout
+
+            time.sleep(0.3)
 
     def _run_throw_task(self):
-        """最多点击三次投掷对决按钮，直到回到棋盘投骰状态。"""
+        """持续处理投掷对决；平局时重投，直到棋盘骰子按钮重新出现。"""
         logger.hr('RichMan throw task', 3)
-        for attempt in range(1, 4):
+        deadline = time.monotonic() + 20.0
+        attempt = 0
+        while True:
+            if time.monotonic() >= deadline:
+                raise GameStuckError('RichMan throw mode timed out after 20 seconds')
+
             self.screenshot()
-            if not self.appear(self.I_RM_MODE_THROW):
-                logger.info('Throw mode disappeared')
-                self._sleep_and_screenshot(3, 5)
-                break
-
-            logger.info(f'Click throw mode: {attempt}/3')
-            self.appear_then_click(self.I_RM_MODE_THROW, interval=1)
-            self._sleep_and_screenshot(3, 5)
             if self.appear(self.I_RM_THROW):
+                logger.info(f'RichMan throw task finished after {attempt} attempt(s)')
                 return
-            if not self.appear(self.I_RM_MODE_THROW):
-                logger.info('Throw mode finished')
-                self._sleep_and_screenshot(3, 5)
-                break
 
-        self._wait_until_throw()
+            if self.appear(self.I_RM_MODE_THROW) and \
+                    self.appear_then_click(self.I_RM_THROW_FIGHT, interval=1):
+                attempt += 1
+                logger.info(f'Click RichMan throw mode: {attempt}')
+                continue
+
+            if self.ui_reward_appear_click():
+                continue
+            if (self.appear_then_click(self.I_UI_CONFIRM, interval=1)
+                    or self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1)):
+                continue
+            time.sleep(0.5)
 
     def _run_rob_task(self):
         """等待后随机选择一个抢夺目标，直到回到棋盘投骰状态。"""
@@ -122,6 +191,7 @@ class ScriptTask(BaseAct):
             lock=self.I_RM_FIGHT_LOCK,
             should_lock=battle_conf.lock_team_enable,
         )
+        self._click_fight_challenge(self.I_RM_MODE_FIGHT, mode='normal')
         self.run_general_battle(
             battle_conf,
             battle_key=f'rich_man_fight_{self.count_map[self.climb_type]}',
@@ -146,6 +216,7 @@ class ScriptTask(BaseAct):
             'continuous_battle': False,
             'max_continuous': 0,
         })
+        self._click_fight_challenge(self.I_RM_MODE_FIGHT_BOSS, mode='boss')
         self.run_general_battle(
             battle_conf,
             battle_key=f'rich_man_boss_{time.monotonic_ns()}',
@@ -153,6 +224,14 @@ class ScriptTask(BaseAct):
         )
         self._sleep_and_screenshot(8, 10)
         self._wait_until_throw()
+
+    def _click_fight_challenge(self, challenge_button, mode: str):
+        """在大富翁战斗界面显式点击挑战按钮，再交给通用战斗流程。"""
+        self.screenshot()
+        if self.appear_then_click(challenge_button):
+            logger.info(f'Click RichMan {mode} fight challenge')
+            return
+        logger.warning(f'RichMan {mode} fight challenge button not found')
 
     def _switch_battle_soul(self, enter_button, mode: str):
         """从战斗准备界面进入式神录，按普通战或首领战配置切换御魂。"""

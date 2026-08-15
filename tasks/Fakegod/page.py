@@ -1,5 +1,15 @@
 from tasks.Fakegod.assets import FakegodAssets
-from tasks.GameUi.page import Page, page_activity
+from tasks.GameUi.page import (
+    Page,
+    any_of,
+    page_activity,
+    page_battle,
+    page_battle_prepare,
+    page_battle_result,
+    page_main,
+    page_reward,
+    random_click,
+)
 from tasks.GlobalGame.assets import GlobalGameAssets
 
 

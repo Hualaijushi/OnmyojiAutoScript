@@ -1,5 +1,17 @@
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
-from tasks.GameUi.page import Page, all_of, page_activity
+from tasks.GameUi.page import (
+    Page,
+    all_of,
+    any_of,
+    conditional_action,
+    page_activity,
+    page_battle,
+    page_battle_prepare,
+    page_battle_result,
+    page_main,
+    page_reward,
+    random_click,
+)
 from tasks.GlobalGame.assets import GlobalGameAssets
 
 

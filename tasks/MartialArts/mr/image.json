@@ -151,5 +151,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "mr_reward_main",
+    "imageName": "mr_mr_reward_main.png",
+    "roiFront": "584,611,119,42",
+    "roiBack": "580,606,129,52",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]
