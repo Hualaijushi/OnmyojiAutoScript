@@ -1,13 +1,15 @@
 """武道大会页面图：庭院 -> 武道大会主页 -> 日常训练。"""
 
+import random
 import time
 
+from module.base.timer import Timer
 from module.exception import GamePageUnknownError
 from module.logger import logger
 from tasks.Component.RightActivity.assets import RightActivityAssets
 from tasks.GameUi.action import conditional_action
 from tasks.GameUi.default_pages import random_click
-from tasks.GameUi.page import Page, page_main, page_shikigami_records
+from tasks.GameUi.page import Page, any_of, page_main, page_shikigami_records
 from tasks.GlobalGame.assets import GlobalGameAssets
 from tasks.MartialArts.assets import MartialArtsAssets
 
@@ -40,8 +42,51 @@ def find_martial_arts_entry(task) -> bool:
     )
 
 
+def handle_martial_arts_overlay(task) -> bool:
+    """清理武道大会奖励页和签到弹窗，直到稳定显示活动主页。"""
+    timer = Timer(task.CLICK_WAIT_TIMEOUT).start()
+    award_clicked = False
+    while not timer.reached():
+        task.screenshot()
+
+        if task.appear(MartialArtsAssets.I_MR_MAIN_AWARDS):
+            if not award_clicked:
+                click = random.choice([
+                    MartialArtsAssets.C_RANDOM_TOP,
+                    MartialArtsAssets.C_RANDOM_DOWN,
+                    MartialArtsAssets.C_RANDOM_LEFT,
+                    MartialArtsAssets.C_RANDOM_RIGHT,
+                ])
+                logger.info(f'Clear MartialArts award overlay via {click.name}')
+                task.click(click, interval=0)
+                task.device.click_record_clear()
+                award_clicked = True
+            time.sleep(0.2)
+            continue
+
+        if task.appear_then_click(MartialArtsAssets.I_MR_MAIN_SIGHIN_CLOSE, interval=0):
+            logger.info('Close MartialArts sign-in overlay')
+            task.device.click_record_clear()
+            time.sleep(0.2)
+            continue
+
+        if task.appear(MartialArtsAssets.I_CHECK_MAIN_MAR):
+            logger.info('MartialArts main page ready')
+            return True
+
+        time.sleep(0.2)
+
+    logger.warning('MartialArts main page overlays did not finish within 15s')
+    return False
+
+
 # 武道大会主页
-page_martial_arts = Page(MartialArtsAssets.I_CHECK_MAIN_MAR)
+page_martial_arts = Page(any_of(
+    MartialArtsAssets.I_CHECK_MAIN_MAR,
+    MartialArtsAssets.I_MR_MAIN_AWARDS,
+    MartialArtsAssets.I_MR_MAIN_SIGHIN_CLOSE,
+))
+page_martial_arts.add_enter_success_hooks(handle_martial_arts_overlay)
 page_martial_arts.add_enter_failure_hooks(
     find_martial_arts_entry,
     conditional_action(GlobalGameAssets.I_UI_REWARD, random_click),

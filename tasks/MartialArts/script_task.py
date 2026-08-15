@@ -2,7 +2,6 @@
 """武道大会战斗任务。"""
 
 import time
-import random
 
 from cached_property import cached_property
 
@@ -26,10 +25,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
     TICKET_COST = 1
     BATTLE_TIMEOUT = 600
     RESOURCE_OCR_RETRIES = 3
-    ENTER_BATTLE_TIMEOUT = 20
-    SEARCH_BOSS_TIMEOUT = 20
+    CLICK_WAIT_TIMEOUT = 10
     SEARCH_BOSS_MAX_ATTEMPTS = 3
-    SEARCH_BOSS_WAIT_RANGE = (3, 5)
 
     battle_type = 'ap'
 
@@ -172,7 +169,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
         """切换到普通搜寻或注灵搜寻模式。"""
         target = self.I_MAR_FIRE_BOSS_GOLD if use_gold else self.I_MAR_FIRE_BOSS
         mode_name = 'gold' if use_gold else 'normal'
-        timer = Timer(8).start()
+        timer = Timer(self.CLICK_WAIT_TIMEOUT).start()
         while not timer.reached():
             self.screenshot()
             if self.appear(target):
@@ -187,7 +184,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
     def open_existing_boss(self) -> bool:
         """打开地图上已经完成搜寻、可继续挑战的首领。"""
         logger.info('MartialArts existing boss detected, open challenge panel')
-        timer = Timer(self.SEARCH_BOSS_TIMEOUT).start()
+        timer = Timer(self.CLICK_WAIT_TIMEOUT).start()
         while not timer.reached():
             self.screenshot()
             if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
@@ -202,7 +199,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
                 continue
             time.sleep(0.5)
         logger.warning(
-            f'Cannot open existing MartialArts boss within {self.SEARCH_BOSS_TIMEOUT}s'
+            f'Cannot open existing MartialArts boss within {self.CLICK_WAIT_TIMEOUT}s'
         )
         return False
 
@@ -218,7 +215,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
         mode_name = 'gold' if use_gold else 'normal'
         max_attempts = max_attempts or self.SEARCH_BOSS_MAX_ATTEMPTS
         for attempt in range(1, max_attempts + 1):
-            wait_seconds = random.randint(*self.SEARCH_BOSS_WAIT_RANGE)
             self.screenshot()
             if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
                 logger.info('MartialArts boss found, entered challenge panel')
@@ -233,11 +229,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
                 logger.info(
                     f'MartialArts boss {mode_name} search clicked '
                     f'({attempt}/{max_attempts}), '
-                    f'wait up to {wait_seconds}s for challenge panel'
+                    f'wait up to {self.CLICK_WAIT_TIMEOUT}s for challenge panel'
                 )
                 self.device.click_record_clear()
 
-            wait_timer = Timer(wait_seconds).start()
+            wait_timer = Timer(self.CLICK_WAIT_TIMEOUT).start()
             while not wait_timer.reached():
                 self.screenshot()
                 if self.appear(self.I_CHECK_BATTLE_BOSS_MAIN):
@@ -330,7 +326,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
 
     def enter_battle(self, max_attempts: int | None = None) -> bool:
         """点击体力挑战并等待进入通用准备/战斗页面。"""
-        timer = Timer(self.ENTER_BATTLE_TIMEOUT).start()
+        timer = Timer(self.CLICK_WAIT_TIMEOUT).start()
         click_count = 0
         while not timer.reached():
             self.screenshot()
@@ -352,7 +348,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
                 self.device.click_record_clear()
                 continue
             time.sleep(0.5)
-        logger.warning(f'Cannot enter MartialArts battle within {self.ENTER_BATTLE_TIMEOUT}s')
+        logger.warning(f'Cannot enter MartialArts battle within {self.CLICK_WAIT_TIMEOUT}s')
         return False
 
     def run_battle_round(self, battle_conf: GeneralBattleConfig) -> bool:
@@ -391,7 +387,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
 
     def enter_boss_fight(self) -> bool:
         """在战斗小界面点击开始挑战并等待进入通用战斗页面。"""
-        timer = Timer(self.ENTER_BATTLE_TIMEOUT).start()
+        timer = Timer(self.CLICK_WAIT_TIMEOUT).start()
         click_count = 0
         while not timer.reached():
             self.screenshot()
@@ -413,7 +409,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
             )
         else:
             logger.warning(
-                f'Boss challenge button not found within {self.ENTER_BATTLE_TIMEOUT}s'
+                f'Boss challenge button not found within {self.CLICK_WAIT_TIMEOUT}s'
             )
         return False
 

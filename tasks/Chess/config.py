@@ -12,7 +12,7 @@ class ChessConfig(ConfigBase):
 
     lineup_bond: LineupBond = Field(
         title='选择阵容羁绊',
-        default=LineupBond.HUANGCHUAN,
+        default=LineupBond.ARAKAWA,
         description='选择百鬼棋局使用的阵容羁绊与对应运营策略',
     )
 
