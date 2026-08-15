@@ -36,10 +36,10 @@
     "description": ""
   },
   {
-    "itemName": "rm_fitght_boss",
-    "imageName": "rm_rm_fitght_boss.png",
+    "itemName": "rm_fitght_anchor",
+    "imageName": "rm_rm_fitght_anchor.png",
     "roiFront": "555,433,50,28",
-    "roiBack": "539,419,79,53",
+    "roiBack": "163,100,1011,473",
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""

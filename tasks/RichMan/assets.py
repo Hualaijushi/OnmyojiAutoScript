@@ -33,7 +33,7 @@ class RichManAssets:
 	#  
 	I_RM_FIGHT_UNLOCK = RuleImage(roi_front=(1132,510,32,32), roi_back=(1121,499,53,51), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_rm_fight_unlock.png")
 	#  
-	I_RM_FITGHT_BOSS = RuleImage(roi_front=(555,433,50,28), roi_back=(539,419,79,53), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_rm_fitght_boss.png")
+	I_RM_FITGHT_ANCHOR = RuleImage(roi_front=(555,433,50,28), roi_back=(163,100,1011,473), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_rm_fitght_anchor.png")
 	#  
 	I_RM_MODE_FIGHT = RuleImage(roi_front=(1137,604,83,38), roi_back=(1117,585,121,76), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_rm_mode_fight.png")
 	#  
@@ -55,6 +55,8 @@ class RichManAssets:
 	# Ocr Rule Assets
 	# 骰子数量 
 	O_CINQUE_COUNT = RuleOcr(roi=(1146,670,58,33), area=(1146,670,58,33), mode="Digit", method="Default", keyword="", name="cinque_count")
+	#  
+	O_LEVEL_EXPERIENCE = RuleOcr(roi=(939,17,106,39), area=(934,12,116,49), mode="DigitCounter", method="Default", keyword="", name="level_experience")
 
 
 	# Image Rule Assets
@@ -68,3 +70,5 @@ class RichManAssets:
 	I_CHECK_RM_MAIN = RuleImage(roi_front=(148,13,174,47), roi_back=(121,0,227,72), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_check_rm_main.png")
 	#  
 	I_CHECK_RM_RICHMAN = RuleImage(roi_front=(148,13,140,47), roi_back=(121,0,227,72), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_check_rm_richman.png")
+
+

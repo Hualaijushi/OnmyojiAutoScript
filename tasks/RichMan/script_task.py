@@ -25,6 +25,8 @@ class ScriptTask(BaseAct):
     def _run_pass(self):
         logger.hr('Start RichMan', 1)
         normal_loadout_required = True
+        self._boss_pending = False
+        self._boss_wait_exp_reset = False
         while True:
             self.screenshot()
             self.update_status()
@@ -34,14 +36,16 @@ class ScriptTask(BaseAct):
             if self.appear_then_click(self.I_UI_CONFIRM, interval=2):
                 continue
 
-            # 首领入口必须优先于投骰，避免进入下一步后错过入口。
-            if self.appear(self.I_RM_FITGHT_BOSS, interval=1):
-                self._run_boss_fight_task()
-                # 首领战会换成首领御魂/预设，下一次普通战需要恢复普通装配。
-                normal_loadout_required = True
-                continue
-
             if self.appear(self.I_RM_THROW):
+                # 经验溢出后进入待挑战状态；仅当锚点进入指定范围才插入首领战。
+                if self._boss_should_enter():
+                    self._run_boss_fight_task()
+                    self._boss_pending = False
+                    self._boss_wait_exp_reset = True
+                    # 首领战会换成首领御魂/预设，下一次普通战需要恢复普通装配。
+                    normal_loadout_required = True
+                    continue
+
                 dice_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
                 logger.info(f'RichMan dice count before throw: {dice_count}')
                 if not self.appear_then_click(self.I_RM_THROW, interval=2):
@@ -66,6 +70,56 @@ class ScriptTask(BaseAct):
                     self._run_fight_task(switch_loadout=normal_loadout_required)
                     normal_loadout_required = False
                     continue
+
+    def _read_level_experience(self) -> tuple[int, int] | None:
+        """读取等级经验 a/b；无有效分母时视为 OCR 失败。"""
+        current, _, total = self.O_LEVEL_EXPERIENCE.ocr_digit_counter(self.device.image)
+        if total <= 0:
+            logger.warning(f'Invalid RichMan level experience OCR: {current}/{total}')
+            return None
+        logger.info(f'RichMan level experience: {current}/{total}')
+        return current, total
+
+    def _confirm_boss_experience_overflow(self) -> bool:
+        """二次确认经验 a>b，避免单帧 OCR 误判触发首领战。"""
+        first = self._read_level_experience()
+        if first is None or first[0] <= first[1]:
+            return False
+
+        time.sleep(0.3)
+        self.screenshot()
+        second = self._read_level_experience()
+        if second != first:
+            logger.warning(f'RichMan boss experience confirmation mismatch: {first} -> {second}')
+            return False
+
+        logger.info(f'RichMan boss challenge pending at experience {first[0]}/{first[1]}')
+        return True
+
+    def _boss_anchor_appear(self) -> bool:
+        """使用 anchor 自身的 roi_back 搜索动态起点锚点。"""
+        return self.appear(self.I_RM_FITGHT_ANCHOR)
+
+    def _boss_should_enter(self) -> bool:
+        """维护首领待挑战/经验复位状态，并判断本轮是否进入首领战。"""
+        if self._boss_wait_exp_reset:
+            experience = self._read_level_experience()
+            if experience is not None and experience[0] <= experience[1]:
+                logger.info('RichMan boss experience reset confirmed')
+                self._boss_wait_exp_reset = False
+            return False
+
+        if not self._boss_pending:
+            self._boss_pending = self._confirm_boss_experience_overflow()
+        if not self._boss_pending:
+            return False
+
+        if self._boss_anchor_appear():
+            logger.info(f'RichMan boss anchor found at {self.I_RM_FITGHT_ANCHOR.roi_front}')
+            return True
+
+        logger.info('RichMan boss pending, anchor is outside its roi_back or not visible')
+        return False
 
     def _wait_for_dice_count_change(self, previous_count: int) -> str | None:
         """等待投骰消耗生效；初始读数为零时仅试投一次进行保底确认。"""
@@ -126,7 +180,7 @@ class ScriptTask(BaseAct):
             if time.monotonic() >= deadline:
                 self.update_status()
                 if self.appear_then_click(self.I_RM_THROW, interval=2):
-                    logger.info('RichMan mode wait timed out, click throw again')
+                    logger.info('RichMan mode wait timed out, may be reward block')
                 else:
                     logger.info('RichMan is moving, continue waiting for mode')
                 deadline = time.monotonic() + timeout
@@ -161,17 +215,25 @@ class ScriptTask(BaseAct):
             time.sleep(0.5)
 
     def _run_rob_task(self):
-        """等待后随机选择一个抢夺目标，直到回到棋盘投骰状态。"""
+        """立即随机选择一个抢夺目标，并等待返回棋盘投骰状态。"""
         logger.hr('RichMan rob task', 3)
-        self._sleep_and_screenshot(1, 3)
-        self.click(random.choice([
+        choice = random.choice([
             self.C_RM_ROB_CHOICE_1,
             self.C_RM_ROB_CHOICE_2,
             self.C_RM_ROB_CHOICE_3,
             self.C_RM_ROB_CHOICE_4,
-        ]))
-        self._sleep_and_screenshot(3, 5)
-        self._wait_until_throw()
+        ])
+        self.click(choice)
+        logger.info(f'Click RichMan rob choice: {choice.name}')
+
+        deadline = time.monotonic() + 10.0
+        while True:
+            if time.monotonic() >= deadline:
+                raise GameStuckError('RichMan rob mode timed out after 10 seconds')
+            self.screenshot()
+            if self.appear(self.I_RM_THROW):
+                return
+            time.sleep(0.3)
 
     def _run_fight_task(self, switch_loadout: bool):
         """执行一次普通格子战斗。"""
@@ -202,7 +264,7 @@ class ScriptTask(BaseAct):
     def _run_boss_fight_task(self):
         """投骰前进入首领挑战并执行一次完整战斗。"""
         logger.hr('RichMan boss fight task', 3)
-        self.ui_click(self.C_RM_FIGHT_BOSS_ENTER, stop=self.I_RM_MODE_FIGHT_BOSS, interval=1)
+        self._enter_boss_fight_by_anchor()
         self._switch_battle_soul(self.I_RM_FIGHT_BOSS_GOTO_RECORDS, mode='boss')
 
         # 首领战必须保持阵容未锁定，才能在准备界面切换预设。
@@ -224,6 +286,41 @@ class ScriptTask(BaseAct):
         )
         self._sleep_and_screenshot(8, 10)
         self._wait_until_throw()
+
+    def _enter_boss_fight_by_anchor(self):
+        """按动态锚点中心向上 70 像素点击，并确认进入首领挑战界面。"""
+        for attempt in range(1, 3):
+            self.screenshot()
+            if self.appear(self.I_RM_MODE_FIGHT_BOSS):
+                return
+            if not self._boss_anchor_appear():
+                logger.warning(f'RichMan boss anchor missing before entry attempt {attempt}/2')
+                time.sleep(0.3)
+                continue
+
+            x, y, width, height = self.I_RM_FITGHT_ANCHOR.roi_front
+            click_x = x + width // 2
+            click_y = y + height // 2 - 70
+            click_x = max(0, min(1279, click_x))
+            click_y = max(0, min(719, click_y))
+            logger.info(
+                f'Click RichMan boss entry: attempt={attempt}/2, '
+                f'anchor={(x, y, width, height)}, position={(click_x, click_y)}'
+            )
+            self.device.click(
+                x=click_x,
+                y=click_y,
+                control_name='rm_boss_fight_dynamic_enter',
+            )
+
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                self.screenshot()
+                if self.appear(self.I_RM_MODE_FIGHT_BOSS):
+                    return
+                time.sleep(0.3)
+
+        raise GameStuckError('RichMan boss entry failed after 2 dynamic click attempts')
 
     def _click_fight_challenge(self, challenge_button, mode: str):
         """在大富翁战斗界面显式点击挑战按钮，再交给通用战斗流程。"""
