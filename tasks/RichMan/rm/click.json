@@ -28,5 +28,11 @@
     "roiFront": "561,347,49,73",
     "roiBack": "561,347,49,73",
     "description": ""
+  },
+  {
+    "itemName": "rm_random_close_safe",
+    "roiFront": "479,513,326,144",
+    "roiBack": "479,513,326,144",
+    "description": ""
   }
 ]

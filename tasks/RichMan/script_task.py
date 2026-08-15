@@ -284,8 +284,26 @@ class ScriptTask(BaseAct):
             battle_key=f'rich_man_boss_{time.monotonic_ns()}',
             exit_matcher=self.I_RM_THROW,
         )
-        self._sleep_and_screenshot(8, 10)
-        self._wait_until_throw()
+        self._close_boss_level_up()
+
+    def _close_boss_level_up(self):
+        """首领战后持续关闭升级界面，并以升级标志消失作为返回棋盘。"""
+        level_up_seen = False
+        while True:
+            self.screenshot()
+
+            if self.appear(self.I_LEVEL_UP):
+                if not level_up_seen:
+                    logger.info('RichMan boss level-up screen appeared')
+                    level_up_seen = True
+                self.click(self.C_RM_RANDOM_CLOSE_SAFE, interval=1)
+                continue
+
+            if level_up_seen:
+                logger.info('RichMan boss level-up screen disappeared, return to board')
+                return
+
+            time.sleep(0.3)
 
     def _enter_boss_fight_by_anchor(self):
         """按动态锚点中心向上 70 像素点击，并确认进入首领挑战界面。"""
@@ -371,9 +389,3 @@ class ScriptTask(BaseAct):
                     or self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1)):
                 continue
             time.sleep(0.5)
-
-    def _sleep_and_screenshot(self, minimum: float, maximum: float):
-        seconds = random.uniform(minimum, maximum)
-        logger.info(f'Wait {seconds:.1f}s')
-        time.sleep(seconds)
-        self.screenshot()

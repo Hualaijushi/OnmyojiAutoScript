@@ -115,5 +115,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "投掷按钮"
+  },
+  {
+    "itemName": "level_up",
+    "imageName": "rm_level_up.png",
+    "roiFront": "530,117,225,42",
+    "roiBack": "494,84,297,104",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]
