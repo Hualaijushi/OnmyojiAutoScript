@@ -28,7 +28,9 @@ page_friend_realm.connect(page_guild_realm, GlobalGameAssets.I_UI_BACK_YELLOW, k
 page_friend_utilize = Page(
     recognizer=any_of(KekkaiUtilizeAssets.I_CHECK_FRIEND_REALM_1,
                       KekkaiUtilizeAssets.I_CHECK_FRIEND_REALM_2,
-                      KekkaiUtilizeAssets.I_CHECK_FRIEND_REALM_3)
+                      KekkaiUtilizeAssets.I_CHECK_FRIEND_REALM_3,
+                      KekkaiUtilizeAssets.I_CHECK_FRIEND_REALM_4
+                      )
 )
 page_friend_utilize.connect(page_friend_realm, GlobalGameAssets.I_UI_BACK_BLUE, key="page_friend_utilize->page_friend_realm")
 page_guild_realm_utilize.connect(page_friend_utilize, KekkaiUtilizeAssets.I_U_ENTER_REALM, key="page_guild_realm_utilize->page_friend_utilize")

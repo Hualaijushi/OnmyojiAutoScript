@@ -148,7 +148,7 @@ class KekkaiUtilizeAssets:
 
 	# Image Rule Assets
 	# 太阴6 
-	I_U_MOON_6 = RuleImage(roi_front=(548,194,54,54), roi_back=(540,189,68,404), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_u_moon_6.png")
+	I_U_MOON_6 = RuleImage(roi_front=(543,211,54,54), roi_back=(540,189,68,404), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_u_moon_6.png")
 	# description 
 	I_U_MOON_5 = RuleImage(roi_front=(548,205,48,46), roi_back=(540,196,66,407), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_u_moon_5.png")
 	# description 
@@ -163,6 +163,8 @@ class KekkaiUtilizeAssets:
 	I_CHECK_FRIEND_REALM_2 = RuleImage(roi_front=(590,143,44,52), roi_back=(538,106,161,158), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_check_friend_realm_2.png")
 	# 好友寄养 
 	I_CHECK_FRIEND_REALM_3 = RuleImage(roi_front=(900,23,22,120), roi_back=(884,11,271,160), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_check_friend_realm_3.png")
+	#  
+	I_CHECK_FRIEND_REALM_4 = RuleImage(roi_front=(898,19,29,129), roi_back=(884,11,271,160), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_check_friend_realm_4.png")
 
 
 	# Ocr Rule Assets
