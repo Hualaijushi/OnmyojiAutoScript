@@ -61,6 +61,8 @@ class RichManAssets:
 	O_CINQUE_COUNT = RuleOcr(roi=(1146,670,58,33), area=(1146,670,58,33), mode="Digit", method="Default", keyword="", name="cinque_count")
 	#  
 	O_LEVEL_EXPERIENCE = RuleOcr(roi=(939,17,106,39), area=(934,12,116,49), mode="DigitCounter", method="Default", keyword="", name="level_experience")
+	#  
+	O_LEVEL = RuleOcr(roi=(1099,19,64,35), area=(1099,19,64,35), mode="DigitCounter", method="Default", keyword="", name="level")
 
 
 	# Image Rule Assets

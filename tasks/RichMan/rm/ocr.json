@@ -16,5 +16,14 @@
     "method": "Default",
     "keyword": "",
     "description": ""
+  },
+  {
+    "itemName": "level",
+    "roiFront": "1099,19,64,35",
+    "roiBack": "1099,19,64,35",
+    "mode": "DigitCounter",
+    "method": "Default",
+    "keyword": "",
+    "description": ""
   }
 ]

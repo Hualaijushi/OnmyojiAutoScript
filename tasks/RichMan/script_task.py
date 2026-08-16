@@ -27,6 +27,7 @@ class ScriptTask(BaseAct):
         normal_loadout_required = True
         self._boss_pending = False
         self._boss_wait_exp_reset = False
+        self._boss_max_level = False
         while True:
             self.screenshot()
             self.update_status()
@@ -80,6 +81,21 @@ class ScriptTask(BaseAct):
         logger.info(f'RichMan level experience: {current}/{total}')
         return current, total
 
+    def _boss_level_is_max(self) -> bool:
+        """检测并记忆 10/10 满级状态；满级后不再触发首领挑战。"""
+        if self._boss_max_level:
+            return True
+
+        current, _, total = self.O_LEVEL.ocr_digit_counter(self.device.image)
+        logger.info(f'RichMan level: {current}/{total}')
+        if current == 10 and total == 10:
+            logger.info('RichMan max level reached, disable subsequent boss challenges')
+            self._boss_max_level = True
+            self._boss_pending = False
+            self._boss_wait_exp_reset = False
+            return True
+        return False
+
     def _confirm_boss_experience_overflow(self) -> bool:
         """二次确认经验 a>b，避免单帧 OCR 误判触发首领战。"""
         first = self._read_level_experience()
@@ -102,6 +118,9 @@ class ScriptTask(BaseAct):
 
     def _boss_should_enter(self) -> bool:
         """维护首领待挑战/经验复位状态，并判断本轮是否进入首领战。"""
+        if self._boss_level_is_max():
+            return False
+
         if self._boss_wait_exp_reset:
             experience = self._read_level_experience()
             if experience is not None and experience[0] <= experience[1]:
@@ -133,6 +152,8 @@ class ScriptTask(BaseAct):
             current_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
             if current_count != previous_count:
                 logger.info(f'RichMan dice count changed: {previous_count} -> {current_count}')
+                # 骰子数量变化说明本轮投掷已生效，清除正常循环累计的同按钮点击记录。
+                self.device.click_record_clear()
                 return None
 
             # 初始 OCR 为零时，模式已经出现也能证明试投实际成功。
@@ -140,6 +161,7 @@ class ScriptTask(BaseAct):
                 mode = self._detect_richman_mode()
                 if mode is not None:
                     logger.info('RichMan throw succeeded although initial dice OCR was zero')
+                    self.device.click_record_clear()
                     return mode
 
             if time.monotonic() >= deadline:
