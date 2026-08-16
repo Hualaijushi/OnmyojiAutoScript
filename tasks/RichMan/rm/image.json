@@ -124,5 +124,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "cinque_not_enough",
+    "imageName": "rm_cinque_not_enough.png",
+    "roiFront": "356,123,90,51",
+    "roiBack": "336,82,129,106",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]

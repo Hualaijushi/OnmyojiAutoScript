@@ -418,6 +418,21 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 	<message><source>limit_count_help</source><translation>两个限制需要同时设置，最先达到就会退出。
 建议执行时间设置成一个小时足够长，此时基于次数来判定设置为100次</translation></message>
 	<message><source>GeneralClimb</source><translation>通用爬塔</translation></message>
+	<message><source>Run Config</source><translation>运行设置</translation></message>
+	<message><source>Throw Limit</source><translation>骰子投掷次数限制</translation></message>
+	<message><source>Active Souls Clean</source><translation>运行结束后清理御魂</translation></message>
+	<message><source>RichMan Random Sleep</source><translation>执行后随机休眠</translation></message>
+	<message><source>Switch Soul Config</source><translation>御魂切换设置</translation></message>
+	<message><source>Enable Switch Normal</source><translation>按编号切换普通战斗御魂预设</translation></message>
+	<message><source>Normal Group Team</source><translation>普通战斗御魂预设</translation></message>
+	<message><source>Enable Switch Normal By Name</source><translation>按名称切换普通战斗御魂预设</translation></message>
+	<message><source>Normal Group Team Name</source><translation>普通战斗御魂预设名称</translation></message>
+	<message><source>Enable Switch Boss</source><translation>按编号切换首领战斗御魂预设</translation></message>
+	<message><source>Boss Group Team</source><translation>首领战斗御魂预设</translation></message>
+	<message><source>Enable Switch Boss By Name</source><translation>按名称切换首领战斗御魂预设</translation></message>
+	<message><source>Boss Group Team Name</source><translation>首领战斗御魂预设名称</translation></message>
+	<message><source>Normal Battle Preset</source><translation>普通战斗预设</translation></message>
+	<message><source>Boss Battle Preset</source><translation>首领战斗预设</translation></message>
 	<message><source>Ap Limit</source><translation>体力战斗次数</translation></message>
 	<message><source>Boss Limit</source><translation>首领战斗次数</translation></message>
 	<message><source>Run Sequence</source><translation>运行顺序</translation></message>

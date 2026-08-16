@@ -6,6 +6,7 @@ import time
 
 from cached_property import cached_property
 
+from module.base.protect import random_sleep
 from module.exception import GameStuckError
 from module.logger import logger
 from tasks.RichMan.base_act import BaseAct, TicketsNotEnough
@@ -63,14 +64,22 @@ class ScriptTask(BaseAct):
                     mode = self._wait_for_mode_after_throw()
                 if mode == 'throw':
                     self._run_throw_task()
+                    self._random_sleep_after_round()
                     continue
                 if mode == 'rob':
                     self._run_rob_task()
+                    self._random_sleep_after_round()
                     continue
                 if mode == 'fight':
                     self._run_fight_task(switch_loadout=normal_loadout_required)
                     normal_loadout_required = False
+                    self._random_sleep_after_round()
                     continue
+
+    def _random_sleep_after_round(self):
+        """按配置在一轮骰子分支处理完成后进行低概率随机休眠。"""
+        if self.conf.run_config.random_sleep:
+            random_sleep(probability=0.2)
 
     def _read_level_experience(self) -> tuple[int, int] | None:
         """读取等级经验 a/b；无有效分母时视为 OCR 失败。"""
@@ -141,14 +150,20 @@ class ScriptTask(BaseAct):
         return False
 
     def _wait_for_dice_count_change(self, previous_count: int) -> str | None:
-        """等待投骰消耗生效；初始读数为零时仅试投一次进行保底确认。"""
+        """等待投骰生效；仅以骰子不足提示作为门票耗尽依据。"""
         timeout = 5.0
         deadline = time.monotonic() + timeout
         zero_fallback = previous_count == 0
-        current_count = previous_count
 
         while True:
             self.screenshot()
+
+            if self.appear(self.I_CINQUE_NOT_ENOUGH):
+                logger.warning('RichMan dice not enough prompt appeared')
+                self.click(self.C_RM_RANDOM_CLOSE_SAFE_MAIN, interval=1)
+                self.device.click_record_clear()
+                raise TicketsNotEnough
+
             current_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
             if current_count != previous_count:
                 logger.info(f'RichMan dice count changed: {previous_count} -> {current_count}')
@@ -166,10 +181,6 @@ class ScriptTask(BaseAct):
 
             if time.monotonic() >= deadline:
                 self.update_status()
-                if zero_fallback and current_count == 0:
-                    logger.warning('RichMan dice count remains zero after fallback throw')
-                    raise TicketsNotEnough
-
                 if self.appear_then_click(self.I_RM_THROW, interval=2):
                     logger.info('Dice count did not change, click throw again')
                 else:
@@ -261,9 +272,9 @@ class ScriptTask(BaseAct):
         """执行一次普通格子战斗。"""
         logger.hr('RichMan fight task', 3)
         if switch_loadout:
-            self._switch_battle_soul(self.I_RM_FIGHT_GOTO_RECORDS, mode='pass')
+            self._switch_battle_soul(self.I_RM_FIGHT_GOTO_RECORDS, mode='normal')
 
-        source_conf = self.conf.pass_battle_conf
+        source_conf = self.conf.normal_battle_preset
         battle_conf = source_conf.copy(update={
             'lock_team_enable': source_conf.lock_team_enable and not source_conf.preset_enable,
             'preset_enable': source_conf.preset_enable and switch_loadout,
@@ -295,7 +306,7 @@ class ScriptTask(BaseAct):
             lock=self.I_RM_FIGHT_LOCK_BOSS,
             should_lock=False,
         )
-        battle_conf = self.conf.boss_battle_conf.copy(update={
+        battle_conf = self.conf.boss_battle_preset.copy(update={
             'lock_team_enable': False,
             'continuous_battle': False,
             'max_continuous': 0,

@@ -1199,28 +1199,23 @@
       "delay_date": 1,
       "float_time": "00:00:00"
     },
-    "general_climb": {
+    "run_config": {
       "limit_time": "01:30:00",
-      "pass_limit": 50,
+      "throw_limit": 50,
       "active_souls_clean": false,
       "random_sleep": false
     },
-    "purchase": {
-      "buy_ap": false,
-      "buy_reward": false,
-      "buy_ticket": false
-    },
     "switch_soul_config": {
-      "enable_switch_pass": false,
-      "pass_group_team": "-1,-1",
-      "enable_switch_pass_by_name": false,
-      "pass_group_team_name": "",
+      "enable_switch_normal": false,
+      "normal_group_team": "-1,-1",
+      "enable_switch_normal_by_name": false,
+      "normal_group_team_name": "",
       "enable_switch_boss": false,
       "boss_group_team": "-1,-1",
       "enable_switch_boss_by_name": false,
       "boss_group_team_name": ""
     },
-    "pass_battle_conf": {
+    "normal_battle_preset": {
       "lock_team_enable": false,
       "preset_enable": false,
       "preset_group": 1,
@@ -1235,7 +1230,7 @@
       "max_continuous": 0,
       "quick_exit": false
     },
-    "boss_battle_conf": {
+    "boss_battle_preset": {
       "lock_team_enable": false,
       "preset_enable": false,
       "preset_group": 1,

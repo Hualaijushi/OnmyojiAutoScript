@@ -23,6 +23,8 @@ class RichManAssets:
 	C_RM_FIGHT_BOSS_ENTER = RuleClick(roi_front=(561,347,49,73), roi_back=(561,347,49,73), name="rm_fight_boss_enter")
 	#  
 	C_RM_RANDOM_CLOSE_SAFE = RuleClick(roi_front=(479,513,326,144), roi_back=(479,513,326,144), name="rm_random_close_safe")
+	#  
+	C_RM_RANDOM_CLOSE_SAFE_MAIN = RuleClick(roi_front=(1102,208,153,327), roi_back=(1102,208,153,327), name="rm_random_close_safe_main")
 
 
 	# Image Rule Assets
@@ -54,6 +56,8 @@ class RichManAssets:
 	I_RM_THROW_FIGHT = RuleImage(roi_front=(1053,582,83,38), roi_back=(1034,562,121,76), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_rm_throw_fight.png")
 	#  
 	I_LEVEL_UP = RuleImage(roi_front=(530,117,225,42), roi_back=(494,84,297,104), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_level_up.png")
+	#  
+	I_CINQUE_NOT_ENOUGH = RuleImage(roi_front=(356,123,90,51), roi_back=(336,82,129,106), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_cinque_not_enough.png")
 
 
 	# Ocr Rule Assets
