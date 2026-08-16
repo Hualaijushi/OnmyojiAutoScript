@@ -397,7 +397,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
             if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or \
                     self.appear_then_click(self.I_UI_CONFIRM, interval=1):
                 continue
-            if self.appear_then_click(self.I_MAR_FIRE_BOSS_MAIN, interval=1.5):
+            if self.appear_then_click(self.I_MAR_FIRE_BOSS_MAIN, interval=1.5) or self.appear_then_click(self.I_MAR_FIRE_BOSS_MAIN_AGAIN, interval=1.5):
                 click_count += 1
                 self.device.click_record_clear()
                 continue

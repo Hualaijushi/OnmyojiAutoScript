@@ -15,13 +15,13 @@ class MartialArtsAssets:
 	C_SELECT_FIRE_BOSS = RuleClick(roi_front=(28,88,254,99), roi_back=(28,88,254,99), name="select_fire_boss")
 	#  
 	C_MR_QUICK_LOADOUT_CLOSE = RuleClick(roi_front=(491,595,189,73), roi_back=(491,595,189,73), name="mr_quick_loadout_close")
-	#
+	#  
 	C_RANDOM_TOP = RuleClick(roi_front=(344,0,625,113), roi_back=(344,0,625,113), name="random_top")
-	#
+	#  
 	C_RANDOM_DOWN = RuleClick(roi_front=(350,607,625,113), roi_back=(350,607,625,113), name="random_down")
-	#
+	#  
 	C_RANDOM_LEFT = RuleClick(roi_front=(34,169,140,437), roi_back=(34,169,140,437), name="random_left")
-	#
+	#  
 	C_RANDOM_RIGHT = RuleClick(roi_front=(1100,158,140,437), roi_back=(1100,158,140,437), name="random_right")
 
 
@@ -56,12 +56,14 @@ class MartialArtsAssets:
 	I_MR_BOSS_GOTO_QUICK_LOADOUT = RuleImage(roi_front=(910,597,32,36), roi_back=(900,586,52,56), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_boss_goto_quick_loadout.png")
 	#  
 	I_MR_BOSS_QUICK_LOADOUT_FIGHT = RuleImage(roi_front=(809,518,119,42), roi_back=(804,513,129,52), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_boss_quick_loadout_fight.png")
-	#
+	#  
 	I_MR_MAIN_AWARDS = RuleImage(roi_front=(480,232,321,42), roi_back=(397,150,477,137), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_main_awards.png")
-	#
+	#  
 	I_MR_MAIN_SIGHIN_CLOSE = RuleImage(roi_front=(1082,122,30,35), roi_back=(1077,117,40,45), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_main_sighin_close.png")
-	#
+	#  
 	I_MR_REWARD_MAIN = RuleImage(roi_front=(584,611,119,42), roi_back=(580,606,129,52), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mr_reward_main.png")
+	#  
+	I_MAR_FIRE_BOSS_MAIN_AGAIN = RuleImage(roi_front=(1106,529,70,82), roi_back=(1101,524,80,92), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_mar_fire_boss_main_again.png")
 
 
 	# Ocr Rule Assets
@@ -94,3 +96,5 @@ class MartialArtsAssets:
 	I_CHECK_BATTLE_BOSS = RuleImage(roi_front=(152,13,134,41), roi_back=(147,8,144,51), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_battle_boss.png")
 	#  
 	I_CHECK_BATTLE_BOSS_MAIN = RuleImage(roi_front=(555,63,164,47), roi_back=(550,58,174,57), threshold=0.8, method="Template matching", file="./tasks/MartialArts/mr/mr_check_battle_boss_main.png")
+
+
