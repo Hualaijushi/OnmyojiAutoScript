@@ -160,5 +160,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "mar_fire_boss_main_again",
+    "imageName": "mr_mar_fire_boss_main_again.png",
+    "roiFront": "1106,529,70,82",
+    "roiBack": "1101,524,80,92",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": ""
   }
 ]

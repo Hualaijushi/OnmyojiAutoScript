@@ -247,5 +247,11 @@
   "preset_number": "预设编号",
   "preset_name": "预设名",
   "mode_number": "编号",
-  "mode_ocr": "OCR"
+  "mode_ocr": "OCR",
+  "enable_switch_normal": "切换普通战斗御魂",
+  "normal_group_team": "普通战斗预设组号,队伍号",
+  "enable_switch_normal_by_name": "按名称切换普通战斗御魂",
+  "normal_group_team_name": "普通战斗预设组名,队伍名",
+  "normal_battle_preset": "普通战斗配置",
+  "boss_battle_preset": "首领战斗配置"
 }
