@@ -122,6 +122,8 @@ class GeneralBattleAssets:
 	I_GB_CHECK_TEAM_EXIT = RuleImage(roi_front=(507,288,270,54), roi_back=(411,233,452,247), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_gb_check_team_exit.png")
 	# 时运加成关闭
 	I_GB_CLOSE_RED = RuleImage(roi_front=(1108,128,45,41), roi_back=(1108,128,45,41), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_gb_close_red.png")
+	# 御魂溢出
+	I_OVER_GHOST = RuleImage(roi_front=(697,409,89,32), roi_back=(697,409,89,32), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_over_ghost.png")
 
 
 	# Image Rule Assets
@@ -155,4 +157,3 @@ class GeneralBattleAssets:
 	S_BATTLE_RANDOM_LEFT = RuleSwipe(roi_front=(122,155,480,426), roi_back=(667,147,461,427), mode="default", name="battle_random_left")
 	# description 
 	S_BATTLE_RANDOM_RIGHT = RuleSwipe(roi_front=(719,138,417,392), roi_back=(237,163,387,394), mode="default", name="battle_random_right")
-

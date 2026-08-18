@@ -268,5 +268,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "时运加成关闭"
+  },
+  {
+    "itemName": "over_ghost",
+    "imageName": "gb_over_ghost.png",
+    "roiFront": "697,409,89,32",
+    "roiBack": "697,409,89,32",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "御魂溢出"
   }
 ]

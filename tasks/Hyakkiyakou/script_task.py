@@ -79,7 +79,15 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
             'weights': weights,
             'priorities': priorities,
             'invite_friend': hya_config.hya_invite_friend,
-            'auto_bean': hya_config.hya_auto_bean
+            'auto_bean': hya_config.hya_auto_bean,
+            'bean_threshold_low': hya_config.hya_bean_threshold_low,
+            'buff_omega': {
+                'prob_up': hya_config.hya_buff_prob_up,
+                'speed_up': hya_config.hya_buff_speed_up,
+                'add_beans': hya_config.hya_buff_add_beans,
+                'slow_down': hya_config.hya_buff_slow_down,
+                'freeze': hya_config.hya_buff_freeze,
+            }
         }
         return Agent(strategy=strategy)
 
@@ -176,8 +184,8 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
                 best_class = _class
         if best_class != -1:
             logger.info(
-                f'Hyakki select: detect {id2name(_class)} '
-                f'with rarity score {score}'
+                f'Hyakki select: detect {id2name(best_class)} '
+                f'with rarity score {best_score}'
             )
         else:
             logger.warning('Hyakki select: no valid shikigami detected on title screen')
@@ -216,8 +224,11 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
 
     def one(self):
         self.reset_state()
+        self.goto_page(page_hyakkiyakou)
+        self.screenshot()
         if not self.appear(self.I_HACCESS):
-            logger.warning('Page Error')
+            logger.error('Failed to navigate to Hyakkiyakou page after 3 retries')
+            raise RequestHumanTakeover('Failed to navigate to Hyakkiyakou page')
         if self._config.hyakkiyakou_config.hya_invite_friend:
             self.invite_friend()
         # start
