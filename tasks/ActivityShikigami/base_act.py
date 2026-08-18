@@ -230,11 +230,35 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, Act
             if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or \
                     self.appear_then_click(self.I_UI_CONFIRM, interval=1):
                 continue
-            if self.appear_then_click(self.I_ACT_FIRE, interval=1.5):
+            if self.appear_then_click(self.I_ACT_FIRE, interval=1):
                 self.device.click_record_clear()
                 click_times += 1
                 logger.info(f'Try click fire, remain times[{max_times - click_times}]')
+                if fallback:
+                    return self._wait_trial_battle_result(timeout=3.0)
                 continue
+
+    def _wait_trial_battle_result(self, timeout: float = 3.0) -> bool:
+        """试探性点击后等待进入战斗或资源不足界面，期间不再点击。"""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.screenshot()
+            if self.is_in_battle(False):
+                logger.info(f'{self.climb_type} trial challenge entered battle')
+                return True
+
+            # 两种通用确认框均可能承载门票/体力不足提示，只检测，不关闭。
+            if self.appear(self.I_UI_CONFIRM_SAMLL) or self.appear(self.I_UI_CONFIRM):
+                logger.warning(f'{self.climb_type} trial challenge detected resource shortage dialog')
+                return False
+            # 保留旧活动使用红色关闭按钮的资源不足界面兼容。
+            if self.appear(self.I_UI_BACK_RED):
+                logger.warning(f'{self.climb_type} trial challenge detected red-close shortage dialog')
+                return False
+            time.sleep(0.2)
+
+        logger.warning(f'{self.climb_type} trial challenge result timed out after {timeout:.1f}s')
+        return False
 
     def switch_soul(self, enter_button: RuleImage):
         if self.switch_souled.get(self.climb_type, False):
