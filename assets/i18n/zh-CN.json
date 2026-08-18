@@ -7,6 +7,8 @@
   "rank_protection": "保段位",
   "rank_protection_help": "上一局进入前四名后主动退出三局；主动退出的局数不计入执行次数",
   "run_count": "执行次数",
+  "limit_time": "运行时间限制",
+  "limit_time_help": "达到限制时间后不再开始下一局或下一场战斗，已经开始的战斗会正常完成",
   "matchmaking_timeout_seconds": "匹配限制时间（秒）",
   "matchmaking_timeout_seconds_help": "单次超时后取消并重新匹配；连续三次超时则标记为等待过多并结束任务",
   "coin_full_exit": "刷满鼬乐币",
@@ -248,10 +250,5 @@
   "preset_name": "预设名",
   "mode_number": "编号",
   "mode_ocr": "OCR",
-  "enable_switch_normal": "切换普通战斗御魂",
-  "normal_group_team": "普通战斗预设组号,队伍号",
-  "enable_switch_normal_by_name": "按名称切换普通战斗御魂",
-  "normal_group_team_name": "普通战斗预设组名,队伍名",
-  "normal_battle_preset": "普通战斗配置",
-  "boss_battle_preset": "首领战斗配置"
+  "lineup_bond": "战斗策略"
 }

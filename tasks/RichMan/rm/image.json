@@ -9,6 +9,24 @@
     "description": "投掷骰子"
   },
   {
+    "itemName": "rm_main_lock",
+    "imageName": "as_lock.png",
+    "roiFront": "886,646,31,30",
+    "roiBack": "871,620,69,76",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "大富翁主界面已锁定阵容"
+  },
+  {
+    "itemName": "rm_main_unlock",
+    "imageName": "as_unlock.png",
+    "roiFront": "886,646,31,30",
+    "roiBack": "871,620,69,76",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "大富翁主界面未锁定阵容"
+  },
+  {
     "itemName": "rm_mode_rob",
     "imageName": "rm_rm_mode_rob.png",
     "roiFront": "486,28,306,32",

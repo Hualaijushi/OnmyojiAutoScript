@@ -1,6 +1,7 @@
 # This Python file uses the following encoding: utf-8
 
 import time
+from datetime import datetime, timedelta
 
 from module.exception import GameStuckError, TaskEnd
 from module.logger import logger
@@ -49,6 +50,15 @@ class ScriptTask(
         # self.config.chess.chess_config。旧配置未包含新字段时使用默认值，
         # 避免升级后任务在进入棋局大厅时直接崩溃。
         target_count = int(getattr(chess_config, 'run_count', 1))
+        configured_limit_time = getattr(chess_config, 'limit_time', None)
+        if configured_limit_time is None:
+            self.limit_time = timedelta(minutes=30)
+        else:
+            self.limit_time = timedelta(
+                hours=configured_limit_time.hour,
+                minutes=configured_limit_time.minute,
+                seconds=configured_limit_time.second,
+            )
         coin_full_exit = bool(
             getattr(chess_config, 'coin_full_exit', False)
         )
@@ -60,7 +70,8 @@ class ScriptTask(
         logger.info(
             'Chess task constraints: '
             f'lineup={strategy["key"]} ({strategy["display_name"]}), '
-            f'run_count={target_count}, coin_full_exit={coin_full_exit}, '
+            f'run_count={target_count}, limit_time={self.limit_time}, '
+            f'coin_full_exit={coin_full_exit}, '
             f'rank_protection={rank_protection}'
         )
 
@@ -69,6 +80,11 @@ class ScriptTask(
             or completed < target_count
             or rank_protection_exits_remaining > 0
         ):
+            if datetime.now() - self.start_time >= self.limit_time:
+                logger.info(
+                    'Chess task time reached; stop before starting next game'
+                )
+                break
             self.screenshot()
             if coin_full_exit and self._coin_is_full():
                 logger.info(
