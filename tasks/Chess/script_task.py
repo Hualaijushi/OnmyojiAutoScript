@@ -31,6 +31,19 @@ class ScriptTask(
 
     conf: Chess = None
 
+    def _wait_chess_action_state(self, condition) -> bool:
+        """在单次动作后限时轮询目标图标状态。"""
+        deadline = time.monotonic() + self.ACTION_ICON_WAIT_TIMEOUT
+        while time.monotonic() < deadline:
+            self.device.stuck_record_clear()
+            self.screenshot()
+            if condition():
+                return True
+            time.sleep(self.FAST_OPERATION_INTERVAL)
+        self.device.stuck_record_clear()
+        self.screenshot()
+        return bool(condition())
+
     def run(self):
         """按执行次数循环百鬼棋局，并可在鼬乐币刷满时提前结束。"""
         chess_task_config = getattr(self.config, 'chess', None)
@@ -328,7 +341,6 @@ class ScriptTask(
             if name in self.shikigami_deploy_positions
         }
         self.equip_souls_from_hand(verified_board_names)
-        self.retry_arakawa_goldfish_after_soul_equipment()
         return self._is_preparation_mode()
 
     def _run_preparation_economy_until_time_limit(self) -> None:
@@ -543,26 +555,31 @@ class ScriptTask(
 
     def _close_chess_lobby_abnormal_page(self) -> bool:
         """关闭棋局大厅开战时偶发出现的红色返回键异常页面。"""
-        recovered = False
-        while self.appear(self.I_BACK_RED):
-            if not recovered:
-                logger.warning(
-                    'Chess start blocked by abnormal lobby page; '
-                    'close it with back red'
-                )
-            if self.appear_then_click(
-                self.I_BACK_RED,
-                interval=self.SLOW_POLL_INTERVAL,
+        if not self.appear(self.I_BACK_RED):
+            return False
+        logger.warning(
+            'Chess start blocked by abnormal lobby page; '
+            'close it with back red'
+        )
+        for attempt in range(1, self.ACTION_ICON_MAX_ATTEMPTS + 1):
+            self.device.click_record_remove(self.I_BACK_RED)
+            self.click(self.I_BACK_RED)
+            if self._wait_chess_action_state(
+                lambda: not self.appear(self.I_BACK_RED)
             ):
-                recovered = True
-            self.device.stuck_record_clear()
-            time.sleep(self.SLOW_POLL_INTERVAL)
-            self.screenshot()
-        if recovered:
-            logger.info(
-                'Chess abnormal lobby page closed; retry normal game start'
+                logger.info(
+                    'Chess abnormal lobby page closed; '
+                    f'attempt={attempt}/{self.ACTION_ICON_MAX_ATTEMPTS}'
+                )
+                return True
+            logger.warning(
+                'Chess abnormal lobby page still visible after click: '
+                f'attempt={attempt}/{self.ACTION_ICON_MAX_ATTEMPTS}, '
+                f'timeout={self.ACTION_ICON_WAIT_TIMEOUT:.0f}s'
             )
-        return recovered
+        raise GameStuckError(
+            'Chess: failed to close abnormal lobby page after 3 attempts'
+        )
 
     def _wait_until_in_chess_game(
         self,
