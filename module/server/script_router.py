@@ -249,7 +249,7 @@ async def task_group_copy(task_name: str, group_name: str, dest_config_name: str
 async def script_start(script_name: str):
     if script_name not in mm.script_process:
         mm.script_process[script_name] = ScriptProcess(script_name)
-    mm.script_process[script_name].start()
+    await mm.script_process[script_name].start()
     return
 
 @script_app.get('/{script_name}/stop')
@@ -257,7 +257,7 @@ async def script_stop(script_name: str):
     if script_name not in mm.script_process:
         logger.warning(f'[{script_name}] script process does not exist')
         return
-    mm.script_process[script_name].stop()
+    await mm.script_process[script_name].stop()
     return
 
 @script_app.get('/{script_name}/{task}/args')

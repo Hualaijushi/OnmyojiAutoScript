@@ -27,6 +27,8 @@ class Add(QObject):
         json_files = config_path.glob('*.json')
         result = []
         for json in json_files:
+            if json.stem.startswith('.'):
+                continue
             if json.stem == 'template':
                 continue
             result.append(json.stem)
@@ -43,6 +45,8 @@ class Add(QObject):
         json_files = config_path.glob('*.json')
         result = []
         for json in json_files:
+            if json.stem.startswith('.'):
+                continue
             if json.stem == 'template':
                 result.insert(0, json.stem)
             else:
@@ -100,5 +104,4 @@ if __name__ == "__main__":
     print(a.all_script_files())
     print(a.all_json_file())
     print(a.generate_script_name())
-
 

@@ -25,7 +25,7 @@
     },
     "optimization": {
       "screenshot_interval": 0.3,
-      "combat_screenshot_interval": 1.0,
+      "combat_screenshot_interval": 1,
       "task_hoarding_duration": 0,
       "when_task_queue_empty": "goto_main",
       "close_game_limit_time": "00:30:00",
@@ -303,7 +303,6 @@
       "harvest_guild_max_times": 2,
       "utilize_harvest": true,
       "utilize_enable": true,
-      "utilize_harvest": true,
       "guild_ap_enable": true,
       "guild_assets_enable": true,
       "box_ap_enable": true,
@@ -1487,6 +1486,215 @@
       "team_name": ""
     }
   },
+  "account_rotation": {
+    "scheduler": {
+      "enable": false,
+      "next_run": "2023-01-01 00:00:00",
+      "priority": 5,
+      "success_interval": "01 00:00:00",
+      "failure_interval": "00 00:10:00",
+      "server_update": "09:00:00",
+      "delay_date": 1,
+      "float_time": "00:00:00"
+    },
+    "account_rotation_config": {
+      "account_order": "1-18",
+      "enabled_accounts": "1-18",
+      "skip_completed_today": true,
+      "max_switch_attempts": 3,
+      "retry_delay_seconds": 2,
+      "switch_timeout_seconds": 300,
+      "failure_policy": "continue",
+      "three_instance_coordination": true,
+      "coordination_timeout_seconds": 300,
+      "ocr_acquire_timeout_seconds": 90,
+      "ocr_lease_timeout_seconds": 45
+    }
+  },
+  "multi_account_evo": {
+    "scheduler": {
+      "enable": false,
+      "next_run": "2023-01-01 00:00:00",
+      "priority": 5,
+      "success_interval": "01 00:00:00",
+      "failure_interval": "00 00:10:00",
+      "server_update": "09:00:00",
+      "delay_date": 1,
+      "float_time": "00:00:00"
+    },
+    "multi_account_evo_config": {
+      "role": "leader",
+      "kirin_type": "雷麒麟",
+      "layer": "拾层",
+      "group_count": 18,
+      "ios_count": 9,
+      "battle_count": 20,
+      "sync_timeout": "00:10:00",
+      "strict_platform_order": true
+    },
+    "account_list_1": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_2": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_3": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_4": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_5": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_6": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_7": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_8": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_9": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": false,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_10": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_11": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_12": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_13": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_14": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_15": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_16": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_17": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    },
+    "account_list_18": {
+      "character": "",
+      "svr": "",
+      "account": "",
+      "account_alias": "",
+      "apple_or_android": true,
+      "last_complete_time": "2023-01-01 00:00:00",
+      "related_account": ""
+    }
+  },
   "goryou_realm": {
     "scheduler": {
       "enable": false,
@@ -1545,17 +1753,17 @@
       "hya_auto_bean": false,
       "hya_bean_threshold_low": 10,
       "hya_priorities": "",
-      "hya_sp": 1.0,
-      "hya_ssr": 1.0,
+      "hya_sp": 1,
+      "hya_ssr": 1,
       "hya_sr": 0.7,
       "hya_r": 0.3,
-      "hya_n": 0.0,
-      "hya_g": 0.0,
+      "hya_n": 0,
+      "hya_g": 0,
       "hya_buff_prob_up": 2.2,
-      "hya_buff_speed_up": 2.0,
-      "hya_buff_add_beans": 2.0,
-      "hya_buff_slow_down": 2.0,
-      "hya_buff_freeze": 2.0
+      "hya_buff_speed_up": 2,
+      "hya_buff_add_beans": 2,
+      "hya_buff_slow_down": 2,
+      "hya_buff_freeze": 2
     },
     "hyakkiyakou_models": {
       "conf_threshold": 0.6,

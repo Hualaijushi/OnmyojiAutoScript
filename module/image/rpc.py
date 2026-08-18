@@ -284,6 +284,23 @@ class ImageClient:
             return None
         return pickle.dumps(image, protocol=4)
 
+    def _call_with_frame_fallback(
+        self,
+        rpc_call: Any,
+        image: np.ndarray | None,
+        frame_id: str | None,
+    ) -> Any:
+        """Retry an image RPC with inline pixels when its cached frame expired."""
+        payload = self._encode_image_payload(image=image, frame_id=frame_id)
+        try:
+            return rpc_call(frame_id, payload)
+        except zerorpc.exceptions.RemoteError as exc:
+            message = f"{getattr(exc, 'name', '')}: {getattr(exc, 'msg', '')}\n{exc}"
+            if frame_id is None or image is None or "Unknown frame id" not in message:
+                raise
+            logger.warning(f"Image frame expired, retry with inline image: {frame_id}")
+            return rpc_call(None, pickle.dumps(image, protocol=4))
+
     def match_rule(
         self,
         rule_data: dict[str, Any],
@@ -300,8 +317,13 @@ class ImageClient:
             frame_id: 已在服务端注册过的截图引用，优先级高于 `image`。
             threshold: 可选的临时阈值覆盖值；为空时沿用规则自身阈值。
         """
-        payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_rule(rule_data, frame_id, payload, threshold)
+        return self._call_with_frame_fallback(
+            lambda active_frame_id, payload: self.client.match_rule(
+                rule_data, active_frame_id, payload, threshold
+            ),
+            image,
+            frame_id,
+        )
 
     def match_rule_with_brightness_window(
         self,
@@ -315,8 +337,13 @@ class ImageClient:
 
         该接口仅适用于普通模板匹配，会在命中后额外校验源区域和模板区域的平均亮度范围。
         """
-        payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_rule_with_brightness_window(rule_data, frame_id, payload, threshold)
+        return self._call_with_frame_fallback(
+            lambda active_frame_id, payload: self.client.match_rule_with_brightness_window(
+                rule_data, active_frame_id, payload, threshold
+            ),
+            image,
+            frame_id,
+        )
 
     def match_many(
         self,
@@ -330,8 +357,13 @@ class ImageClient:
 
         适用于 `RuleGif`、`ImageGrid` 这类需要在同帧内判断多个候选模板的场景。
         """
-        payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_many(rules_data, frame_id, payload, threshold)
+        return self._call_with_frame_fallback(
+            lambda active_frame_id, payload: self.client.match_many(
+                rules_data, active_frame_id, payload, threshold
+            ),
+            image,
+            frame_id,
+        )
 
     def match_all(
         self,
@@ -347,8 +379,13 @@ class ImageClient:
         Args:
             roi: 可选的搜索区域覆盖值；提供后由服务端在该区域内枚举所有命中。
         """
-        payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_all(rule_data, frame_id, payload, threshold, roi)
+        return self._call_with_frame_fallback(
+            lambda active_frame_id, payload: self.client.match_all(
+                rule_data, active_frame_id, payload, threshold, roi
+            ),
+            image,
+            frame_id,
+        )
 
     def match_all_any(
         self,
@@ -365,8 +402,13 @@ class ImageClient:
         Args:
             nms_threshold: NMS 去重阈值，用于移除高度重叠的冗余框。
         """
-        payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_all_any(rule_data, frame_id, payload, threshold, roi, nms_threshold)
+        return self._call_with_frame_fallback(
+            lambda active_frame_id, payload: self.client.match_all_any(
+                rule_data, active_frame_id, payload, threshold, roi, nms_threshold
+            ),
+            image,
+            frame_id,
+        )
 
     def match_all_any_many(
         self,
@@ -381,8 +423,13 @@ class ImageClient:
 
         该接口适合一次性拿到多组模板的非冗余命中列表。
         """
-        payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_all_any_many(rules_data, frame_id, payload, threshold, nms_threshold)
+        return self._call_with_frame_fallback(
+            lambda active_frame_id, payload: self.client.match_all_any_many(
+                rules_data, active_frame_id, payload, threshold, nms_threshold
+            ),
+            image,
+            frame_id,
+        )
 
     def match_dynamic_template(
         self,
@@ -405,8 +452,13 @@ class ImageClient:
             name: 用于日志输出的匹配名称。
         """
         template_payload = pickle.dumps(template, protocol=4)
-        image_payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_dynamic_template(template_payload, frame_id, image_payload, roi_back, threshold, name)
+        return self._call_with_frame_fallback(
+            lambda active_frame_id, payload: self.client.match_dynamic_template(
+                template_payload, active_frame_id, payload, roi_back, threshold, name
+            ),
+            image,
+            frame_id,
+        )
 
 
 def get_image_client(address: str | None = None, refresh: bool = False) -> ImageClient:

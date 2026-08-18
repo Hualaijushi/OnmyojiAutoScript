@@ -33,6 +33,17 @@ class SwitchAccountAssets:
 	C_SA_EG_PROFILE_PHOTO = RuleClick(roi_front=(35,35,55,55), roi_back=(35,35,55,55), name="sa_eg_profile_photo")
 	# 选择服务器界面 底部角色名 列表---与ocr.json中同名对象区域一致 
 	C_SA_SELECT_SVR_CHARACTER_LIST = RuleClick(roi_front=(205,570,815,40), roi_back=(205,570,815,40), name="sa_select_svr_character_list")
+	# Login provider page - agreement checkbox
+	C_SA_LOGIN_METHOD_AGREEMENT = RuleClick(roi_front=(430,540,55,55), roi_back=(430,540,55,55), name="sa_login_method_agreement")
+	# Login provider page - NetEase email
+	C_SA_LOGIN_METHOD_EMAIL = RuleClick(roi_front=(380,400,235,80), roi_back=(380,400,235,80), name="sa_login_method_email")
+	# Saved account page - safe center of the red login button. Keep this
+	# deliberately above the "other account login" text.
+	C_SA_ACCOUNT_LOGIN_SAFE = RuleClick(roi_front=(600,420,80,25), roi_back=(600,420,80,25), name="sa_account_login_safe")
+	# Fast multi-account switch - Apple platform entry, fixed 1280x720 position
+	C_SA_LOGIN_FORM_APPLE = RuleClick(roi_front=(508,354,100,100), roi_back=(508,354,100,100), name="sa_login_form_apple_fast")
+	# Fast multi-account switch - Android platform entry, fixed 1280x720 position
+	C_SA_LOGIN_FORM_ANDROID = RuleClick(roi_front=(671,353,100,100), roi_back=(671,353,100,100), name="sa_login_form_android_fast")
 
 
 	# Ocr Rule Assets
@@ -50,6 +61,8 @@ class SwitchAccountAssets:
 	O_SA_LOGIN_FORM_USER_CENTER_ACCOUNT = RuleOcr(roi=(290,185,290,50), area=(290,185,290,50), mode="SINGLE", method="Default", keyword="", name="sa_login_form_user_center_account")
 	# 判断是否在 选择服务器 界面的文本特质 
 	O_SA_CHECK_SELECT_SVR = RuleOcr(roi=(252,145,97,32), area=(248,141,102,38), mode="Single", method="Default", keyword="已有角色", name="sa_check_select_svr")
+	# Login provider page - NetEase email label
+	O_SA_LOGIN_METHOD_EMAIL = RuleOcr(roi=(350,320,580,190), area=(380,400,235,80), mode="FULL", method="Default", keyword="网易邮箱", name="sa_login_method_email")
 
 
 	# Swipe Rule Assets
@@ -86,5 +99,3 @@ class SwitchAccountAssets:
 	I_SA_CHECK_SELECT_SVR_1 = RuleImage(roi_front=(213,133,181,60), roi_back=(210,128,185,68), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_check_select_svr_1.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标已经显示时 
 	I_SA_CHECK_SELECT_SVR_2 = RuleImage(roi_front=(209,131,184,64), roi_back=(207,127,187,70), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_check_select_svr_2.png")
-
-

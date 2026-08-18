@@ -61,5 +61,14 @@
     "method": "Default",
     "keyword": "已有角色",
     "description": "判断是否在 选择服务器 界面的文本特质"
+  },
+  {
+    "itemName": "sa_login_method_email",
+    "roiFront": "350,320,580,190",
+    "roiBack": "380,400,235,80",
+    "mode": "FULL",
+    "method": "Default",
+    "keyword": "网易邮箱",
+    "description": "登录方式选择页-网易邮箱文字"
   }
 ]

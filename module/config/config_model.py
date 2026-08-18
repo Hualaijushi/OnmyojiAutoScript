@@ -70,6 +70,8 @@ from tasks.DyeTrials.config import DyeTrials
 # 肝帝专属---------------------------------------------------------------------------------------------------------------
 from tasks.BondlingFairyland.config import BondlingFairyland
 from tasks.EvoZone.config import EvoZone
+from tasks.AccountRotation.config import AccountRotation
+from tasks.MultiAccountEvo.config import MultiAccountEvo
 from tasks.GoryouRealm.config import GoryouRealm
 from tasks.Hyakkiyakou.config import Hyakkiyakou
 from tasks.HeroTest.config import HeroTest
@@ -139,6 +141,8 @@ class ConfigModel(ConfigBase):
     # 这些是肝帝专属
     bondling_fairyland: BondlingFairyland = Field(default_factory=BondlingFairyland)
     evo_zone: EvoZone = Field(default_factory=EvoZone)
+    account_rotation: AccountRotation = Field(default_factory=AccountRotation)
+    multi_account_evo: MultiAccountEvo = Field(default_factory=MultiAccountEvo)
     goryou_realm: GoryouRealm = Field(default_factory=GoryouRealm)
     hyakkiyakou: Hyakkiyakou = Field(default_factory=Hyakkiyakou)
     hero_test: HeroTest = Field(default_factory=HeroTest)

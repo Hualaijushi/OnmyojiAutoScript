@@ -23,9 +23,14 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
         """
         logger.info('Create room')
         create_room_rule = self.I_CREATE_ROOM if create_room_rule is None else create_room_rule
-        if not self.appear(create_room_rule):
-            logger.warning('No create room button')
-            return False
+        appear_timeout = Timer(10).start()
+        while True:
+            self.screenshot()
+            if self.appear(create_room_rule):
+                break
+            if appear_timeout.reached():
+                logger.warning('No create room button')
+                return False
         click_number = 0
         while 1:
             self.screenshot()

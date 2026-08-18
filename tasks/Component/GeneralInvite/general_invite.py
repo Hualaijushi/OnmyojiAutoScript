@@ -41,6 +41,8 @@ class RoomType(str, Enum):
 class GeneralInvite(BaseTask, GeneralInviteAssets):
     timer_invite = None
     timer_wait = None
+    invite_retry_seconds_first: float = 20.0
+    invite_retry_seconds: float = 30.0
     timer_emoji = None  # 等待期间如果没有操作的话，可能会导致长时间无响应报错
 
     def run_invite(self, config: InviteConfig, is_first: bool = False) -> bool:
@@ -57,12 +59,12 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             return False
         if is_first:
             _ = self.room_type
-            self.timer_invite = Timer(20)
+            self.timer_invite = Timer(self.invite_retry_seconds_first)
             self.timer_invite.start()
             self.ensure_room_type(len(config.friend_list.split('\n')))
             self.invite_friends(config)
         else:
-            self.timer_invite = Timer(30)
+            self.timer_invite = Timer(self.invite_retry_seconds)
             self.timer_invite.start()
             self.timer_emoji = Timer(20)
             self.timer_emoji.start()

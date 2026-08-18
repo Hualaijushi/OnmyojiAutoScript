@@ -28,6 +28,8 @@ class ConfigMenu:
         self.menu["Liver Emperor Exclusive"] = [
             "BondlingFairyland",
             "EvoZone",
+            "AccountRotation",
+            "MultiAccountEvo",
             "GoryouRealm",
             "Exploration",
             "Hyakkiyakou",

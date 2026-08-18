@@ -259,5 +259,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "阴阳寮前往神社"
+  },
+  {
+    "itemName": "check_team_2",
+    "imageName": "page_check_team_2.png",
+    "roiFront": "46,570,60,107",
+    "roiBack": "2,545,142,154",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "低等级组队页面标识"
   }
 ]

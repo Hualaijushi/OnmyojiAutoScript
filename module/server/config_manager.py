@@ -31,6 +31,10 @@ CONFIG_REDACTION_PATHS = (
     "script.device.emulatorinfo_path",
     "find_jade.sup_account_list_*.account",
     "find_jade.sup_account_list_*.account_alias",
+    "multi_account_evo.account_list_*.character",
+    "multi_account_evo.account_list_*.svr",
+    "multi_account_evo.account_list_*.account",
+    "multi_account_evo.account_list_*.account_alias",
 )
 CONFIG_REDACTION_KEYS = {
     "password",
@@ -476,6 +480,8 @@ class ConfigManager:
         json_files = config_path.glob('*.json')
         result = []
         for json in json_files:
+            if json.stem.startswith('.'):
+                continue
             if json.stem == 'template':
                 continue
             result.append(json.stem)
@@ -496,6 +502,8 @@ class ConfigManager:
         json_files = config_path.glob('*.json')
         result = []
         for json in json_files:
+            if json.stem.startswith('.'):
+                continue
             if json.stem == 'template':
                 result.insert(0, json.stem)
             else:

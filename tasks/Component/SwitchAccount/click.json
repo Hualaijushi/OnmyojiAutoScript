@@ -64,5 +64,23 @@
     "roiFront": "205,570,815,40",
     "roiBack": "205,570,815,40",
     "description": "选择服务器界面 底部角色名 列表---与ocr.json中同名对象区域一致"
+  },
+  {
+    "itemName": "sa_login_method_agreement",
+    "roiFront": "430,540,55,55",
+    "roiBack": "430,540,55,55",
+    "description": "登录方式选择页-用户协议复选框"
+  },
+  {
+    "itemName": "sa_login_method_email",
+    "roiFront": "380,400,235,80",
+    "roiBack": "380,400,235,80",
+    "description": "登录方式选择页-网易邮箱"
+  },
+  {
+    "itemName": "sa_account_login_safe",
+    "roiFront": "600,420,80,25",
+    "roiBack": "600,420,80,25",
+    "description": "已保存账号页面-红色登录按钮安全区域"
   }
 ]

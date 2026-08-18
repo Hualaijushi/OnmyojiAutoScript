@@ -39,6 +39,8 @@ _BUNDLED_MODEL_FILES = (
     "inference.yml",
 )
 _OCR_STARTUP_TIMEOUT_SECONDS = 90.0
+_OCR_RPC_TIMEOUT_SECONDS = 30
+_OCR_RPC_HEARTBEAT_SECONDS = 30
 
 
 def _configure_bundled_paddlex_cache() -> Path | None:
@@ -217,6 +219,15 @@ class OcrRuntime:
             self._request_stats["requests_total"] += 1
         future = self._scheduler.submit(func, *args, **kwargs)
         try:
+            # ``Future.result()`` blocks the ZeroRPC/gevent event loop on
+            # Windows.  A queued OCR request can then prevent heartbeat
+            # packets from being processed and disconnect every client even
+            # though inference eventually succeeds.  Yield while the worker
+            # is busy so the shared single-model server stays responsive.
+            while not future.done():
+                import gevent
+
+                gevent.sleep(0.01)
             result = future.result()
         except Exception:
             with self._lock:
@@ -437,7 +448,7 @@ def run_ocr_server(host: str, port: int, settings: dict[str, Any] | None = None)
     # DLL initialization on Windows, causing ImportError.
     import onnxruntime as _ort  # noqa: F401
     runtime = OcrRuntime(settings=settings)
-    server = zerorpc.Server(runtime)
+    server = zerorpc.Server(runtime, heartbeat=_OCR_RPC_HEARTBEAT_SECONDS)
     try:
         runtime.warmup()
         server.bind(f"tcp://{host}:{port}")
@@ -450,7 +461,10 @@ class ModelProxy:
     def __init__(self, address: str) -> None:
         self.address = _normalize_address(address)
         self.save_log = _OCR_LOGGING_ENABLED
-        self.client = zerorpc.Client(timeout=10)
+        self.client = zerorpc.Client(
+            timeout=_OCR_RPC_TIMEOUT_SECONDS,
+            heartbeat=_OCR_RPC_HEARTBEAT_SECONDS,
+        )
         try:
             self.client.connect(self.address)
             self.client.ping()

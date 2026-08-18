@@ -208,6 +208,8 @@ class GameUiAssets:
 	I_CHECK_SHRIN = RuleImage(roi_front=(80,92,33,97), roi_back=(56,73,84,138), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_shrin.png")
 	# 阴阳寮前往神社 
 	I_GUILD_TO_SHRIN = RuleImage(roi_front=(877,629,49,53), roi_back=(840,602,302,113), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_guild_to_shrin.png")
+	# 低等级组队页面标识
+	I_CHECK_TEAM_2 = RuleImage(roi_front=(46,570,60,107), roi_back=(2,545,142,154), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_team_2.png")
 
 
 	# Image Rule Assets
@@ -261,5 +263,3 @@ class GameUiAssets:
 	# 活动列表页爬塔活动文字 
 	L_ACT_LIST_OCR = RuleList(folder="./tasks/GameUi/page", direction="vertical", mode="ocr", roi_back=(50,123,49,553), size=(45, 69), 
 					 array=["版本"])
-
-

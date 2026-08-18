@@ -23,6 +23,9 @@ test/
 
 # OnmyojiAutoScript
 *.user
+.vs/
+.tmp/
+config/.multi_account_ocr_coord.json.*.tmp
 !module/gui/FluentUI/fluentuiplugin.dll
 build-fluentui-Desktop_*/
 module/config/argument/setting.json

@@ -144,7 +144,8 @@ class ImageRuntime:
         self._lock = threading.RLock()
         # 短生命周期截图缓存：按 frame_id 复用同一张截图的多次匹配请求。
         self._frames: dict[str, FrameEntry] = {}
-        # 每个脚本配置当前有效的截图帧；新截图注册时会替换同配置旧帧。
+        # 每个脚本配置最新的截图帧引用；更早的帧仍保留在 _frames 中，
+        # 由 TTL 与容量上限统一淘汰，避免同配置连续截图立即失效旧帧。
         self._config_frames: dict[str, str] = {}
         # 长生命周期模板缓存：按文件指纹复用模板图与派生数据。
         self._templates: dict[str, TemplateEntry] = {}
@@ -206,7 +207,7 @@ class ImageRuntime:
 
         Args:
             image_bytes: 客户端序列化后的 numpy 数组字节流。
-            config_name: 截图所属脚本配置名；同配置新帧会替换旧帧。
+            config_name: 截图所属脚本配置名；新帧注册后旧帧仍保留到 TTL/容量淘汰。
         """
         image = pickle.loads(image_bytes)
         if not isinstance(image, np.ndarray):
@@ -223,10 +224,10 @@ class ImageRuntime:
             last_access_at=now,
         )
         with self._lock:
-            old_frame_id = self._config_frames.get(config_name)
-            if old_frame_id is not None and old_frame_id != frame_id:
-                if self._delete_frame(old_frame_id):
-                    self._cache_stats["frame_replacements"] += 1
+            # 旧帧不再被同配置的新截图立即删除：流程中嵌套截图（例如
+            # appear 内部再次 screenshot）会刷新 image_frame_id，但后续
+            # 匹配仍可能引用更早的 frame_id。保留旧帧由 TTL/容量上限淘汰，
+            # 避免三实例并发时每次匹配都触发 "Unknown frame id" 内联重试。
             self._frames[frame_id] = entry
             self._config_frames[config_name] = frame_id
             self._cleanup_frames(now, reason="register")
