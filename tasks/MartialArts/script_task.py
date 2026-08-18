@@ -2,6 +2,7 @@
 """武道大会战斗任务。"""
 
 import time
+from datetime import datetime, timedelta
 
 from cached_property import cached_property
 
@@ -62,8 +63,31 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
         return scopes
 
     def before_run(self):
+        configured_limit_time = self.conf.general_climb.limit_time
+        self.limit_time = timedelta(
+            hours=configured_limit_time.hour,
+            minutes=configured_limit_time.minute,
+            seconds=configured_limit_time.second,
+        )
+        self._task_time_limit_reached = False
         sequence = self.conf.general_climb.run_sequence_v
-        logger.info(f'MartialArts run sequence: {sequence}')
+        logger.info(
+            f'MartialArts run sequence: {sequence}, '
+            f'limit_time={self.limit_time}'
+        )
+
+    def _can_start_next_battle(self) -> bool:
+        """仅在新一场战斗的边界检查任务软时间限制。"""
+        if self._task_time_limit_reached:
+            return False
+        if datetime.now() - self.start_time < self.limit_time:
+            return True
+        self._task_time_limit_reached = True
+        logger.info(
+            'MartialArts task time reached; '
+            'stop before starting next battle'
+        )
+        return False
 
     def enter_ap_battle(self):
         """从任意已知页面导航至武道大会日常训练页面。"""
@@ -377,6 +401,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
         self.switch_soul_before_battle('ap')
         self.lock_team(battle_conf)
         while self.current_count < limit:
+            if not self._can_start_next_battle():
+                break
             self.goto_page(pages.page_martial_arts_ap)
             if not self.resources_enough():
                 logger.info('MartialArts resources are insufficient, stop AP battles')
@@ -439,6 +465,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
 
         self.enter_boss_battle()
         while self.current_count < limit:
+            if not self._can_start_next_battle():
+                break
             self.goto_page(pages.page_martial_arts_boss)
             if not self.search_boss():
                 break
@@ -465,6 +493,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, QuickLoadout, BaseActivity, 
     def run(self):
         self.before_run()
         for battle_type in self.conf.general_climb.run_sequence_v:
+            if not self._can_start_next_battle():
+                break
             if battle_type == 'ap':
                 self.run_ap_battles()
                 continue

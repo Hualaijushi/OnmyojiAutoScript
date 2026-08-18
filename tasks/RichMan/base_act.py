@@ -111,12 +111,12 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, Ric
         return {
             pages.page_act_pass: self._run_pass,
             pages.page_battle_prepare: lambda: self.run_general_battle(
-                self.conf.normal_battle_preset,
-                battle_key='rich_man_normal',
+                self.conf.general_battle.copy(update={'lock_team_enable': False}),
+                battle_key='rich_man_common',
             ),
             pages.page_battle: lambda: self.run_general_battle(
-                self.conf.normal_battle_preset,
-                battle_key='rich_man_normal',
+                self.conf.general_battle.copy(update={'lock_team_enable': False}),
+                battle_key='rich_man_common',
             ),
             pages.page_reward: lambda: self.click(pages.random_click(ltrb=(False, False, True, False)), interval=1.5),
         }
@@ -130,7 +130,7 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, Ric
                 logger.warning(f'{climb_type} page is not supported')
                 continue
             self.goto_page(dest_page)
-            cur_battle_conf = self.conf.normal_battle_preset
+            cur_battle_conf = self.conf.general_battle
             if cur_battle_conf is None:
                 logger.warning(f'{climb_type} battle config is not supported')
                 continue
@@ -161,18 +161,13 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, BaseActivity, Ric
         if self.switch_souled.get(self.climb_type, False):
             return
         self.switch_souled[self.climb_type] = True
-        conf = self.conf.switch_soul_config
-        enable_switch = conf.enable_switch_normal
-        enable_by_name = conf.enable_switch_normal_by_name
-        if not enable_switch and not enable_by_name:
+        conf = self.conf.switch_soul
+        if not conf.enable and not conf.enable_switch_by_name:
             return
         logger.hr('Start switch soul', 2)
-        conf.validate_switch_soul()
         self.ui_click(enter_button, stop=self.I_CHECK_RECORDS, interval=1)
-        if enable_by_name:
-            group, team = conf.normal_group_team_name.split(",")
-            self.run_switch_soul_by_name(group, team)
-        elif enable_switch:
-            group_team = conf.normal_group_team
-            self.run_switch_soul(group_team)
+        if conf.enable:
+            self.run_switch_soul(conf.switch_group_team)
+        if conf.enable_switch_by_name:
+            self.run_switch_soul_by_name(conf.group_name, conf.team_name)
         self.goto_page(getattr(pages, f"page_act_{self.climb_type}"))

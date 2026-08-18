@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from tasks.Component.config_base import ConfigBase
+from tasks.Component.config_base import ConfigBase, Time
 from tasks.Component.config_scheduler import Scheduler
 from tasks.Chess.strategy.lineup import LineupBond
 
@@ -27,6 +27,11 @@ class ChessConfig(ConfigBase):
         default=1,
         ge=-1,
         description='完成目标局数后结束；设置为-1时一直执行',
+    )
+    limit_time: Time = Field(
+        title='运行时间限制',
+        default=Time(minute=30),
+        description='达到限制时间后不再开始下一局，已经开始的对局会正常完成',
     )
     coin_full_exit: bool = Field(
         title='刷满鼬乐币',

@@ -30,6 +30,10 @@ class RichManAssets:
 	# Image Rule Assets
 	# 投掷骰子 
 	I_RM_THROW = RuleImage(roi_front=(1139,604,70,43), roi_back=(1084,523,183,196), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/as_rm_throw.png")
+	# 大富翁主界面已锁定阵容
+	I_RM_MAIN_LOCK = RuleImage(roi_front=(886,646,31,30), roi_back=(871,620,69,76), threshold=0.7, method="Template matching", file="./tasks/RichMan/rm/as_lock.png")
+	# 大富翁主界面未锁定阵容
+	I_RM_MAIN_UNLOCK = RuleImage(roi_front=(886,646,31,30), roi_back=(871,620,69,76), threshold=0.7, method="Template matching", file="./tasks/RichMan/rm/as_unlock.png")
 	#  
 	I_RM_MODE_ROB = RuleImage(roi_front=(486,28,306,32), roi_back=(465,16,349,54), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_rm_mode_rob.png")
 	# 投掷对决模式标志 
@@ -80,5 +84,3 @@ class RichManAssets:
 	I_CHECK_RM_MAIN = RuleImage(roi_front=(148,13,174,47), roi_back=(121,0,227,72), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_check_rm_main.png")
 	#  
 	I_CHECK_RM_RICHMAN = RuleImage(roi_front=(148,13,140,47), roi_back=(121,0,227,72), threshold=0.8, method="Template matching", file="./tasks/RichMan/rm/rm_check_rm_richman.png")
-
-

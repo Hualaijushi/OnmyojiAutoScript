@@ -25,7 +25,7 @@ class ScriptTask(BaseAct):
 
     def _run_pass(self):
         logger.hr('Start RichMan', 1)
-        normal_loadout_required = True
+        common_loadout_required = True
         self._boss_pending = False
         self._boss_wait_exp_reset = False
         self._boss_max_level = False
@@ -39,13 +39,15 @@ class ScriptTask(BaseAct):
                 continue
 
             if self.appear(self.I_RM_THROW):
+                if self._sync_main_team_lock(switch_loadout=common_loadout_required):
+                    continue
+
                 # 经验溢出后进入待挑战状态；仅当锚点进入指定范围才插入首领战。
                 if self._boss_should_enter():
-                    self._run_boss_fight_task()
+                    self._run_boss_fight_task(switch_loadout=common_loadout_required)
+                    common_loadout_required = False
                     self._boss_pending = False
                     self._boss_wait_exp_reset = True
-                    # 首领战会换成首领御魂/预设，下一次普通战需要恢复普通装配。
-                    normal_loadout_required = True
                     continue
 
                 dice_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
@@ -71,8 +73,8 @@ class ScriptTask(BaseAct):
                     self._random_sleep_after_round()
                     continue
                 if mode == 'fight':
-                    self._run_fight_task(switch_loadout=normal_loadout_required)
-                    normal_loadout_required = False
+                    self._run_fight_task(switch_loadout=common_loadout_required)
+                    common_loadout_required = False
                     self._random_sleep_after_round()
                     continue
 
@@ -272,20 +274,16 @@ class ScriptTask(BaseAct):
         """执行一次普通格子战斗。"""
         logger.hr('RichMan fight task', 3)
         if switch_loadout:
-            self._switch_battle_soul(self.I_RM_FIGHT_GOTO_RECORDS, mode='normal')
+            self._switch_battle_soul(self.I_RM_FIGHT_GOTO_RECORDS)
 
-        source_conf = self.conf.normal_battle_preset
+        source_conf = self.conf.general_battle
         battle_conf = source_conf.copy(update={
-            'lock_team_enable': source_conf.lock_team_enable and not source_conf.preset_enable,
+            # 阵容锁统一在大富翁主界面处理，战斗准备页不再单独切换。
+            'lock_team_enable': False,
             'preset_enable': source_conf.preset_enable and switch_loadout,
             'continuous_battle': False,
             'max_continuous': 0,
         })
-        self._apply_team_lock(
-            unlock=self.I_RM_FIGHT_UNLOCK,
-            lock=self.I_RM_FIGHT_LOCK,
-            should_lock=battle_conf.lock_team_enable,
-        )
         self._click_fight_challenge(self.I_RM_MODE_FIGHT, mode='normal')
         self.run_general_battle(
             battle_conf,
@@ -294,20 +292,17 @@ class ScriptTask(BaseAct):
         )
         self._wait_until_throw()
 
-    def _run_boss_fight_task(self):
+    def _run_boss_fight_task(self, switch_loadout: bool):
         """投骰前进入首领挑战并执行一次完整战斗。"""
         logger.hr('RichMan boss fight task', 3)
         self._enter_boss_fight_by_anchor()
-        self._switch_battle_soul(self.I_RM_FIGHT_BOSS_GOTO_RECORDS, mode='boss')
+        if switch_loadout:
+            self._switch_battle_soul(self.I_RM_FIGHT_BOSS_GOTO_RECORDS)
 
-        # 首领战必须保持阵容未锁定，才能在准备界面切换预设。
-        self._apply_team_lock(
-            unlock=self.I_RM_FIGHT_UNLOCK_BOSS,
-            lock=self.I_RM_FIGHT_LOCK_BOSS,
-            should_lock=False,
-        )
-        battle_conf = self.conf.boss_battle_preset.copy(update={
+        source_conf = self.conf.general_battle
+        battle_conf = source_conf.copy(update={
             'lock_team_enable': False,
+            'preset_enable': source_conf.preset_enable and switch_loadout,
             'continuous_battle': False,
             'max_continuous': 0,
         })
@@ -381,34 +376,42 @@ class ScriptTask(BaseAct):
             return
         logger.warning(f'RichMan {mode} fight challenge button not found')
 
-    def _switch_battle_soul(self, enter_button, mode: str):
-        """从战斗准备界面进入式神录，按普通战或首领战配置切换御魂。"""
-        conf = self.conf.switch_soul_config
-        enable = getattr(conf, f'enable_switch_{mode}')
-        enable_by_name = getattr(conf, f'enable_switch_{mode}_by_name')
-        if not enable and not enable_by_name:
+    def _switch_battle_soul(self, enter_button):
+        """从首次遇到的战斗准备界面进入式神录，切换一次通用御魂。"""
+        conf = self.conf.switch_soul
+        if not conf.enable and not conf.enable_switch_by_name:
             return
 
-        conf.validate_switch_soul()
         self.ui_click(enter_button, stop=self.I_CHECK_RECORDS, interval=1)
-        if enable_by_name:
-            group, team = getattr(conf, f'{mode}_group_team_name').split(',', 1)
-            self.run_switch_soul_by_name(group.strip(), team.strip())
-        else:
-            self.run_switch_soul(getattr(conf, f'{mode}_group_team'))
+        if conf.enable:
+            self.run_switch_soul(conf.switch_group_team)
+        if conf.enable_switch_by_name:
+            self.run_switch_soul_by_name(conf.group_name, conf.team_name)
         self.exit_shikigami_records()
 
-    def _apply_team_lock(self, unlock, lock, should_lock: bool):
-        """将准备界面的阵容锁切换到指定状态。"""
+    def _sync_main_team_lock(self, switch_loadout: bool) -> bool:
+        """在大富翁主界面同步通用阵容锁；返回本轮是否执行了切换。"""
+        conf = self.conf.general_battle
+        # 首次战斗需要切换队伍预设时先保持解锁；切换完成后再按配置锁定。
+        should_lock = conf.lock_team_enable and not (conf.preset_enable and switch_loadout)
         self.screenshot()
         if should_lock:
-            if self.appear(lock):
-                return
-            self.ui_click(unlock, stop=lock, interval=1)
-            return
-        if self.appear(unlock):
-            return
-        self.ui_click(lock, stop=unlock, interval=1)
+            if self.appear(self.I_RM_MAIN_LOCK):
+                return False
+            if self.appear(self.I_RM_MAIN_UNLOCK):
+                self.ui_click(self.I_RM_MAIN_UNLOCK, stop=self.I_RM_MAIN_LOCK, interval=1)
+                logger.info('RichMan main team locked')
+                return True
+        else:
+            if self.appear(self.I_RM_MAIN_UNLOCK):
+                return False
+            if self.appear(self.I_RM_MAIN_LOCK):
+                self.ui_click(self.I_RM_MAIN_LOCK, stop=self.I_RM_MAIN_UNLOCK, interval=1)
+                logger.info('RichMan main team unlocked')
+                return True
+
+        logger.warning('RichMan main team lock status not detected')
+        return False
 
     def _wait_until_throw(self):
         """统一处理分支收尾，唯一结束条件为重新检测到投骰按钮。"""
