@@ -338,7 +338,7 @@ class ChessHandOperationsMixin:
         set_index: int,
         action: str,
     ) -> bool:
-        """仅在下阵/替换失败后点击该格详情，被动识别并移动金鱼。"""
+        """仅在下阵失败后点击该格详情，被动识别并移动金鱼。"""
         if not self._lineup_arakawa_names():
             return False
         target_position = self._arakawa_goldfish_target_position()
@@ -527,8 +527,6 @@ class ChessHandOperationsMixin:
         self,
         name: str,
         source: tuple[int, int],
-        *,
-        allow_goldfish_recovery: bool = True,
     ) -> bool:
         """按当前策略站位拖动式神，并交叉确认是否上阵。"""
         set_index = self.shikigami_deploy_positions.get(name)
@@ -589,23 +587,6 @@ class ChessHandOperationsMixin:
                 f'->{target_occupied_after}'
             )
             return True
-
-        if (
-            allow_goldfish_recovery
-            and self._handle_goldfish_after_board_action_failure(
-                set_index,
-                action='deploy_replace',
-            )
-        ):
-            logger.info(
-                'Retry original Chess deployment after moving goldfish: '
-                f'{name} -> set {set_index}'
-            )
-            return self.deploy_shikigami_hand_card(
-                name,
-                source,
-                allow_goldfish_recovery=False,
-            )
 
         logger.warning(
             f'Chess shikigami deploy not confirmed: {name} -> set {set_index}, '

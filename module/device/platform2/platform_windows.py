@@ -176,13 +176,21 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         )
 
     @classmethod
-    def execute_output(cls, command: str, timeout: int = 15, show_window: bool = False) -> subprocess.CompletedProcess:
+    def execute_output(
+            cls,
+            command: str,
+            timeout: int = 15,
+            show_window: bool = False,
+            encoding: str | None = None,
+    ) -> subprocess.CompletedProcess:
         startupinfo = cls.build_startupinfo(show_window=show_window)
         command = cls.normalize_command(command)
         return subprocess.run(
             command,
             capture_output=True,
             text=True,
+            encoding=encoding,
+            errors='replace' if encoding else None,
             timeout=timeout,
             startupinfo=startupinfo,
             close_fds=True,
