@@ -18,24 +18,6 @@
     "description": "右上跳过按钮"
   },
   {
-    "itemName": "to_battle_main",
-    "imageName": "as_to_battle_main.png",
-    "roiFront": "598,407,39,139",
-    "roiBack": "533,291,155,370",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "进入主要的战斗界面"
-  },
-  {
-    "itemName": "to_battle_boss",
-    "imageName": "as_to_battle_boss.png",
-    "roiFront": "935,250,35,123",
-    "roiBack": "876,165,234,327",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "点击进入boss战斗页面"
-  },
-  {
     "itemName": "check_battle_main",
     "imageName": "as_check_battle_main.png",
     "roiFront": "151,18,164,40",
@@ -43,15 +25,6 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动主界面标志"
-  },
-  {
-    "itemName": "battle_main_to_records",
-    "imageName": "as_battle_main_to_records.png",
-    "roiFront": "1015,560,39,42",
-    "roiBack": "674,539,439,157",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "从main进入到式神录"
   },
   {
     "itemName": "confirm_skip",
@@ -63,12 +36,21 @@
     "description": "确认跳过"
   },
   {
-    "itemName": "check_battle_pass",
-    "imageName": "as_check_battle_pass.png",
-    "roiFront": "151,18,134,40",
-    "roiBack": "141,0,157,67",
+    "itemName": "activity_award",
+    "imageName": "as_activity_award.png",
+    "roiFront": "475,234,324,40",
+    "roiBack": "448,169,372,114",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "爬塔主界面标志"
+    "description": "活动奖励附属页面"
+  },
+  {
+    "itemName": "activity_signin_close",
+    "imageName": "as_activity_signin_close.png",
+    "roiFront": "1100,186,40,32",
+    "roiBack": "1072,160,94,85",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "活动签到附属页面关闭按钮"
   }
 ]

@@ -177,7 +177,7 @@
 	<message><source>Exploration</source><translation>探索</translation></message>
 	<message><source>List Rule</source><translation>列表规则</translation></message>
 	<message><source>Activity Task</source><translation>限时活动</translation></message>
-	<message><source>ActivityShikigami</source><translation>当期式神爬塔</translation></message>
+	<message><source>ActivityShikigami</source><translation>式神活动</translation></message>
 	<message><source>MartialArts</source><translation>武道大会</translation></message>
 	<message><source>Liver Emperor Exclusive</source><translation>肝帝专属</translation></message>
 	<message><source>BondlingFairyland</source><translation>契灵之境</translation></message>
@@ -192,7 +192,6 @@
 	<message><source>Pets</source><translation>小猫咪</translation></message>
 	<message><source>EvoZone</source><translation>觉醒副本</translation></message>
 	<message><source>Guild</source><translation>阴阳寮</translation></message>
-	<message><source>RichMan</source><translation>大富翁</translation></message>
 	<message><source>WeeklyPurchase</source><translation>每周购买</translation></message>
 	<message><source>Secret</source><translation>秘闻之境</translation></message>
 	<message><source>WeeklyTrifles</source><translation>每周琐事</translation></message>
@@ -227,7 +226,7 @@
 	<message><source>Exploration</source><translation>探索</translation></message>
 	<message><source>List Rule</source><translation>列表规则</translation></message>
 	<message><source>Activity Task</source><translation>限时活动</translation></message>
-	<message><source>ActivityShikigami</source><translation>当期式神爬塔</translation></message>
+	<message><source>ActivityShikigami</source><translation>式神活动</translation></message>
 	<message><source>MartialArts</source><translation>武道大会</translation></message>
 	<message><source>Liver Emperor Exclusive</source><translation>肝帝专属</translation></message>
 	<message><source>BondlingFairyland</source><translation>契灵之境</translation></message>
@@ -242,7 +241,6 @@
 	<message><source>Pets</source><translation>小猫咪</translation></message>
 	<message><source>EvoZone</source><translation>觉醒副本</translation></message>
 	<message><source>Guild</source><translation>阴阳寮</translation></message>
-	<message><source>RichMan</source><translation>大富翁</translation></message>
 	<message><source>WeeklyPurchase</source><translation>每周购买</translation></message>
 	<message><source>Secret</source><translation>秘闻之境</translation></message>
 	<message><source>WeeklyTrifles</source><translation>每周琐事</translation></message>
@@ -418,15 +416,31 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 	<message><source>limit_count_help</source><translation>两个限制需要同时设置，最先达到就会退出。
 建议执行时间设置成一个小时足够长，此时基于次数来判定设置为100次</translation></message>
 	<message><source>GeneralClimb</source><translation>通用爬塔</translation></message>
+	<message><source>GeneralConfig</source><translation>通用设置</translation></message>
+	<message><source>Activity Task Sequence</source><translation>任务启用顺序</translation></message>
+	<message><source>activity_task_sequence_help</source><translation>填写：大富翁,爬塔,伪神降临
+表示先执行大富翁，再执行爬塔，最后执行伪神降临。
+中间必须使用半角英文逗号分隔；对应次数为0的任务会自动跳过。</translation></message>
 	<message><source>Run Config</source><translation>运行设置</translation></message>
 	<message><source>Throw Limit</source><translation>骰子投掷次数限制</translation></message>
 	<message><source>Active Souls Clean</source><translation>运行结束后清理御魂</translation></message>
-	<message><source>RichMan Random Sleep</source><translation>执行后随机休眠</translation></message>
+	<message><source>active_souls_clean_help</source><translation>式神活动全部结束后接续执行御魂清理</translation></message>
+	<message><source>Activity Random Sleep</source><translation>执行前随机休眠</translation></message>
+	<message><source>activity_random_sleep_help</source><translation>在下一次投骰、爬塔战斗或伪神行动开始前随机休眠；插入位置与任务时间检查一致</translation></message>
+	<message><source>Activity Limit Time</source><translation>任务执行时间</translation></message>
+	<message><source>activity_limit_time_help</source><translation>到达时间后不打断当前流程，仅停止下一次投骰、爬塔战斗或伪神行动</translation></message>
 	<message><source>Ap Limit</source><translation>体力战斗次数</translation></message>
+	<message><source>Pass Limit</source><translation>门票战斗次数</translation></message>
 	<message><source>Boss Limit</source><translation>首领战斗次数</translation></message>
+	<message><source>Ap100 Limit</source><translation>百体战斗次数</translation></message>
+	<message><source>Fakegod Limit</source><translation>伪神行动次数</translation></message>
 	<message><source>Run Sequence</source><translation>运行顺序</translation></message>
 	<message><source>Ap Battle Conf</source><translation>体力战斗配置</translation></message>
+	<message><source>Pass Battle Conf</source><translation>门票战斗配置</translation></message>
 	<message><source>Boss Battle Conf</source><translation>首领战斗配置</translation></message>
+	<message><source>Ap100 Battle Conf</source><translation>百体战斗配置</translation></message>
+	<message><source>Rich Man Battle Conf</source><translation>大富翁战斗配置</translation></message>
+	<message><source>Fakegod Battle Conf</source><translation>伪神战斗配置</translation></message>
 	<message><source>Ap Game Max</source><translation>活动每日使用体力挑战的最大次数</translation></message>
 	<message><source>ap_game_max_help</source><translation>保持默认300即可</translation></message>
 	<message><source>ApMode</source><translation>挂体力模式</translation></message>
@@ -564,14 +578,30 @@ mode_3策略是刷到五个契灵后开始结契，选择高级、中级盘来�
 <context>
     <name>Args</name>
 	<message><source>SwitchSoulConfig</source><translation>执行任务前切换御魂</translation></message>	
+	<message><source>Enable Switch Rich Man</source><translation>切换大富翁御魂</translation></message>
+	<message><source>Rich Man Group Team</source><translation>大富翁预设组号,队伍号</translation></message>
+	<message><source>Enable Switch Rich Man By Name</source><translation>按名称切换大富翁御魂</translation></message>
+	<message><source>Rich Man Group Team Name</source><translation>大富翁预设组名,队伍名</translation></message>
 	<message><source>Enable Switch Ap</source><translation>切换体力战御魂</translation></message>
 	<message><source>Ap Group Team</source><translation>体力战预设组号,队伍号</translation></message>
 	<message><source>Enable Switch Ap By Name</source><translation>按名称切换体力战御魂</translation></message>
 	<message><source>Ap Group Team Name</source><translation>体力战预设组名,队伍名</translation></message>
+	<message><source>Enable Switch Pass</source><translation>切换门票战御魂</translation></message>
+	<message><source>Pass Group Team</source><translation>门票战预设组号,队伍号</translation></message>
+	<message><source>Enable Switch Pass By Name</source><translation>按名称切换门票战御魂</translation></message>
+	<message><source>Pass Group Team Name</source><translation>门票战预设组名,队伍名</translation></message>
 	<message><source>Enable Switch Boss</source><translation>切换首领战御魂</translation></message>
 	<message><source>Boss Group Team</source><translation>首领战预设组号,队伍号</translation></message>
 	<message><source>Enable Switch Boss By Name</source><translation>按名称切换首领战御魂</translation></message>
 	<message><source>Boss Group Team Name</source><translation>首领战预设组名,队伍名</translation></message>
+	<message><source>Enable Switch Ap100</source><translation>切换百体战御魂</translation></message>
+	<message><source>Ap100 Group Team</source><translation>百体战预设组号,队伍号</translation></message>
+	<message><source>Enable Switch Ap100 By Name</source><translation>按名称切换百体战御魂</translation></message>
+	<message><source>Ap100 Group Team Name</source><translation>百体战预设组名,队伍名</translation></message>
+	<message><source>Enable Switch Fakegod</source><translation>切换伪神行动御魂</translation></message>
+	<message><source>Fakegod Group Team</source><translation>伪神行动预设组号,队伍号</translation></message>
+	<message><source>Enable Switch Fakegod By Name</source><translation>按名称切换伪神行动御魂</translation></message>
+	<message><source>Fakegod Group Team Name</source><translation>伪神行动预设组名,队伍名</translation></message>
 	<message><source>Switch Group Team</source><translation>御魂装配分组设置</translation></message>
 	<message><source>switch_group_team_help</source><translation>初始值是不合适的，你需要根据自己的情况设置
 "1,2"表示第一个预设组，第二个队伍

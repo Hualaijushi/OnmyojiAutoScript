@@ -1,0 +1,38 @@
+[
+  {
+    "itemName": "to_battle_main",
+    "imageName": "as_to_battle_main.png",
+    "roiFront": "598,407,39,139",
+    "roiBack": "533,291,155,370",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "进入爬塔主界面"
+  },
+  {
+    "itemName": "to_battle_boss",
+    "imageName": "as_to_battle_boss.png",
+    "roiFront": "935,250,35,123",
+    "roiBack": "876,165,234,327",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "进入首领战斗页面"
+  },
+  {
+    "itemName": "battle_main_to_records",
+    "imageName": "as_battle_main_to_records.png",
+    "roiFront": "1015,560,39,42",
+    "roiBack": "674,539,439,157",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "从爬塔主界面进入式神录"
+  },
+  {
+    "itemName": "check_battle_pass",
+    "imageName": "as_check_battle_pass.png",
+    "roiFront": "151,18,134,40",
+    "roiBack": "141,0,157,67",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "爬塔主界面标志"
+  }
+]
