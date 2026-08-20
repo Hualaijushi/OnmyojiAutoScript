@@ -12,6 +12,7 @@ from tasks.GameUi.page import (
     Page,
     all_of,
     any_of,
+    conditional_action,
     page_battle,
     page_battle_prepare,
     page_battle_result,
