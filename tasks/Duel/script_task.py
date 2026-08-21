@@ -55,6 +55,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         self.prepare_duel()
         while True:
             self.screenshot()
+            if self.dismiss_duel_main_useless_message():
+                continue
             self.check_and_get_reward()
             if not self.duel_main():
                 self.goto_page(page_duel)
@@ -75,6 +77,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
             self.goto_page(page_onmyodo)
             self.switch_onmyoji(self.conf.duel_config.switch_onmyoji)
         self.goto_page(page_duel)
+        self.screenshot()
+        self.dismiss_duel_main_useless_message()
         self.switch_all_soul()
         self.current_score = 0
         self.current_celeb_star = 0
@@ -587,6 +591,14 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         return self.appear(self.I_D_HELP) or self.appear(self.I_CHECK_DUEL) or \
             self.appear(self.I_D_CELEB_STAR) or self.appear(self.I_D_CELEB_HONOR)
 
+    def dismiss_duel_main_useless_message(self) -> bool:
+        """随机安全点击一次，关闭进入斗技时出现的附属消息页。"""
+        if not self.appear(self.I_DUEL_MAIN_UESLESS_MESSAGE):
+            return False
+        logger.info('Duel entrance useless message detected; dismiss it')
+        self.click(random_click(ltrb=(True, True, False, True)))
+        return True
+
     def switch_all_soul(self):
         """在斗技式神备选界面一键切换所有御魂"""
         if not self.conf.duel_config.switch_all_soul:
@@ -594,6 +606,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         click_count = 0  # 计数
         while 1:
             self.screenshot()
+            if self.dismiss_duel_main_useless_message():
+                continue
             if click_count >= 3:
                 break
             if self.appear_then_click(self.I_D_TEAM, interval=1):
