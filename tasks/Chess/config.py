@@ -28,6 +28,15 @@ class ChessConfig(ConfigBase):
         ge=-1,
         description='完成目标局数后结束；设置为-1时一直执行',
     )
+    matchmaking_timeout_seconds: int = Field(
+        title='匹配限制时间（秒）',
+        default=60,
+        ge=10,
+        description=(
+            '单次匹配超过限制后取消并重新匹配；连续三次超时'
+            '则标记为等待过多并结束任务'
+        ),
+    )
     limit_time: Time = Field(
         title='运行时间限制',
         default=Time(minute=30),
