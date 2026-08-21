@@ -181,7 +181,8 @@ class SwitchSoulConfig(BaseModel):
 
 
 class ActivityShikigami(ConfigBase):
-    # OASX 按字段顺序排版：通用设置、切换御魂、六种战斗配置，最后为调度。
+    # OASX 按字段顺序排版：任务调度、通用设置、切换御魂、六种战斗配置。
+    scheduler: Scheduler = Field(default_factory=Scheduler)
     general_config: GeneralConfig = Field(default_factory=GeneralConfig)
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
 
@@ -191,8 +192,6 @@ class ActivityShikigami(ConfigBase):
     boss_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     ap100_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     fakegod_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
-
-    scheduler: Scheduler = Field(default_factory=Scheduler)
 
     @model_validator(mode='before')
     @classmethod
