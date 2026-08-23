@@ -134,6 +134,30 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
         elif return_page is not None:
             self.goto_page(return_page)
 
+    def switch_soul_for_from_courtyard(self, action_type: str):
+        """从庭院进入式神录，按原配置切换指定玩法的御魂预设。"""
+        if self.switched_soul[action_type]:
+            return
+        conf = self.conf.switch_soul_config
+        enable_number = getattr(conf, f'enable_switch_{action_type}')
+        enable_name = getattr(conf, f'enable_switch_{action_type}_by_name')
+        self.switched_soul[action_type] = True
+        if not enable_number and not enable_name:
+            return
+
+        conf.validate_switch_soul()
+        logger.hr(f'Start switch soul from courtyard: {action_type}', 2)
+        self.goto_page(pages.page_main)
+        self.goto_page(pages.page_shikigami_records)
+        if enable_name:
+            group, team = getattr(conf, f'{action_type}_group_team_name').split(',', 1)
+            self.run_switch_soul_by_name(group.strip(), team.strip())
+        elif enable_number:
+            self.run_switch_soul(getattr(conf, f'{action_type}_group_team'))
+
+        self.exit_shikigami_records()
+        self.goto_page(pages.page_main)
+
     def finish_activity_task(self):
         self.goto_page(pages.page_main)
         if self.conf.general_config.active_souls_clean:

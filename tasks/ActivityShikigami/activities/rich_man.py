@@ -30,11 +30,13 @@ class RichManAct:
     def run_rich_man(self):
         logger.hr('Start activity: RichMan', 1)
         self.setup_rich_man_pages()
+        self.switch_soul_for_from_courtyard('rich_man')
         self.goto_page(pages.page_rich_man)
         common_loadout_required = True
         self._boss_pending = False
         self._boss_wait_exp_reset = False
         self._boss_max_level = False
+        self._last_rich_man_throw_count = None
 
         try:
             while True:
@@ -61,18 +63,15 @@ class RichManAct:
                 if not self.prepare_next_action('rich_man'):
                     return
 
-                dice_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
+                raw_dice_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
+                dice_count = self._normalize_rich_man_dice_count(raw_dice_count)
                 logger.info(f'RichMan dice count before throw: {dice_count}')
-                if not self.appear_then_click(self.I_RM_THROW, interval=2):
-                    continue
 
                 logger.hr('Throw ticket', 3)
                 self.device.stuck_record_clear()
                 self.device.stuck_record_add('BATTLE_STATUS_S')
-                mode = self._wait_for_dice_count_change(dice_count)
+                mode = self._throw_until_dice_count_changes(dice_count)
                 self.record_action('rich_man')
-                if mode is None:
-                    mode = self._wait_for_mode_after_throw()
                 if mode == 'throw':
                     self._run_throw_task()
                 elif mode == 'rob':
@@ -82,6 +81,29 @@ class RichManAct:
                     common_loadout_required = False
         except ActivityResourceNotEnough:
             logger.info('RichMan dice exhausted')
+
+    def _normalize_rich_man_dice_count(self, raw_count: int) -> int:
+        """结合上一次成功投掷前的数量，修正本轮为零的 OCR 结果。"""
+        if raw_count > 0:
+            return raw_count
+
+        previous_count = self._last_rich_man_throw_count
+        if previous_count is None:
+            logger.info('RichMan dice count is 0 on entry; stop throwing')
+            raise ActivityResourceNotEnough
+        if previous_count <= 1:
+            logger.info(
+                f'RichMan previous throw count was {previous_count}, '
+                'current count is 0; dice exhausted'
+            )
+            raise ActivityResourceNotEnough
+
+        corrected_count = previous_count - 1
+        logger.warning(
+            f'RichMan dice OCR returned 0 after previous throw count '
+            f'{previous_count}; correct current count to {corrected_count}'
+        )
+        return corrected_count
 
     def _read_level_experience(self) -> tuple[int, int] | None:
         current, _, total = self.O_LEVEL_EXPERIENCE.ocr_digit_counter(self.device.image)
@@ -139,35 +161,43 @@ class RichManAct:
         logger.info('RichMan boss pending, anchor is outside its roi_back or not visible')
         return False
 
-    def _wait_for_dice_count_change(self, previous_count: int) -> str | None:
-        deadline = time.monotonic() + 5.0
-        zero_fallback = previous_count == 0
+    def _throw_until_dice_count_changes(
+            self, previous_count: int
+    ) -> str | None:
+        """点击投掷直到数字变化，再限时识别投掷后的三种分支。"""
+        attempt = 0
         while True:
             self.screenshot()
-            if self.appear(self.I_CINQUE_NOT_ENOUGH):
-                logger.warning('RichMan dice not enough prompt appeared')
-                self.click(self.C_RM_RANDOM_CLOSE_SAFE_MAIN, interval=1)
-                self.device.click_record_clear()
-                raise ActivityResourceNotEnough
+            if not self.appear_then_click(self.I_RM_THROW, interval=2):
+                time.sleep(0.3)
+                continue
 
-            current_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
-            if current_count != previous_count:
-                logger.info(f'RichMan dice count changed: {previous_count} -> {current_count}')
-                self.device.click_record_clear()
-                return None
-            if zero_fallback:
-                mode = self._detect_richman_mode()
-                if mode is not None:
-                    logger.info('RichMan throw succeeded although initial dice OCR was zero')
+            attempt += 1
+            logger.info(f'Click RichMan throw: attempt={attempt}')
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                self.screenshot()
+                if self.appear(self.I_CINQUE_NOT_ENOUGH):
+                    logger.warning('RichMan dice not enough prompt appeared')
+                    self.click(self.C_RM_RANDOM_CLOSE_SAFE_MAIN, interval=1)
                     self.device.click_record_clear()
-                    return mode
-            if time.monotonic() >= deadline:
-                if self.appear_then_click(self.I_RM_THROW, interval=2):
-                    logger.info('Dice count did not change, click throw again')
-                else:
-                    logger.info('RichMan is moving, continue waiting for dice count change')
-                deadline = time.monotonic() + 5.0
-            time.sleep(0.3)
+                    raise ActivityResourceNotEnough
+
+                current_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
+                if current_count != previous_count:
+                    logger.info(
+                        f'RichMan dice count changed: '
+                        f'{previous_count} -> {current_count}; throw succeeded'
+                    )
+                    self._last_rich_man_throw_count = previous_count
+                    self.device.click_record_clear()
+                    return self._wait_for_mode_after_throw(timeout=3.0)
+                time.sleep(0.3)
+
+            logger.info(
+                f'RichMan dice count unchanged after click: '
+                f'{previous_count}; click throw again'
+            )
 
     def _detect_richman_mode(self) -> str | None:
         if self.appear(self.I_RM_MODE_THROW):
@@ -178,20 +208,20 @@ class RichManAct:
             return 'fight'
         return None
 
-    def _wait_for_mode_after_throw(self) -> str:
-        deadline = time.monotonic() + 5.0
-        while True:
+    def _wait_for_mode_after_throw(self, timeout: float = 3.0) -> str | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             self.screenshot()
             mode = self._detect_richman_mode()
             if mode is not None:
+                logger.info(f'RichMan mode detected after throw: {mode}')
                 return mode
-            if time.monotonic() >= deadline:
-                if self.appear_then_click(self.I_RM_THROW, interval=2):
-                    logger.info('RichMan mode wait timed out, may be reward block')
-                else:
-                    logger.info('RichMan is moving, continue waiting for mode')
-                deadline = time.monotonic() + 5.0
-            time.sleep(0.3)
+            time.sleep(0.2)
+        logger.info(
+            f'RichMan mode not detected within {timeout:.1f}s; '
+            'possibly reward or shield tile, continue to next throw cycle'
+        )
+        return None
 
     def _run_throw_task(self):
         logger.hr('RichMan throw task', 3)
@@ -235,12 +265,6 @@ class RichManAct:
 
     def _run_rich_man_fight(self, switch_loadout: bool):
         logger.hr('RichMan fight task', 3)
-        if switch_loadout:
-            self.switch_soul_for(
-                'rich_man',
-                self.I_RM_FIGHT_GOTO_RECORDS,
-                exit_records=True,
-            )
         source = self.battle_config('rich_man')
         battle = source.copy(update={
             'lock_team_enable': False,
@@ -259,12 +283,6 @@ class RichManAct:
     def _run_rich_man_boss_fight(self, switch_loadout: bool):
         logger.hr('RichMan boss fight task', 3)
         self._enter_boss_fight_by_anchor()
-        if switch_loadout:
-            self.switch_soul_for(
-                'rich_man',
-                self.I_RM_FIGHT_BOSS_GOTO_RECORDS,
-                exit_records=True,
-            )
         source = self.battle_config('rich_man')
         battle = source.copy(update={
             'lock_team_enable': False,

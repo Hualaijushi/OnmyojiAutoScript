@@ -80,14 +80,7 @@ class NormalClimbAct:
             self.I_BATTLE_MAIN_TO_RECORDS,
             return_page=destination,
         )
-        if self._climb_resource_needs_trial:
-            self._climb_resource_needs_trial = False
-            entered = self.verify_zero_ticket(
-                f'ActivityShikigami {action_type} ticket',
-                lambda: self._enter_climb_battle(action_type, max_times=1),
-            )
-        else:
-            entered = self._enter_climb_battle(action_type)
+        entered = self._enter_climb_battle(action_type)
         if not entered:
             raise ActivityResourceNotEnough
 
@@ -100,10 +93,9 @@ class NormalClimbAct:
     def _climb_fire_rule(self, action_type: str):
         return self.I_AS_BOSS_FIRE if action_type == 'boss' else self.I_ACT_FIRE
 
-    def _enter_climb_battle(self, action_type: str, max_times: int | None = None) -> bool:
+    def _enter_climb_battle(self, action_type: str) -> bool:
         click_times = 0
-        fallback = max_times is not None
-        max_times = max_times or random.randint(3, 5)
+        max_times = random.randint(3, 5)
         fire_rule = self._climb_fire_rule(action_type)
         while True:
             self.screenshot()
@@ -111,13 +103,9 @@ class NormalClimbAct:
                 return True
             if click_times >= max_times:
                 logger.warning(f'{action_type} cannot enter battle, click reach max times')
-                if fallback:
-                    return False
                 raise ActivityResourceNotEnough
             if self.appear(self.I_UI_BACK_RED, interval=1):
                 logger.warning(f'{action_type} cannot enter battle, resource dialog appeared')
-                if fallback:
-                    return False
                 raise ActivityResourceNotEnough
             if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1) or \
                     self.appear_then_click(self.I_UI_CONFIRM, interval=1):
@@ -126,23 +114,6 @@ class NormalClimbAct:
                 self.device.click_record_clear()
                 click_times += 1
                 logger.info(f'Try click fire, remain times[{max_times - click_times}]')
-                if fallback:
-                    return self._wait_climb_trial_result(timeout=3.0)
-
-    def _wait_climb_trial_result(self, timeout: float = 3.0) -> bool:
-        """试探挑战后只观察战斗或两种不足界面，不继续点击。"""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            self.screenshot()
-            if self.is_in_battle(False):
-                return True
-            if self.appear(self.I_UI_CONFIRM_SAMLL) or self.appear(self.I_UI_CONFIRM):
-                return False
-            if self.appear(self.I_UI_BACK_RED):
-                return False
-            time.sleep(0.2)
-        logger.warning(f'{self.current_action_type} trial challenge timed out after {timeout:.1f}s')
-        return False
 
     def _sync_climb_team_lock(self, action_type: str):
         enable = self.battle_config(action_type).lock_team_enable
@@ -160,22 +131,52 @@ class NormalClimbAct:
     def _climb_resource_available(self, action_type: str) -> bool:
         logger.hr(f'Check {action_type} resource')
         self.screenshot()
-        self._climb_resource_needs_trial = False
         if action_type == 'pass':
-            remain = self.O_REMAIN_PASS.ocr_digit(self.device.image)
+            raw_remain = self.O_REMAIN_PASS.ocr_digit(self.device.image)
         elif action_type == 'ap':
-            remain = self.O_REMAIN_AP.ocr_quantity(self.device.image)
+            raw_remain = self.O_REMAIN_AP.ocr_quantity(self.device.image)
         elif action_type == 'boss':
-            _, remain, _ = self.O_REMAIN_BOSS.ocr_digit_counter(self.device.image)
+            _, raw_remain, _ = self.O_REMAIN_BOSS.ocr_digit_counter(self.device.image)
         else:
-            remain = self.O_REMAIN_AP100.ocr_digit(self.device.image)
+            raw_remain = self.O_REMAIN_AP100.ocr_digit(self.device.image)
 
-        if action_type in ('pass', 'boss') and remain <= 0:
-            self._climb_resource_needs_trial = True
-            return True
+        remain = self._normalize_climb_resource_count(action_type, raw_remain)
         previous = self.pre_resource_count[action_type]
+        if previous >= 0 and remain < previous:
+            logger.info(
+                f'Climb {action_type} resource count decreased: '
+                f'{previous} -> {remain}'
+            )
         if previous - remain > 1:
             self.pre_resource_count[action_type] -= 1
             return True
         self.pre_resource_count[action_type] = remain
         return remain > 0
+
+    def _normalize_climb_resource_count(
+            self, action_type: str, raw_count: int
+    ) -> int:
+        """依据上一次挑战前的数量，修正四种爬塔资源 OCR 的零值。"""
+        if raw_count > 0:
+            return raw_count
+
+        previous_count = self.pre_resource_count[action_type]
+        if previous_count < 0:
+            logger.info(
+                f'Climb {action_type} resource count is 0 on entry; '
+                'resource exhausted'
+            )
+            return 0
+        if previous_count <= 1:
+            logger.info(
+                f'Climb {action_type} previous resource count was '
+                f'{previous_count}, current count is 0; resource exhausted'
+            )
+            return 0
+
+        corrected_count = previous_count - 1
+        logger.warning(
+            f'Climb {action_type} resource OCR returned 0 after previous '
+            f'count {previous_count}; correct current count to {corrected_count}'
+        )
+        return corrected_count

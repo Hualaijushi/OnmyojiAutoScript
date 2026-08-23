@@ -18,6 +18,7 @@ from tasks.GameUi.page import (
     page_battle_result,
     page_main,
     page_reward,
+    page_shikigami_records,
     random_click,
 )
 from tasks.GlobalGame.assets import GlobalGameAssets
