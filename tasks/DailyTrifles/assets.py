@@ -15,6 +15,14 @@ class DailyTriflesAssets:
 	C_DT_GW_CLICK_INPUT = RuleClick(roi_front=(38,0,911,40), roi_back=(38,0,911,40), name="dt_gw_click_input")
 	# 点击昵称搜索区域 
 	C_DT_GW_INPUT_SEARCH = RuleClick(roi_front=(334,90,554,33), roi_back=(334,90,554,33), name="dt_gw_input_search")
+	# 打开阴阳寮勋章捐赠
+	C_DT_GUILD_MEDAL_OPEN = RuleClick(roi_front=(264,490,36,36), roi_back=(258,484,47,50), name="dt_guild_medal_open")
+	# 勋章捐赠数量减号
+	C_DT_GUILD_MEDAL_MINUS = RuleClick(roi_front=(431,269,70,70), roi_back=(415,251,105,107), name="dt_guild_medal_minus")
+	# 勋章捐赠数量加号
+	C_DT_GUILD_MEDAL_PLUS = RuleClick(roi_front=(776,269,70,70), roi_back=(760,251,101,103), name="dt_guild_medal_plus")
+	# 确认捐赠勋章
+	C_DT_GUILD_MEDAL_CONFIRM = RuleClick(roi_front=(557,514,167,68), roi_back=(535,495,214,110), name="dt_guild_medal_confirm")
 
 
 	# Image Rule Assets
@@ -28,6 +36,10 @@ class DailyTriflesAssets:
 	I_ENTER_DAILY = RuleImage(roi_front=(1131,122,84,76), roi_back=(1117,98,136,226), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_enter_daily.png")
 	# 右上角检查是否在日常中 
 	I_CHECK_IN_DAILY = RuleImage(roi_front=(1131,115,106,88), roi_back=(1128,94,151,281), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_check_in_daily.png")
+	# 是否完成所有庭院事务
+	I_IS_COMPLETE = RuleImage(roi_front=(985,138,112,75), roi_back=(973,128,135,96), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_is_complete.png")
+	# 庭院事务一键完成奖励页面
+	I_DAILYFFAIR_REWARD = RuleImage(roi_front=(302,29,187,49), roi_back=(279,17,231,71), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_dailyffair_reward.png")
 
 
 	# Image Rule Assets
@@ -101,6 +113,8 @@ class DailyTriflesAssets:
 	# Ocr Rule Assets
 	# 用户昵称 
 	O_DT_GW_NAME = RuleOcr(roi=(257,135,195,446), area=(257,135,195,446), mode="Full", method="Default", keyword="", name="dt_gw_name")
+	# 勋章捐赠按钮数量
+	O_DT_GUILD_MEDAL_AMOUNT = RuleOcr(roi=(614,522,97,51), area=(543,505,191,85), mode="Digit", method="Default", keyword="", name="dt_guild_medal_amount")
 
 
 	# Swipe Rule Assets
@@ -174,5 +188,4 @@ class DailyTriflesAssets:
 	O_SELECT_SM3 = RuleOcr(roi=(26,304,45,38), area=(26,304,45,38), mode="Single", method="Default", keyword="", name="select_sm3")
 	# description 
 	O_SELECT_SM4 = RuleOcr(roi=(26,397,45,38), area=(26,397,45,38), mode="Single", method="Default", keyword="", name="select_sm4")
-
 

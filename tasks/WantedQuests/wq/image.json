@@ -151,5 +151,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "探索界面,左侧任务列表右上角右下角标志"
+  },
+  {
+    "itemName": "page_wanted_quests",
+    "imageName": "wq_page_wanted_quests.png",
+    "roiFront": "580,68,118,33",
+    "roiBack": "575,62,128,43",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "悬赏封印主页面标题"
   }
 ]

@@ -131,7 +131,18 @@ class AccountSwitcher:
             if time.monotonic() - started >= self.timeout:
                 last_code, last_message = SwitchErrorCode.TIMEOUT, "account switch deadline exceeded"
                 break
-            logger.info("[Account] instance=%s account_id=%s switch attempt=%s/%s", account.instance, account.account_id, attempt, self.max_attempts)
+            # 快速切换连续失败时，最后一次复用完整登录流程兜底。
+            use_fast = self.fast and (
+                self.max_attempts == 1 or attempt < self.max_attempts
+            )
+            logger.info(
+                "[Account] instance=%s account_id=%s switch attempt=%s/%s mode=%s",
+                account.instance,
+                account.account_id,
+                attempt,
+                self.max_attempts,
+                "fast" if use_fast else "legacy",
+            )
             try:
                 switch = self.switch_factory(
                     self.config,
@@ -140,7 +151,7 @@ class AccountSwitcher:
                     redact_logs=True,
                     on_ocr_complete=on_ocr_complete,
                     ocr_coordinator=self.ocr_coordinator,
-                    fast=self.fast,
+                    fast=use_fast,
                 )
                 if not bool(switch.switchAccount()):
                     last_code, last_message = SwitchErrorCode.ROLE_MISMATCH, "legacy switch verification failed"

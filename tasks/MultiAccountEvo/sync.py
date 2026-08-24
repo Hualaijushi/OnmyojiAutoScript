@@ -9,6 +9,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Callable
 
+from module.multi_account.file_lock import atomic_replace_with_retry
+
 
 ROLES = ("leader", "member_1", "member_2")
 ROLE_STATUSES = {"pending", "ocr_done", "ready", "running", "done", "failed"}
@@ -144,7 +146,7 @@ class MultiAccountEvoSync:
                 json.dump(data, stream, ensure_ascii=False, indent=2)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temp_path, self.state_path)
+            atomic_replace_with_retry(temp_path, self.state_path, timeout=5)
         finally:
             temp_path.unlink(missing_ok=True)
 

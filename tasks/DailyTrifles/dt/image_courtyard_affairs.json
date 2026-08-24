@@ -43,5 +43,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "右上角检查是否在日常中"
+  },
+  {
+    "itemName": "is_complete",
+    "imageName": "dt_is_complete.png",
+    "roiFront": "985,138,112,75",
+    "roiBack": "973,128,135,96",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "是否完成所有庭院事务"
+  },
+  {
+    "itemName": "dailyffair_reward",
+    "imageName": "dt_dailyffair_reward.png",
+    "roiFront": "302,29,187,49",
+    "roiBack": "279,17,231,71",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "庭院事务一键完成奖励页面"
   }
 ]

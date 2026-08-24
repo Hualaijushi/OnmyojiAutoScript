@@ -4,7 +4,7 @@ import json
 import os
 import threading
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -153,6 +153,8 @@ class DailyStateManager:
         return json.loads(json.dumps(node.get(account_id, {
             "login": {"status": "pending", "attempts": 0, "error": "", "updated_at": ""},
             "tasks": {},
+            "daily_task_completed": False,
+            "daily_task_updated_at": "",
         })))
 
     def is_login_completed(self, account_id: str, instance: str | None = None) -> bool:
@@ -179,7 +181,22 @@ class DailyStateManager:
         return accounts.setdefault(account_id, {
             "login": {"status": "pending", "attempts": 0, "error": "", "updated_at": ""},
             "tasks": {},
+            "daily_task_completed": False,
+            "daily_task_updated_at": "",
         })
+
+    def is_daily_task_completed_today(self, instance: str, account_id: str) -> bool:
+        state = self.load()
+        node = state.get("instances", {}).get(instance.lower(), {}).get("accounts", {}).get(account_id, {})
+        return bool(node.get("daily_task_completed", False))
+
+    def mark_daily_task_completed(self, instance: str, account_id: str, completed: bool = True) -> None:
+        with self._locked():
+            state = self._roll_date_unlocked(self._load_unlocked(recover_corrupt=True))
+            node = self._account_node(state, instance, account_id)
+            node["daily_task_completed"] = bool(completed)
+            node["daily_task_updated_at"] = self._now()
+            self._save_unlocked(state)
 
     def login_status(self, instance: str, account_id: str) -> str:
         state = self.load()
@@ -214,17 +231,34 @@ class DailyStateManager:
     def mark_task_failed(self, account_id: str, task_name: str, error: str, instance: str | None = None) -> None:
         self.mark_task(self._instance_for(account_id, instance), account_id, task_name, "failed", error=error)
 
-    def mark_task(self, instance: str, account_id: str, task_name: str, status: str, *, error: str = "") -> None:
+    def mark_task(
+        self,
+        instance: str,
+        account_id: str,
+        task_name: str,
+        status: str,
+        *,
+        error: str = "",
+        result: str | None = None,
+    ) -> None:
         if status not in self.VALID_STATUSES:
             raise ValueError(f"invalid task status: {status}")
         with self._locked():
             state = self._roll_date_unlocked(self._load_unlocked(recover_corrupt=True))
             task = self._account_node(state, instance, account_id)["tasks"].setdefault(
-                task_name, {"status": "pending", "attempts": 0, "error": "", "updated_at": ""}
+                task_name,
+                {"status": "pending", "attempts": 0, "error": "", "result": "", "retry_at": "", "updated_at": ""},
             )
             if status == "running":
                 task["attempts"] = int(task.get("attempts", 0)) + 1
+                task["retry_at"] = ""
+            elif status == "failed":
+                task["retry_at"] = (datetime.now() + timedelta(minutes=10)).isoformat(timespec="seconds")
+            elif status in {"completed", "skipped"}:
+                task["retry_at"] = ""
             task.update(status=status, error=str(error or ""), updated_at=self._now())
+            if result is not None:
+                task["result"] = str(result)
             self._save_unlocked(state)
 
     def update_team_progress(self, team_id: str, task_name: str, progress: int, *, target: int | None = None) -> None:

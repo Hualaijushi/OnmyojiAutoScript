@@ -16,38 +16,203 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_summon, page_guild, page_mall, page_friends, page_courtyard_affairs
 from tasks.DailyTrifles.config import DailyTriflesConfig
 from tasks.DailyTrifles.assets import DailyTriflesAssets
+from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.Component.Summon.summon import Summon
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import ScriptError, TaskEnd
 from module.base.timer import Timer
 from tasks.DailyTrifles.config import SummonType
+from tasks.DailyTrifles.hunt_adapter import HuntRotationAdapter
+from tasks.DailyTrifles.cooperation_adapter import CooperationAdapter
 import re
 from typing import Any, Optional, List, Callable
 
 
 class ScriptTask(GameUi, Summon, DailyTriflesAssets):
 
+    def _run_daily_subtask(self, task_id: str, action):
+        """记录当前执行的子任务，供账号轮换准确归属异常。"""
+        self._active_daily_subtask = task_id
+        result = action()
+        self._active_daily_subtask = ""
+        return result
+
+    def run_hunt_rotation(self, task_name: str) -> bool | None:
+        """由账号轮换调用的麒麟/阴界之门专用入口。"""
+        adapter = HuntRotationAdapter(self)
+        if task_name == "hunt_kirin":
+            return adapter.run_kirin_rotation()
+        if task_name == "hunt_netherworld":
+            return adapter.run_netherworld_rotation()
+        raise ValueError(f"不支持的 Hunt 轮换任务: {task_name}")
+
+    def run_cooperation_rotation(self):
+        """执行账号轮换的单时段协作检查，不触发邀请或悬赏执行。"""
+        return CooperationAdapter(self).run()
+
     def run(self):
         con = self.config.daily_trifles.trifles_config
         # 每日召唤
         if con.one_summon:
-            self.run_one_summon()
-        if con.courtyard_affairs:
-            self.run_courtyard_affairs()
+            self._run_daily_subtask("summon", self.run_one_summon)
+        courtyard_period = self._current_courtyard_period()
+        if courtyard_period == 'morning' and (con.courtyard_affairs or con.courtyard_morning):
+            self._run_daily_subtask("courtyard_morning", lambda: self.run_courtyard_affairs('morning'))
+        elif courtyard_period == 'evening' and (con.courtyard_affairs or con.courtyard_evening):
+            self._run_daily_subtask("courtyard_evening", lambda: self.run_courtyard_affairs('evening'))
         if con.pickup_email:
-            self.run_pickup_email()
+            self._run_daily_subtask("pickup_email", self.run_pickup_email)
         if self.config.daily_trifles.guild_donate.enable:
-            self.run_guild_donate()
+            self._run_daily_subtask("guild_donate", self.run_guild_donate)
+        if con.guild_medal_donate:
+            self._run_daily_subtask("guild_medal_donate", self.run_guild_medal_donate)
         # 吉闻
         if con.luck_msg:
-            self.run_luck_msg()
+            self._run_daily_subtask("luck_msg", self.run_luck_msg)
         # 商店签到 or 购买寿司
         if con.store_sign or con.buy_sushi_count > 0:
             self.run_store()
         self.config.save()
-        self.plan_next_dt()
+        # 当每日琐事由账号轮换调用时，由外层账号轮换负责调度；
+        # 运行时配置没有 task_delay()，因此不再对嵌套任务重复调度。
+        if hasattr(self.config, 'task_delay'):
+            self.plan_next_dt()
         raise TaskEnd('DailyTrifles')
+
+    def _read_guild_medal_amount(self) -> int | None:
+        """从捐赠按钮的小范围区域中读取当前金额。"""
+        try:
+            results = self.O_DT_GUILD_MEDAL_AMOUNT.detect_and_ocr(self.device.image)
+        except Exception as exc:
+            logger.warning('Guild medal amount OCR failed: %s', exc)
+            return None
+        for result in results:
+            text = str(getattr(result, 'ocr_text', '') or '')
+            for token in re.findall(r'100|80|60|40|20', text):
+                amount = int(token)
+                if amount in (20, 40, 60, 80, 100):
+                    return amount
+        return None
+
+    def _wait_guild_medal_amount(self, timeout: float = 4.0) -> int | None:
+        timer = Timer(timeout).start()
+        while not timer.reached():
+            self.screenshot()
+            amount = self._read_guild_medal_amount()
+            if amount is not None:
+                return amount
+        return None
+
+    def _wait_guild_medal_reward(self, timeout: float = 5.0) -> bool:
+        timer = Timer(timeout).start()
+        while not timer.reached():
+            self.screenshot()
+            # 复用稳定的全局奖励弹窗识别和弹窗外点击区域，
+            # 不另外增加容易失效的勋章弹窗关闭坐标。
+            if self.ui_reward_appear_click():
+                return True
+        return False
+
+    def _finish_guild_medal_donate(self, target: int) -> bool:
+        self.config.daily_trifles.done_record.guild_medal_donate_dt = datetime.now()
+        self.config.save()
+        self.goto_page(page_main)
+        logger.info('Guild medal donation completed amount=%s', target)
+        return True
+
+    def run_guild_medal_donate(self) -> bool:
+        """按照配置的勾玉数量完成寮勋章捐赠。"""
+        logger.hr('guild medal donate', 2)
+        if self.config.daily_trifles.today_is_done('guild_medal_donate'):
+            logger.info('Guild medal donation already completed today, skip')
+            return True
+
+        target = int(self.config.daily_trifles.trifles_config.guild_medal_amount)
+        # 进入阴阳寮主页面。I_GUILD_REALM 只用于确认场景，不能点击；
+        # 点击它会进入个人结界。确认寮境场景后，再点击右下角“寮信息”。
+        self.goto_page(page_guild)
+        if not self.wait_until_appear(KekkaiUtilizeAssets.I_GUILD_REALM, wait_time=5):
+            raise ScriptError('Guild realm scene was not recognized')
+        if not self.wait_until_appear(KekkaiUtilizeAssets.I_GUILD_INFO, wait_time=5):
+            raise ScriptError('Guild realm hall was not recognized after opening guild realm')
+        logger.info('Guild realm hall recognized, opening guild information')
+        if not self.appear_then_click(KekkaiUtilizeAssets.I_GUILD_INFO, interval=0.8):
+            raise ScriptError('Guild information entry was not found in guild realm')
+        # 确认寮信息页面稳定后再操作勾玉数量，
+        # 使用现有寮相关任务的页面识别流程。
+        if not self.wait_until_appear(self.I_CHECK_GUILD, wait_time=5):
+            raise ScriptError('Guild information page was not recognized before medal donation')
+        logger.info('Guild page recognized, start guild medal donation')
+        sleep(0.8)
+        # 达到每日上限的账号不会打开捐赠弹窗，游戏只会在点击寮信息页加号后
+        # 显示提示。按照任务规则，检测到这种情况时视为已完成。
+        if not self.click(self.C_DT_GUILD_MEDAL_OPEN, interval=0.8):
+            raise ScriptError('Guild medal donation entry was not clicked')
+        if self._wait_guild_medal_reward(timeout=0.8):
+            return self._finish_guild_medal_donate(target)
+
+        current = self._wait_guild_medal_amount(timeout=1.5)
+        if current is None:
+            # 已捐赠或达到每日上限时，点击入口不会打开金额弹窗。
+            # 再点击一次确认仍无弹窗后，按任务规则视为今日已完成。
+            self.click(self.C_DT_GUILD_MEDAL_OPEN, interval=0.8)
+            current = self._wait_guild_medal_amount(timeout=1.5)
+            if current is None:
+                if self._wait_guild_medal_reward(timeout=0.8):
+                    return self._finish_guild_medal_donate(target)
+                logger.info('Guild medal donation already completed or capped; mark done')
+                return self._finish_guild_medal_donate(target)
+        if current is None:
+            raise ScriptError('Guild medal amount OCR failed after dialog opened')
+        if current not in (20, 40, 60, 80, 100):
+            self.click(self.C_DT_GUILD_MEDAL_OPEN, interval=0.8)
+            if self._wait_guild_medal_reward(timeout=1.2):
+                return self._finish_guild_medal_donate(target)
+            raise ScriptError(f'Guild medal amount is invalid or capped: {current}')
+        logger.info('Guild medal donation amount current=%s target=%s', current, target)
+
+        # 弹窗横向滑块从左到右对应 20/40/60/80/100。
+        # 现在直接拖动一次，最后仍以 OCR 校验结果为准。
+        if (target - current) % 20:
+            raise ScriptError(f'Guild medal amount is not a 20-step value: current={current}, target={target}')
+        slider_y = 390
+        slider_min_x = 515
+        slider_max_x = 846
+        current_x = round(slider_min_x + (current - 20) / 80 * (slider_max_x - slider_min_x))
+        target_x = round(slider_min_x + (target - 20) / 80 * (slider_max_x - slider_min_x))
+        if current_x != target_x:
+            logger.info('Guild medal slider drag current=%s target=%s x=%s->%s', current, target, current_x, target_x)
+            sleep(0.4)
+            self.device.swipe(
+                p1=(current_x, slider_y),
+                p2=(target_x, slider_y),
+                duration=0.6,
+                control_name='dt_guild_medal_slider',
+            )
+
+        confirmed = self._wait_guild_medal_amount(timeout=2.0)
+        if confirmed != target:
+            logger.warning('Guild medal slider mismatch: target=%s actual=%s, retry drag', target, confirmed)
+            if confirmed not in (20, 40, 60, 80, 100) or (target - confirmed) % 20:
+                raise ScriptError(f'Guild medal amount confirmation failed: expected {target}, got {confirmed}')
+            corrected_x = round(slider_min_x + (target - 20) / 80 * (slider_max_x - slider_min_x))
+            current_x = round(slider_min_x + (confirmed - 20) / 80 * (slider_max_x - slider_min_x))
+            sleep(0.4)
+            self.device.swipe(
+                p1=(current_x, slider_y),
+                p2=(corrected_x, slider_y),
+                duration=0.6,
+                control_name='dt_guild_medal_slider_retry',
+            )
+            confirmed = self._wait_guild_medal_amount(timeout=2.0)
+            if confirmed != target:
+                raise ScriptError(f'Guild medal amount confirmation failed: expected {target}, got {confirmed}')
+        if not self.click(self.C_DT_GUILD_MEDAL_CONFIRM, interval=0.8):
+            raise ScriptError('Guild medal donation confirm button was not clicked')
+        if not self._wait_guild_medal_reward():
+            raise ScriptError('Guild medal donation reward was not recognized')
+        return self._finish_guild_medal_donate(target)
 
     def run_one_summon(self):
         logger.hr('daily summon', 2)
@@ -357,15 +522,19 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
         self.config.daily_trifles.done_record.luck_msg_dt = datetime.now()
 
     def run_store(self):
+        con = self.config.daily_trifles.trifles_config
+        self._active_daily_subtask = "store_sign" if con.store_sign else "buy_sushi"
         if self.check_store_all_done():
             logger.info('Store all done, skip')
+            self._active_daily_subtask = ""
             return
         self.goto_page(page_mall, confirm_wait=3)
-        if self.config.daily_trifles.trifles_config.store_sign:
-            self.run_store_sign()
-        if self.config.daily_trifles.trifles_config.buy_sushi_count > 0:
-            self.run_buy_sushi()
+        if con.store_sign:
+            self._run_daily_subtask("store_sign", self.run_store_sign)
+        if con.buy_sushi_count > 0:
+            self._run_daily_subtask("buy_sushi", self.run_buy_sushi)
         self.goto_page(page_main)
+        self._active_daily_subtask = ""
 
     def run_store_sign(self):
         logger.hr('store sign', 2)
@@ -447,11 +616,42 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
                 continue
         self.config.daily_trifles.done_record.sushi_dt = datetime.now()
 
-    def run_courtyard_affairs(self):
-        """庭院事务"""
+    @staticmethod
+    def _current_courtyard_period() -> str | None:
+        """返回当前庭院事务时间段。"""
+        current = datetime.now().time()
+        if time(5, 0) <= current < time(18, 0):
+            return 'morning'
+        if time(18, 0) <= current:
+            return 'evening'
+        return None
+
+    def run_courtyard_affairs(self, period: str = 'morning'):
+        """执行指定时间段的庭院事务。"""
+        if period not in {'morning', 'evening'}:
+            raise ValueError(f'无效庭院事务时间段: {period}')
+        mode = f'courtyard_{period}'
+        if self.config.daily_trifles.today_is_done(mode):
+            logger.info('Courtyard %s already completed today, skip', period)
+            return
         logger.hr('courtyard affairs', 2)
+
+        def finish_courtyard_affairs():
+            now = datetime.now()
+            setattr(self.config.daily_trifles.done_record, f'{mode}_dt', now)
+            # 保留旧字段，兼容原有每日琐事状态读取。
+            self.config.daily_trifles.done_record.courtyard_affairs_dt = now
+            try:
+                returned = self.goto_page(page_main)
+            except Exception as exc:
+                returned = False
+                logger.warning('Courtyard affairs return to main error, mark completed: %s', exc)
+            if not returned:
+                # 庭院事务入口处理后可能发生变化，避免失败状态触发再次进入误点。
+                logger.warning('Courtyard affairs return to main failed, mark completed')
+
         self.goto_page(page_main)
-        timeout_timer = Timer(3).start()
+        timeout_timer = Timer(5).start()
         while not timeout_timer.reached():
             self.screenshot()
             if self.appear(self.I_ENTER_COURTYARD_AFFAIRS, interval=1.2):
@@ -459,7 +659,8 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
                 timeout_timer.reset()
                 break
         if timeout_timer.reached():
-            logger.info('Not have courtyard affairs, exit')
+            logger.info('Courtyard affairs entry not found, mark completed')
+            finish_courtyard_affairs()
             return
         while True:
             self.screenshot()
@@ -467,9 +668,60 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
                 break
             if self.appear_then_click(self.I_ENTER_DAILY, interval=1):
                 continue
-        self.appear_then_click(self.I_ONE_COMPLETE, interval=1)
-        self.goto_page(page_main)
-        self.config.daily_trifles.done_record.courtyard_affairs_dt = datetime.now()
+
+        def close_reward_and_wait_page(timeout: float = 6.0) -> bool:
+            reward_clicked = False
+            reward_timer = Timer(timeout).start()
+            while not reward_timer.reached():
+                self.screenshot()
+                if reward_clicked and self.appear(self.I_CHECK_COURTYARD_AFFAIRS):
+                    return True
+                if not reward_clicked and self.appear(self.I_DAILYFFAIR_REWARD):
+                    # 奖励弹窗会拦截本次点击，复用“一键完成”区域将其关闭。
+                    self.click(self.I_ONE_COMPLETE)
+                    reward_clicked = True
+                    continue
+                if reward_clicked:
+                    # 点击未生效时有限重试，直到庭院事务页面重新出现。
+                    self.click(self.I_ONE_COMPLETE, interval=1)
+                    continue
+            return False
+
+        if not self.wait_until_appear(self.I_CHECK_COURTYARD_AFFAIRS, wait_time=3):
+            logger.warning('Courtyard affairs page is not stable, mark completed')
+            finish_courtyard_affairs()
+            return
+        if self.appear(self.I_IS_COMPLETE):
+            logger.info('Courtyard affairs already completed')
+            finish_courtyard_affairs()
+            return
+
+        for attempt in range(3):
+            self.screenshot()
+            if self.appear(self.I_IS_COMPLETE):
+                logger.info('Courtyard affairs completed before attempt=%s', attempt + 1)
+                finish_courtyard_affairs()
+                return
+            if not self.appear_then_click(self.I_ONE_COMPLETE, interval=1):
+                logger.warning('Courtyard affairs complete button not found, attempt=%s', attempt + 1)
+                continue
+            try:
+                reward_closed = close_reward_and_wait_page()
+            except Exception as exc:
+                reward_closed = False
+                logger.warning('Courtyard affairs reward popup error, mark completed: %s', exc)
+            if not reward_closed:
+                logger.warning('Courtyard affairs reward popup failed, mark completed')
+                finish_courtyard_affairs()
+                return
+            if self.wait_until_appear(self.I_IS_COMPLETE, wait_time=5):
+                logger.info('Courtyard affairs completed, attempt=%s', attempt + 1)
+                finish_courtyard_affairs()
+                return
+            logger.warning('Courtyard affairs is still incomplete, attempt=%s', attempt + 1)
+
+        logger.warning('Courtyard affairs incomplete after three attempts, mark completed')
+        finish_courtyard_affairs()
 
     def run_pickup_email(self):
         """领取邮件"""

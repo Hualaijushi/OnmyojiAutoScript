@@ -10,5 +10,29 @@
     "roiFront": "334,90,554,33",
     "roiBack": "334,90,554,33",
     "description": "点击昵称搜索区域"
+  },
+  {
+    "itemName": "dt_guild_medal_open",
+    "roiFront": "264,490,36,36",
+    "roiBack": "258,484,47,50",
+    "description": "打开阴阳寮勋章捐赠"
+  },
+  {
+    "itemName": "dt_guild_medal_minus",
+    "roiFront": "431,269,70,70",
+    "roiBack": "415,251,105,107",
+    "description": "勋章捐赠数量减号"
+  },
+  {
+    "itemName": "dt_guild_medal_plus",
+    "roiFront": "776,269,70,70",
+    "roiBack": "760,251,101,103",
+    "description": "勋章捐赠数量加号"
+  },
+  {
+    "itemName": "dt_guild_medal_confirm",
+    "roiFront": "557,514,167,68",
+    "roiBack": "535,495,214,110",
+    "description": "确认捐赠勋章"
   }
 ]

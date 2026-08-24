@@ -555,7 +555,12 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
             )
             return False
 
-        if self._wait_for_destination(destination):
+        # 狩猎战入口加载时间通常超过默认四秒，仅延长町中到狩猎页的确认时间。
+        destination_timeout = 8.0 if transition.key in {
+            "page_town->page_hunt",
+            "page_town->page_hunt_kirin",
+        } else 4.0
+        if self._wait_for_destination(destination, timeout=destination_timeout):
             self._run_hooks(source.on_leave_success)
             self._run_hooks(transition.on_leave_success)
             self._run_hooks(destination.on_enter_success)

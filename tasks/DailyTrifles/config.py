@@ -2,7 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from tasks.Component.config_scheduler import Scheduler
 from tasks.Component.config_base import ConfigBase, dynamic_hide, DateTime, MultiLine
@@ -14,11 +14,22 @@ class SummonType(str, Enum):
     recall = '今忆召唤'
 
 
+class GuildMedalAmount(str, Enum):
+    amount_20 = '20'
+    amount_40 = '40'
+    amount_60 = '60'
+    amount_80 = '80'
+    amount_100 = '100'
+
+
 class DoneRecord(ConfigBase):
     courtyard_affairs_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
+    courtyard_morning_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
+    courtyard_evening_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     pickup_email_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     summon_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     guild_donate_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
+    guild_medal_donate_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     luck_msg_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     store_sign_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     sushi_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
@@ -51,6 +62,8 @@ class DailyGuildDonate(ConfigBase):
 class DailyTriflesConfig(BaseModel):
     # 庭院事务
     courtyard_affairs: bool = Field(default=True)
+    courtyard_morning: bool = Field(default=False, description='庭院事务05点任务')
+    courtyard_evening: bool = Field(default=False, description='庭院事务18点任务')
     # 收取邮件
     pickup_email: bool = Field(default=True)
     one_summon: bool = Field(title='One Summon', default=False)
@@ -62,6 +75,21 @@ class DailyTriflesConfig(BaseModel):
     store_sign: bool = Field(title='Store Sign', default=False, description='store_sign_help')
     # 每天购买体力数量
     buy_sushi_count: int = Field(title='Buy Sushi Count', default=-1)
+    guild_medal_donate: bool = Field(default=False, description='guild_medal_donate_help')
+    guild_medal_amount: GuildMedalAmount = Field(default=GuildMedalAmount.amount_20, description='guild_medal_amount_help')
+    # 账号轮换专用的狩猎战短战斗任务。
+    hunt_kirin: bool = Field(default=False, description='daily_hunt_kirin_help')
+    hunt_netherworld: bool = Field(default=False, description='daily_hunt_netherworld_help')
+    cooperation_morning: bool = Field(default=False, description='daily_cooperation_morning_help')
+    cooperation_evening: bool = Field(default=False, description='daily_cooperation_evening_help')
+
+    @field_validator('guild_medal_amount', mode='before')
+    @classmethod
+    def normalize_guild_medal_amount(cls, value):
+        # 兼容初版写入的数字，同时向 OASX 配置表单提供字符串枚举值。
+        if isinstance(value, int):
+            return str(value)
+        return value
 
     hide_fields = dynamic_hide('draw_mystery_pattern')
 

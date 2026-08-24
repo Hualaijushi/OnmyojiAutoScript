@@ -419,13 +419,17 @@
     },
     "trifles_config": {
       "courtyard_affairs": true,
+      "courtyard_morning": false,
+      "courtyard_evening": false,
       "pickup_email": true,
       "one_summon": false,
       "summon_type": "普通召唤",
       "draw_mystery_pattern": false,
       "luck_msg": false,
       "store_sign": false,
-      "buy_sushi_count": -1
+      "buy_sushi_count": -1,
+      "guild_medal_donate": false,
+      "guild_medal_amount": "20"
     },
     "guild_donate": {
       "enable": false,
@@ -437,9 +441,12 @@
     },
     "done_record": {
       "courtyard_affairs_dt": "2023-01-01 00:00:00",
+      "courtyard_morning_dt": "2023-01-01 00:00:00",
+      "courtyard_evening_dt": "2023-01-01 00:00:00",
       "pickup_email_dt": "2023-01-01 00:00:00",
       "summon_dt": "2023-01-01 00:00:00",
       "guild_donate_dt": "2023-01-01 00:00:00",
+      "guild_medal_donate_dt": "2023-01-01 00:00:00",
       "luck_msg_dt": "2023-01-01 00:00:00",
       "store_sign_dt": "2023-01-01 00:00:00",
       "sushi_dt": "2023-01-01 00:00:00",
@@ -1504,11 +1511,32 @@
       "max_switch_attempts": 3,
       "retry_delay_seconds": 2,
       "switch_timeout_seconds": 300,
-      "failure_policy": "continue",
-      "three_instance_coordination": true,
-      "coordination_timeout_seconds": 300,
-      "ocr_acquire_timeout_seconds": 90,
-      "ocr_lease_timeout_seconds": 45
+      "failure_policy": "continue"
+    },
+    "daily_task_config": {
+      "daily_task_enable": false,
+      "daily_courtyard_affairs": false,
+      "daily_courtyard_morning": false,
+      "daily_courtyard_evening": false,
+      "daily_pickup_email": false,
+      "daily_one_summon": false,
+      "daily_summon_type": "普通召唤",
+      "daily_draw_mystery_pattern": false,
+      "daily_luck_msg": false,
+      "daily_store_sign": false,
+      "daily_buy_sushi_count": -1,
+      "daily_guild_donate_enable": false,
+      "daily_guild_auto_get_rewards": true,
+      "daily_guild_notify_enable": false,
+      "daily_guild_member_list": "",
+      "daily_guild_friend_list": "",
+      "daily_guild_name_check": true,
+      "daily_guild_medal_donate": false,
+      "daily_guild_medal_amount": "20",
+      "daily_hunt_kirin": false,
+      "daily_hunt_netherworld": false,
+      "daily_cooperation_morning": false,
+      "daily_cooperation_evening": false
     }
   },
   "multi_account_evo": {

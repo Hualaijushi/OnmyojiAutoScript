@@ -8,11 +8,12 @@ from module.exception import RequestHumanTakeover, GameTooManyClickError, GameSt
 from module.logger import logger
 from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.chess_battle import ChessBattleNavigationMixin
+from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Restart.assets import RestartAssets
 from tasks.base_task import BaseTask
 
 
-FAST_LOGIN_ENTER_GAME_INTERVAL = 30.0
+FAST_LOGIN_ENTER_GAME_INTERVAL = 8.0
 FAST_LOGIN_MAX_ENTER_GAME_ATTEMPTS = 3
 
 # NetEase launcher "other login method" page blocks enter-game until the
@@ -77,7 +78,7 @@ class LoginService(
             return False
         return str(getattr(first, "command", "")).casefold() == "multiaccountevo"
 
-    def _handle_login_method_page(self) -> bool:
+    def _handle_login_method_page(self, force: bool = False) -> bool:
         """Leave the launcher "other login method" page when it blocks login.
 
         The 手机账号/扫码登录 page requires a manual phone login ("未勾选同意将
@@ -88,14 +89,25 @@ class LoginService(
         if self._login_method_page_handled:
             return False
         try:
-            text = str(O_LOGIN_AGREEMENT_WARNING.ocr(self.device.image) or "")
+            # 完整 OCR 返回的是匹配区域元组，而不是识别出的文本。
+            warning_area = O_LOGIN_AGREEMENT_WARNING.ocr(self.device.image)
         except Exception:
             return False
-        if "未勾选" not in text:
-            return False
-        logger.info("Leave other-login page via top-left back button")
+        # 第一次点击进入游戏前不要点击返回；正常保存账号页面的相同区域也可能有文字。
+        # 进入游戏超时后，该区域可作为登录平台/用户协议页面的可靠提示，强制路径是最后的兜底。
+        if not force:
+            if isinstance(warning_area, str):
+                if "未勾选" not in warning_area:
+                    return False
+            elif self._enter_game_attempts <= 0 or not warning_area:
+                return False
+        logger.info(
+            "Leave other-login page via top-left back button%s",
+            " (forced fallback)" if force else "",
+        )
         self.click(LOGIN_METHOD_PAGE_BACK, interval=1.0)
         self._login_method_page_handled = True
+        self._enter_game_attempts = 0
         return True
 
     def _enter_game_interval(self) -> float:
@@ -118,12 +130,24 @@ class LoginService(
         """
         if self._handle_login_method_page():
             return False
-        if not self.ocr_appear_click(self.O_LOGIN_ENTER_GAME, interval=self._enter_game_interval()):
+        if self.fast_login:
+            clicked = self.click(
+                SwitchAccountAssets.C_SA_LOGIN_FORM_ENTER_GAME_BTN,
+                interval=self._enter_game_interval(),
+            )
+        else:
+            clicked = self.ocr_appear_click(
+                self.O_LOGIN_ENTER_GAME,
+                interval=self._enter_game_interval(),
+            )
+        if not clicked:
             return False
         self._enter_game_attempts += 1
         if not self.skip_specific_server:
             self.wait_until_appear(self.I_LOGIN_SPECIFIC_SERVE, True, wait_time=5)
         if self.fast_login and self._enter_game_attempts >= self._max_enter_game_attempts():
+            if self._handle_login_method_page(force=True):
+                return True
             logger.warning(
                 'Fast login enter-game did not progress after %s attempts',
                 self._enter_game_attempts,

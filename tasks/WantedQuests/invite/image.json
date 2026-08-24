@@ -268,5 +268,86 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "从左到右第三个协作任务的类型"
+  },
+  {
+    "itemName": "wq_invite_1_realworld",
+    "imageName": "invite_wq_invite_1_realworld.png",
+    "roiFront": "139,361,37,46",
+    "roiBack": "108,338,100,100",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "现世协作1"
+  },
+  {
+    "itemName": "wq_invite_2_realworld",
+    "imageName": "invite_wq_invite_2_realworld.png",
+    "roiFront": "437,361,41,43",
+    "roiBack": "408,334,100,100",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "现世协作2"
+  },
+  {
+    "itemName": "wq_invite_3_realworld",
+    "imageName": "invite_wq_invite_3_realworld.png",
+    "roiFront": "754,366,39,42",
+    "roiBack": "728,339,100,100",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "现世协作3"
+  },
+  {
+    "itemName": "is_realworld_1",
+    "imageName": "invite_is_realworld_1.png",
+    "roiFront": "157,292,30,32",
+    "roiBack": "155,290,35,37",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "是否为现世协作"
+  },
+  {
+    "itemName": "is_realworld_2",
+    "imageName": "invite_is_realworld_1.png",
+    "roiFront": "457,292,30,32",
+    "roiBack": "455,290,35,37",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "是否为现世协作2"
+  },
+  {
+    "itemName": "is_realworld_3",
+    "imageName": "invite_is_realworld_1.png",
+    "roiFront": "757,292,30,32",
+    "roiBack": "755,290,35,37",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "是否为现世协作3"
+  },
+  {
+    "itemName": "is_normal_1",
+    "imageName": "invite_is_normal_1.png",
+    "roiFront": "157,292,30,32",
+    "roiBack": "155,290,35,37",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "是否为普通协作"
+  },
+  {
+    "itemName": "is_normal_2",
+    "imageName": "invite_is_normal_1.png",
+    "roiFront": "457,292,30,32",
+    "roiBack": "455,290,35,37",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "是否为普通协作2"
+  },
+  {
+    "itemName": "is_normal_3",
+    "imageName": "invite_is_normal_1.png",
+    "roiFront": "757,292,30,32",
+    "roiBack": "755,290,35,37",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "是否为普通协作3"
   }
 ]

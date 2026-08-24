@@ -7,5 +7,14 @@
     "method": "Default",
     "keyword": "",
     "description": "用户昵称"
+  },
+  {
+    "itemName": "dt_guild_medal_amount",
+    "roiFront": "614,522,97,51",
+    "roiBack": "543,505,191,85",
+    "mode": "Digit",
+    "method": "Default",
+    "keyword": "",
+    "description": "勋章捐赠按钮数量"
   }
 ]

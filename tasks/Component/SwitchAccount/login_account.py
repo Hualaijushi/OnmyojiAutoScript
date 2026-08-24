@@ -234,30 +234,26 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         time.sleep(1.0)
 
     def select_login_platform_fast(self, apple_or_android: bool) -> None:
-        """Select the Apple/Android login platform with fixed coordinates.
+        """通过模板匹配选择苹果或安卓登录平台。
 
-        The provider page layout is fixed in the 1280x720 design space, so the
-        platform entry is clicked at a constant position without template
-        matching or OCR.
+        复用已有平台模板获取按钮实际坐标，避免随机点击固定区域边缘。
         """
         if self.account_logs_redacted:
-            logger.info("Select login platform using fixed coordinates [redacted]")
+            logger.info("Select login platform using image matching [redacted]")
         else:
             logger.info(
-                "Select login platform using fixed coordinates, apple_or_android=%s",
+                "Select login platform using image matching, apple_or_android=%s",
                 apple_or_android,
             )
-        platform = self.C_SA_LOGIN_FORM_ANDROID if apple_or_android else self.C_SA_LOGIN_FORM_APPLE
-        self.click(platform, interval=1.0)
+        platform = self.I_SA_LOGIN_FORM_ANDROID if apple_or_android else self.I_SA_LOGIN_FORM_APPLE
+        self.appear_then_click(platform, interval=1.0)
 
     def login_fast(self, accountInfo: AccountInfo) -> bool:
-        """Fast multi-account login without provider/server/role recognition.
+        """执行不包含服务商、服务器和角色识别的快速多账号登录。
 
-        Selects and submits the saved account through the native UI, then
-        clicks the fixed Apple/Android platform entry.  Provider OCR, server
-        selection and character selection are skipped: the game is expected to
-        enter its configured default character automatically.  The courtyard
-        character is verified afterwards by the caller.
+        通过原生界面选择并提交已保存账号，再匹配苹果或安卓平台按钮。
+        跳过服务商 OCR、服务器和角色选择，由游戏自动进入默认角色，
+        最后由调用方校验庭院角色。
         """
         self.screenshot()
         if not (self.appear(self.I_CHECK_LOGIN_FORM) or self.appear(self.I_SA_NETEASE_GAME_LOGO)):
@@ -314,9 +310,7 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     return False
             self.submit_saved_account_login()
 
-        # Fixed-coordinate platform selection.  The provider page arrival time
-        # varies, so wait for its page marker once (bounded) and then click
-        # the fixed platform position without any button recognition.
+        # 平台页面到达时间不固定，先有界等待页面标识，再匹配对应平台按钮。
         if not self.wait_until_appear(self.I_SA_LOGIN_FORM_APPLE, False, wait_time=45):
             logger.warning("Fast login platform page timeout")
             return False
@@ -326,17 +320,15 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         return True
 
     def _select_platform_and_confirm(self, apple_or_android: bool, max_attempts: int = 3) -> bool:
-        """Click the fixed platform entry and confirm the provider page closes.
+        """点击对应平台按钮，并确认平台页面已经关闭。
 
-        The provider page is not always clickable immediately after it
-        appears, so the first click can be swallowed by the page transition.
-        Retry the fixed click a bounded number of times instead of restarting
-        the whole account switch, and fail only once the page still refuses to
-        close.
+        前两次使用短确认窗口快速补点，最后一次保留较长窗口兼容页面加载缓慢。
         """
-        for attempt in range(1, max(1, int(max_attempts)) + 1):
+        attempt_limit = max(1, int(max_attempts))
+        for attempt in range(1, attempt_limit + 1):
             self.select_login_platform_fast(apple_or_android)
-            if self._platform_page_closed(wait_time=8):
+            confirm_wait = 8 if attempt == attempt_limit else 2
+            if self._platform_page_closed(wait_time=confirm_wait):
                 return True
             logger.warning(
                 "Fast login platform click attempt %s/%s did not close the page",
@@ -395,6 +387,10 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     logger.info("account selected and confirmed by native UI: %s", accountInfo.account)
                 return True
             logger.warning("Target account not found or not confirmed in native account list")
+            if self.fast:
+                # 原生列表偶发漏项时，仅在快速路径复用已有 OCR 选择作为第二层兜底。
+                logger.warning("Native account selection missed target, falling back to OCR")
+                return self._selectAccountByOcr(accountInfo)
             return False
         except AccountUiUnavailable as exc:
             logger.warning("Native account UI unavailable, falling back to OCR: %s", exc)
