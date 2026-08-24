@@ -54,6 +54,7 @@ class RichManAct:
 
                 if self._boss_should_enter():
                     self._run_rich_man_boss_fight(switch_loadout=common_loadout_required)
+                    self._wait_for_stable_throw_before_next_round()
                     common_loadout_required = False
                     self._boss_pending = False
                     self._boss_wait_exp_reset = True
@@ -79,6 +80,8 @@ class RichManAct:
                 elif mode == 'fight':
                     self._run_rich_man_fight(switch_loadout=common_loadout_required)
                     common_loadout_required = False
+                if mode is not None:
+                    self._wait_for_stable_throw_before_next_round()
         except ActivityResourceNotEnough:
             logger.info('RichMan dice exhausted')
 
@@ -168,36 +171,35 @@ class RichManAct:
         attempt = 0
         while True:
             self.screenshot()
-            if not self.appear_then_click(self.I_RM_THROW, interval=2):
-                time.sleep(0.3)
-                continue
+            if self.appear(self.I_CINQUE_NOT_ENOUGH):
+                logger.warning('RichMan dice not enough prompt appeared')
+                self.click(self.C_RM_RANDOM_CLOSE_SAFE_MAIN, interval=1)
+                self.device.click_record_clear()
+                raise ActivityResourceNotEnough
 
-            attempt += 1
-            logger.info(f'Click RichMan throw: attempt={attempt}')
-            deadline = time.monotonic() + 3.0
-            while time.monotonic() < deadline:
-                self.screenshot()
-                if self.appear(self.I_CINQUE_NOT_ENOUGH):
-                    logger.warning('RichMan dice not enough prompt appeared')
-                    self.click(self.C_RM_RANDOM_CLOSE_SAFE_MAIN, interval=1)
-                    self.device.click_record_clear()
-                    raise ActivityResourceNotEnough
+            current_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
+            if current_count != previous_count:
+                logger.info(
+                    f'RichMan dice count changed: '
+                    f'{previous_count} -> {current_count}; throw succeeded'
+                )
+                self._last_rich_man_throw_count = previous_count
+                self.device.click_record_clear()
+                mode_timeout = 8.0
+                logger.info(
+                    f'Wait up to {mode_timeout:.2f}s for RichMan mode'
+                )
+                return self._wait_for_mode_after_throw(
+                    timeout=mode_timeout
+                )
 
-                current_count = self.O_CINQUE_COUNT.ocr_digit(self.device.image)
-                if current_count != previous_count:
-                    logger.info(
-                        f'RichMan dice count changed: '
-                        f'{previous_count} -> {current_count}; throw succeeded'
-                    )
-                    self._last_rich_man_throw_count = previous_count
-                    self.device.click_record_clear()
-                    return self._wait_for_mode_after_throw(timeout=3.0)
-                time.sleep(0.3)
-
-            logger.info(
-                f'RichMan dice count unchanged after click: '
-                f'{previous_count}; click throw again'
-            )
+            if self.appear_then_click(self.I_RM_THROW, interval=2):
+                attempt += 1
+                logger.info(
+                    f'RichMan dice count unchanged at {previous_count}; '
+                    f'click throw: attempt={attempt}'
+                )
+            time.sleep(0.3)
 
     def _detect_richman_mode(self) -> str | None:
         if self.appear(self.I_RM_MODE_THROW):
@@ -208,7 +210,7 @@ class RichManAct:
             return 'fight'
         return None
 
-    def _wait_for_mode_after_throw(self, timeout: float = 3.0) -> str | None:
+    def _wait_for_mode_after_throw(self, timeout: float) -> str | None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             self.screenshot()
@@ -219,7 +221,7 @@ class RichManAct:
             time.sleep(0.2)
         logger.info(
             f'RichMan mode not detected within {timeout:.1f}s; '
-            'possibly reward or shield tile, continue to next throw cycle'
+            'possibly reward tile, continue to next throw cycle'
         )
         return None
 
@@ -278,7 +280,6 @@ class RichManAct:
             battle_key=f'rich_man_fight_{self.action_count["rich_man"]}',
             exit_matcher=self.I_RM_THROW,
         )
-        self._wait_until_throw()
 
     def _run_rich_man_boss_fight(self, switch_loadout: bool):
         logger.hr('RichMan boss fight task', 3)
@@ -356,11 +357,24 @@ class RichManAct:
         logger.warning('RichMan main team lock status not detected')
         return False
 
-    def _wait_until_throw(self):
+    def _wait_for_stable_throw_before_next_round(self):
+        """连续确认投掷键稳定出现，并随机停顿后才允许下一轮投掷。"""
+        stable_count = 0
         while True:
             self.screenshot()
             if self.appear(self.I_RM_THROW):
-                return
+                stable_count += 1
+                if stable_count >= 2:
+                    delay = random.uniform(0.5, 1.5)
+                    logger.info(
+                        f'RichMan throw button stable; wait {delay:.2f}s '
+                        'before next throw cycle'
+                    )
+                    time.sleep(delay)
+                    return
+                time.sleep(0.3)
+                continue
+            stable_count = 0
             if self.ui_reward_appear_click():
                 continue
             if self.appear_then_click(self.I_UI_CONFIRM, interval=1) or \
