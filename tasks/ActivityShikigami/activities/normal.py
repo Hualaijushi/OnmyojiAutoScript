@@ -49,6 +49,7 @@ class NormalClimbAct:
             self.screenshot()
             current_page = self.get_current_page()
             if current_page == destination:
+                self._sync_climb_penta_pass()
                 if not self.prepare_next_action(action_type):
                     return
                 try:
@@ -92,6 +93,49 @@ class NormalClimbAct:
 
     def _climb_fire_rule(self, action_type: str):
         return self.I_AS_BOSS_FIRE if action_type == 'boss' else self.I_ACT_FIRE
+
+    def _sync_climb_penta_pass(self) -> None:
+        """按通用配置及剩余数量同步五倍卷开关。"""
+        configured = self.conf.general_config.use_penta_pass
+        remain = None
+        desired_enabled = False
+        if configured:
+            remain = self.O_REMAIN_PENTA_PASS.ocr_digit(self.device.image)
+            desired_enabled = remain > 0
+            logger.info(f'Climb penta pass remain: {remain}')
+            if not desired_enabled:
+                logger.info('Climb penta pass exhausted; disable penta mode')
+
+        enabled_rule = self.I_FIGHT_PENTA_USE
+        disabled_rule = self.I_FIGHT_PENTA_DISUSE
+        target_rule = enabled_rule if desired_enabled else disabled_rule
+        click_rule = disabled_rule if desired_enabled else enabled_rule
+
+        for attempt in range(1, 4):
+            self.screenshot()
+            if self.appear(target_rule):
+                logger.debug(
+                    'Climb penta mode synchronized: '
+                    f'enabled={desired_enabled}, remain={remain}'
+                )
+                return
+            if not self.appear(click_rule):
+                logger.warning(
+                    'Cannot identify climb penta toggle state; '
+                    f'enabled={desired_enabled}, remain={remain}'
+                )
+                return
+            self.click(click_rule, interval=0)
+            time.sleep(0.5)
+            logger.debug(
+                'Toggle climb penta mode: '
+                f'enabled={desired_enabled}, attempt={attempt}/3'
+            )
+
+        logger.warning(
+            'Failed to synchronize climb penta mode after 3 attempts: '
+            f'enabled={desired_enabled}, remain={remain}'
+        )
 
     def _enter_climb_battle(self, action_type: str) -> bool:
         click_times = 0

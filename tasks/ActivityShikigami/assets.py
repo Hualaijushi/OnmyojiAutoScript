@@ -31,6 +31,10 @@ class ActivityShikigamiAssets:
 	I_ACT_FIRE = RuleImage(roi_front=(1139,599,84,45), roi_back=(1080,530,192,190), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb/as_act_fire.png")
 	# boss挑战标志 
 	I_AS_BOSS_FIRE = RuleImage(roi_front=(1130,590,92,47), roi_back=(1080,530,192,190), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb/as_as_boss_fire.png")
+	# 使用五倍卷 
+	I_FIGHT_PENTA_USE = RuleImage(roi_front=(851,647,31,30), roi_back=(685,612,330,86), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb/climb_fight_penta_use.png")
+	# 不使用五倍卷 
+	I_FIGHT_PENTA_DISUSE = RuleImage(roi_front=(851,647,31,30), roi_back=(685,612,330,86), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb/climb_fight_penta_disuse.png")
 
 
 	# Ocr Rule Assets
@@ -42,6 +46,8 @@ class ActivityShikigamiAssets:
 	O_REMAIN_BOSS = RuleOcr(roi=(1169,668,70,30), area=(1169,668,70,30), mode="Digit", method="Default", keyword="", name="remain_boss")
 	# 100体活动门票检测 
 	O_REMAIN_AP100 = RuleOcr(roi=(923,20,113,40), area=(911,8,129,61), mode="Digit", method="Default", keyword="", name="remain_ap100")
+	# 五倍卷剩余数量 
+	O_REMAIN_PENTA_PASS = RuleOcr(roi=(707,21,113,40), area=(698,9,129,61), mode="Digit", method="Default", keyword="", name="remain_penta_pass")
 
 
 	# Image Rule Assets

@@ -34,5 +34,14 @@
     "method": "Default",
     "keyword": "",
     "description": "100体活动门票检测"
+  },
+  {
+    "itemName": "remain_penta_pass",
+    "roiFront": "707,21,113,40",
+    "roiBack": "698,9,129,61",
+    "mode": "Digit",
+    "method": "Default",
+    "keyword": "",
+    "description": "五倍卷剩余数量"
   }
 ]

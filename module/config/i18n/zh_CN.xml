@@ -427,6 +427,8 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 	<message><source>active_souls_clean_help</source><translation>式神活动全部结束后接续执行御魂清理</translation></message>
 	<message><source>Activity Random Sleep</source><translation>执行前随机休眠</translation></message>
 	<message><source>activity_random_sleep_help</source><translation>在下一次投骰、爬塔战斗或伪神行动开始前随机休眠；插入位置与任务时间检查一致</translation></message>
+	<message><source>Use Penta Pass</source><translation>使用五倍卷</translation></message>
+	<message><source>use_penta_pass_help</source><translation>开启后爬塔自动使用五倍卷；识别到五倍卷数量为0时自动关闭五倍模式</translation></message>
 	<message><source>Activity Limit Time</source><translation>任务执行时间</translation></message>
 	<message><source>activity_limit_time_help</source><translation>到达时间后不打断当前流程，仅停止下一次投骰、爬塔战斗或伪神行动</translation></message>
 	<message><source>Ap Limit</source><translation>体力战斗次数</translation></message>

@@ -243,6 +243,8 @@
   "active_souls_clean_help": "式神活动全部结束后接续执行御魂清理",
   "random_sleep": "执行前随机休眠",
   "activity_random_sleep_help": "在下一次投骰、爬塔战斗或伪神行动开始前随机休眠；插入位置与任务时间检查一致。",
+  "use_penta_pass": "使用五倍卷",
+  "use_penta_pass_help": "开启后爬塔自动使用五倍卷；识别到五倍卷数量为0时自动关闭五倍模式。",
   "activity_limit_time_help": "到达时间后不打断当前流程，仅停止下一次投骰、爬塔战斗或伪神行动。",
   "general_climb": "通用爬塔",
   "switch_soul_config": "执行任务前切换御魂",

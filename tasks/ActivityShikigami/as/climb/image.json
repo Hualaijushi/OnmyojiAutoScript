@@ -88,5 +88,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "boss挑战标志"
+  },
+  {
+    "itemName": "fight_penta_use",
+    "imageName": "climb_fight_penta_use.png",
+    "roiFront": "851,647,31,30",
+    "roiBack": "685,612,330,86",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "使用五倍卷"
+  },
+  {
+    "itemName": "fight_penta_disuse",
+    "imageName": "climb_fight_penta_disuse.png",
+    "roiFront": "851,647,31,30",
+    "roiBack": "685,612,330,86",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "不使用五倍卷"
   }
 ]
