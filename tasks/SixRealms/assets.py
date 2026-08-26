@@ -180,6 +180,11 @@ class SixRealmsAssets:
 	O_STORE_REFRESH_TIME = RuleOcr(roi=(538,661,110,27), area=(538,661,110,27), mode="Single", method="Default", keyword="", name="store_refresh_time")
 
 
+	# Click Rule Assets
+	# 孔雀国首领觉绿标位置
+	C_PK_GREEN_MAIN = RuleClick(roi_front=(620,492,33,66), roi_back=(620,492,33,66), name="pk_green_main")
+
+
 	# Image Rule Assets
 	# 开始确定 
 	I_PK_START_CONFIRM = RuleImage(roi_front=(1127,578,87,93), roi_back=(1102,557,146,142), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_start_confirm.png")
@@ -199,6 +204,8 @@ class SixRealmsAssets:
 	I_PK_START_THIRD_SKILL = RuleImage(roi_front=(1006,601,85,41), roi_back=(1006,601,85,41), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_start_third_skill.png")
 	# 孔雀国主界面标志 
 	I_PK_CHECK_MAIN = RuleImage(roi_front=(93,18,112,48), roi_back=(93,18,112,48), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_check_main.png")
+	# 只有300金币时仍唤息，快速跳过岛屿
+	I_PK_STORE_STILLIN = RuleImage(roi_front=(670,398,177,66), roi_back=(670,398,177,66), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_store_stillin.png")
 
 
 	# Image Rule Assets
@@ -332,5 +339,4 @@ class SixRealmsAssets:
 	I_SR_CHECK_BUY_BOX = RuleImage(roi_front=(484,290,295,47), roi_back=(405,230,467,255), threshold=0.8, method="Template matching", file="./tasks/SixRealms/sr/sr_sr_check_buy_box.png")
 	# 不再提醒 
 	I_SR_NOT_TIP = RuleImage(roi_front=(543,342,37,37), roi_back=(405,230,467,255), threshold=0.8, method="Template matching", file="./tasks/SixRealms/sr/sr_sr_not_tip.png")
-
 

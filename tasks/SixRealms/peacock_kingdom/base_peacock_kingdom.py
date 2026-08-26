@@ -1,3 +1,5 @@
+import time
+
 from module.atom.image import RuleImage
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -55,7 +57,24 @@ class BasePeacockKingdom(GeneralBattle, SixRealmsCommon):
     def _handle_in_battle(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         if self.appear(self.I_PK_BATTLE_THUNDER):
             self.skill_roaring_thunder = 1  # 战斗中出现了六道轰雷, 标记已获取
+        if context.battle_key == 'boss':
+            self._run_battle_behavior_once(
+                behavior_name='peacock_boss_green',
+                action=self._mark_peacock_boss,
+            )
         return super()._handle_in_battle(context, config)
+
+    def _mark_peacock_boss(self) -> None:
+        """仅在孔雀国首领战中标记觉。"""
+        logger.info('孔雀国首领战：标记觉')
+        while True:
+            self.screenshot()
+            if not self.appear(self.I_PREPARE_HIGHLIGHT):
+                break
+        if self.appear_then_click(self.I_LOCAL):
+            time.sleep(0.3)
+        x, y = self.C_PK_GREEN_MAIN.coord()
+        self.device.click(x, y, control_name=self.C_PK_GREEN_MAIN.name)
 
     def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         context.reward_no_battle_ts = None
