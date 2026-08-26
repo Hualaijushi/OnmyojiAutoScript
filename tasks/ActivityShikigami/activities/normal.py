@@ -85,6 +85,10 @@ class NormalClimbAct:
         if not entered:
             raise ActivityResourceNotEnough
 
+        if self.penta_pass_active and self.pre_penta_pass_count > 0:
+            # 五倍卷在点击挑战、成功进入战斗时消耗；下一次回到挑战页
+            # 若 OCR 数量异常跳变，只按本次挑战扣除一张进行修正。
+            self.penta_pass_consumption_pending = True
         self.record_action(action_type)
         self.run_general_battle(
             self.battle_config(action_type),
@@ -100,11 +104,21 @@ class NormalClimbAct:
         remain = None
         desired_enabled = False
         if configured:
-            remain = self.O_REMAIN_PENTA_PASS.ocr_digit(self.device.image)
+            raw_remain = self.O_REMAIN_PENTA_PASS.ocr_digit(
+                self.device.image
+            )
+            remain = self._normalize_penta_pass_count(raw_remain)
+            self.pre_penta_pass_count = remain
+            self.penta_pass_consumption_pending = False
             desired_enabled = remain > 0
-            logger.info(f'Climb penta pass remain: {remain}')
+            logger.info(
+                f'Climb penta pass remain: raw={raw_remain}, '
+                f'normalized={remain}'
+            )
             if not desired_enabled:
                 logger.info('Climb penta pass exhausted; disable penta mode')
+        else:
+            self.penta_pass_consumption_pending = False
 
         enabled_rule = self.I_FIGHT_PENTA_USE
         disabled_rule = self.I_FIGHT_PENTA_DISUSE
@@ -114,12 +128,14 @@ class NormalClimbAct:
         for attempt in range(1, 4):
             self.screenshot()
             if self.appear(target_rule):
+                self.penta_pass_active = desired_enabled
                 logger.debug(
                     'Climb penta mode synchronized: '
                     f'enabled={desired_enabled}, remain={remain}'
                 )
                 return
             if not self.appear(click_rule):
+                self.penta_pass_active = self.appear(enabled_rule)
                 logger.warning(
                     'Cannot identify climb penta toggle state; '
                     f'enabled={desired_enabled}, remain={remain}'
@@ -136,6 +152,60 @@ class NormalClimbAct:
             'Failed to synchronize climb penta mode after 3 attempts: '
             f'enabled={desired_enabled}, remain={remain}'
         )
+        self.screenshot()
+        self.penta_pass_active = self.appear(enabled_rule)
+
+    def _normalize_penta_pass_count(self, raw_count: int) -> int:
+        """依据上次数量及一次挑战仅消耗一张，修正 OCR 异常值。"""
+        previous_count = self.pre_penta_pass_count
+        if raw_count > 0:
+            if (
+                self.penta_pass_consumption_pending
+                and previous_count > 0
+                and previous_count - raw_count > 1
+            ):
+                corrected_count = previous_count - 1
+                logger.warning(
+                    'Climb penta pass OCR decreased by more than one after '
+                    f'previous count {previous_count}: raw={raw_count}, '
+                    f'corrected={corrected_count}'
+                )
+                return corrected_count
+            if (
+                self.penta_pass_consumption_pending
+                and previous_count > 0
+                and raw_count < previous_count
+            ):
+                logger.info(
+                    'Climb penta pass count decreased: '
+                    f'{previous_count} -> {raw_count}'
+                )
+            return raw_count
+
+        if previous_count < 0:
+            logger.info(
+                'Climb penta pass count is 0 on entry; penta pass exhausted'
+            )
+            return 0
+        if not self.penta_pass_consumption_pending:
+            logger.info(
+                'Climb penta pass OCR returned 0 without a completed '
+                'penta battle; treat as exhausted'
+            )
+            return 0
+        if previous_count <= 1:
+            logger.info(
+                f'Climb previous penta pass count was {previous_count}, '
+                'current count is 0; penta pass exhausted'
+            )
+            return 0
+
+        corrected_count = previous_count - 1
+        logger.warning(
+            'Climb penta pass OCR returned 0 after previous count '
+            f'{previous_count}; correct current count to {corrected_count}'
+        )
+        return corrected_count
 
     def _enter_climb_battle(self, action_type: str) -> bool:
         click_times = 0

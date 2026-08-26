@@ -29,6 +29,9 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
         super().__init__(config, device)
         self.action_count = {name: 0 for name in BATTLE_TYPES}
         self.pre_resource_count = {name: -1 for name in BATTLE_TYPES}
+        self.pre_penta_pass_count = -1
+        self.penta_pass_active = False
+        self.penta_pass_consumption_pending = False
         self.switched_soul = {name: False for name in BATTLE_TYPES}
         self.current_action_type = ''
         self.activity_time_reached = False
