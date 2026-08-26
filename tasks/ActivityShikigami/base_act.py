@@ -28,10 +28,14 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
     def __init__(self, config, device):
         super().__init__(config, device)
         self.action_count = {name: 0 for name in BATTLE_TYPES}
-        self.pre_resource_count = {name: -1 for name in BATTLE_TYPES}
-        self.pre_penta_pass_count = -1
+        climb_consumables = ('pass', 'ap', 'boss', 'ap100', 'penta_pass')
+        self.climb_consumable_count = {
+            name: -1 for name in climb_consumables
+        }
+        self.climb_pending_consumption = {
+            name: 0 for name in climb_consumables
+        }
         self.penta_pass_active = False
-        self.penta_pass_consumption_pending = False
         self.switched_soul = {name: False for name in BATTLE_TYPES}
         self.current_action_type = ''
         self.activity_time_reached = False
