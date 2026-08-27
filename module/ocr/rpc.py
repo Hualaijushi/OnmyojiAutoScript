@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 _OCR_SERVER_PROCESS: Optional[multiprocessing.Process] = None
 _OCR_CLIENT_CACHE: dict[str, "ModelProxy"] = {}
 _OCR_LOGGING_ENABLED = False
+_OCR_MODEL_SIZE = "medium"
 
 _BUNDLED_MODEL_DIRS = (
     "PP-OCRv6_medium_det_onnx",
@@ -39,6 +40,7 @@ _BUNDLED_MODEL_FILES = (
     "inference.yml",
 )
 _OCR_STARTUP_TIMEOUT_SECONDS = 90.0
+_OCR_REQUEST_TIMEOUT_SECONDS = 10.0
 
 
 def _configure_bundled_paddlex_cache() -> Path | None:
@@ -176,9 +178,19 @@ class OcrRuntime:
             "loaded_worker_count": loaded_worker_count,
         }
 
-    def ocr_single_line(self, image_bytes: bytes, save_log: bool = False):
+    def ocr_single_line(
+        self,
+        image_bytes: bytes,
+        save_log: bool = False,
+        model_size: str = "medium",
+    ):
         image = self._decode_image(image_bytes)
-        return self._run_request(self._ocr_single_line, image, save_log=bool(save_log))
+        return self._run_request(
+            self._ocr_single_line,
+            image,
+            save_log=bool(save_log),
+            model_size=_normalize_model_size(model_size),
+        )
 
     def detect_and_ocr(
         self,
@@ -188,6 +200,7 @@ class OcrRuntime:
         box_thresh: Optional[float] = None,
         vertical: bool = False,
         save_log: bool = False,
+        model_size: str = "medium",
     ) -> List[Dict[str, Any]]:
         image = self._decode_image(image_bytes)
         return self._run_request(
@@ -198,6 +211,7 @@ class OcrRuntime:
             box_thresh=box_thresh,
             vertical=vertical,
             save_log=bool(save_log),
+            model_size=_normalize_model_size(model_size),
         )
 
     def shutdown(self) -> bool:
@@ -242,24 +256,34 @@ class OcrRuntime:
             return np.rot90(image)
         return image
 
-    def _get_model(self) -> "TextSystem":
-        model = getattr(self._thread_local, "model", None)
+    def _get_model(self, model_size: str = "medium") -> "TextSystem":
+        model_size = _normalize_model_size(model_size)
+        models = getattr(self._thread_local, "models", None)
+        if models is None:
+            models = {}
+            self._thread_local.models = models
+        model = models.get(model_size)
         if model is None:
             # PaddleOCR is imported only inside the OCR worker process. Script
             # clients keep using the lightweight RPC proxy without importing
             # the full inference framework into every account process.
             from module.ocr.ppocr import TextSystem
 
-            model = TextSystem()
-            self._thread_local.model = model
+            model = TextSystem(model_size=model_size)
+            models[model_size] = model
             worker_name = threading.current_thread().name
             with self._lock:
-                self._loaded_workers.add(worker_name)
-            logger.info(f"OCR worker model loaded: {worker_name}")
+                self._loaded_workers.add(f"{worker_name}:{model_size}")
+            logger.info(f"OCR worker model loaded: {worker_name}, size={model_size}")
         return model
 
-    def _ocr_single_line(self, image: np.ndarray, save_log: bool = False):
-        model = self._get_model()
+    def _ocr_single_line(
+        self,
+        image: np.ndarray,
+        save_log: bool = False,
+        model_size: str = "medium",
+    ):
+        model = self._get_model(model_size)
         OcrLogger.set_enabled(save_log)
         try:
             result, score = model.ocr_single_line(image)
@@ -275,8 +299,9 @@ class OcrRuntime:
         box_thresh: Optional[float] = None,
         vertical: bool = False,
         save_log: bool = False,
+        model_size: str = "medium",
     ) -> List[Dict[str, Any]]:
-        model = self._get_model()
+        model = self._get_model(model_size)
         OcrLogger.set_enabled(save_log)
         try:
             if vertical:
@@ -450,7 +475,8 @@ class ModelProxy:
     def __init__(self, address: str) -> None:
         self.address = _normalize_address(address)
         self.save_log = _OCR_LOGGING_ENABLED
-        self.client = zerorpc.Client(timeout=10)
+        self.model_size = _OCR_MODEL_SIZE
+        self.client = zerorpc.Client(timeout=_ocr_request_timeout(self.model_size))
         try:
             self.client.connect(self.address)
             self.client.ping()
@@ -465,7 +491,7 @@ class ModelProxy:
 
     def ocr_single_line(self, image: np.ndarray):
         payload = pickle.dumps(image, protocol=4)
-        return self.client.ocr_single_line(payload, self.save_log)
+        return self.client.ocr_single_line(payload, self.save_log, self.model_size)
 
     def detect_and_ocr(
         self,
@@ -477,7 +503,13 @@ class ModelProxy:
     ):
         payload = pickle.dumps(image, protocol=4)
         results = self.client.detect_and_ocr(
-            payload, drop_score, unclip_ratio, box_thresh, vertical, self.save_log
+            payload,
+            drop_score,
+            unclip_ratio,
+            box_thresh,
+            vertical,
+            self.save_log,
+            self.model_size,
         )
         return [
             BoxedResult(np.array(item["box"]), None, item["ocr_text"], item["score"])
@@ -500,6 +532,29 @@ def set_ocr_logging_enabled(enabled: bool) -> None:
     _OCR_LOGGING_ENABLED = bool(enabled)
     for client in _OCR_CLIENT_CACHE.values():
         client.save_log = _OCR_LOGGING_ENABLED
+
+
+def _normalize_model_size(model_size: str) -> str:
+    normalized = str(model_size).strip().lower()
+    if normalized not in ("medium", "small"):
+        raise ValueError(f"Unsupported OCR model size: {model_size}")
+    return normalized
+
+
+def _ocr_request_timeout(model_size: str) -> float:
+    # 小模型第一次使用时可能需要下载并初始化，给低配设备留出启动时间。
+    if _normalize_model_size(model_size) == "small":
+        return _OCR_STARTUP_TIMEOUT_SECONDS
+    return _OCR_REQUEST_TIMEOUT_SECONDS
+
+
+def set_ocr_model_size(model_size: str) -> None:
+    """设置当前脚本进程后续 OCR 请求使用的模型规格。"""
+    global _OCR_MODEL_SIZE
+    _OCR_MODEL_SIZE = _normalize_model_size(model_size)
+    for client in _OCR_CLIENT_CACHE.values():
+        client.model_size = _OCR_MODEL_SIZE
+        client.client._timeout = _ocr_request_timeout(_OCR_MODEL_SIZE)
 
 
 atexit.register(shutdown_ocr_server)

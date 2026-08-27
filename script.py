@@ -29,8 +29,12 @@ from module.base.decorator import del_cached_property
 from module.logger import logger
 from module.exception import *
 from module.server.i18n import I18n
-from module.image.rpc import ensure_image_server_ready
-from module.ocr.rpc import ensure_ocr_server_ready, set_ocr_logging_enabled
+from module.image.rpc import ensure_image_server_ready, set_image_low_spec_mode
+from module.ocr.rpc import (
+    ensure_ocr_server_ready,
+    set_ocr_logging_enabled,
+    set_ocr_model_size,
+)
 from module.script import ScriptRuntimeController, ScriptRuntimeDecision
 from tasks.Restart.server_update import delay_pending_tasks_for_server_update, is_server_update_window
 from module.server.log_service import build_error_log_dir_name
@@ -55,6 +59,16 @@ class Script:
         self.last_task_runtime_outcome: dict[str, Any] | None = None
         # 运行loop的线程
         self.loop_thread: Thread = None
+        # 低配模式属于进程级运行参数，只在脚本进程创建时读取一次。
+        # OASX 中途修改配置不会影响正在运行的脚本。
+        self.low_spec_mode = bool(self.config.script.device.low_spec_mode)
+        set_image_low_spec_mode(self.low_spec_mode)
+        set_ocr_model_size('small' if self.low_spec_mode else 'medium')
+        if self.low_spec_mode:
+            logger.info(
+                'Low spec mode enabled: frame cache=10s, '
+                'OCR model=small, image threshold offset=-0.1'
+            )
 
     @cached_property
     def config(self) -> "Config":
