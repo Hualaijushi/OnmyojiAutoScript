@@ -59,6 +59,11 @@ class GeneralConfig(ConfigBase):
         title='Activity Random Sleep',
         description='activity_random_sleep_help',
     )
+    use_penta_pass: bool = Field(
+        default=False,
+        title='Use Penta Pass',
+        description='use_penta_pass_help',
+    )
 
     @property
     def limit_time_v(self) -> timedelta:

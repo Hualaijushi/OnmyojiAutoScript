@@ -427,6 +427,8 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 	<message><source>active_souls_clean_help</source><translation>式神活动全部结束后接续执行御魂清理</translation></message>
 	<message><source>Activity Random Sleep</source><translation>执行前随机休眠</translation></message>
 	<message><source>activity_random_sleep_help</source><translation>在下一次投骰、爬塔战斗或伪神行动开始前随机休眠；插入位置与任务时间检查一致</translation></message>
+	<message><source>Use Penta Pass</source><translation>使用五倍卷</translation></message>
+	<message><source>use_penta_pass_help</source><translation>开启后爬塔自动使用五倍卷；识别到五倍卷数量为0时自动关闭五倍模式</translation></message>
 	<message><source>Activity Limit Time</source><translation>任务执行时间</translation></message>
 	<message><source>activity_limit_time_help</source><translation>到达时间后不打断当前流程，仅停止下一次投骰、爬塔战斗或伪神行动</translation></message>
 	<message><source>Ap Limit</source><translation>体力战斗次数</translation></message>
@@ -530,6 +532,10 @@ mode_3策略是刷到五个契灵后开始结契，选择高级、中级盘来�
 	<message><source>Guild Assets Enable</source><translation>顺路收取寮资金</translation></message>
 	<message><source>Box Ap Enable</source><translation>顺路收取体力盒子</translation></message>
 	<message><source>Box Exp Enable</source><translation>顺路收取经验盒子</translation></message>
+	<message><source>Lazy Mode</source><translation>怠惰模式</translation></message>
+	<message><source>lazy_mode_help</source><translation>开启后每次任务按权重随机进入怠惰模式；命中时不比较奖励数值，优先选择当前可见的五星及以上目标卡，否则选择首个符合策略的四星卡。</translation></message>
+	<message><source>Lazy Mode Weight</source><translation>怠惰模式权重</translation></message>
+	<message><source>lazy_mode_weight_help</source><translation>取值范围0-1，默认1；0表示永不触发，1表示每次触发。</translation></message>
 	<message><source>utilize_rule_help</source><translation>挑选结界卡的规则，使用默认default即可，具体规则看文档[任务列表]，不可以选auto,已经弃置了。</translation></message>
 	<message><source>auto_switch_sort_help</source><translation>会自动寻找最优的坑位</translation></message>
 	<message><source>shikigami_class_help</source><translation>选择的式神类别（寄养默认选择N卡，且不建议选别的）</translation></message>

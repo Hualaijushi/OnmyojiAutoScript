@@ -9,7 +9,7 @@ from tasks.ActivityShikigami.base_act import ActivityResourceNotEnough
 import tasks.ActivityShikigami.page as pages
 
 
-RICHMAN_ENTRY_SETTLE_SECONDS = 3.0
+RICHMAN_ENTRY_SETTLE_SECONDS = 1.0
 
 
 class RichManAct:

@@ -49,6 +49,7 @@ class NormalClimbAct:
             self.screenshot()
             current_page = self.get_current_page()
             if current_page == destination:
+                self._sync_climb_penta_pass()
                 if not self.prepare_next_action(action_type):
                     return
                 try:
@@ -84,6 +85,7 @@ class NormalClimbAct:
         if not entered:
             raise ActivityResourceNotEnough
 
+        self._record_climb_consumption(action_type)
         self.record_action(action_type)
         self.run_general_battle(
             self.battle_config(action_type),
@@ -92,6 +94,131 @@ class NormalClimbAct:
 
     def _climb_fire_rule(self, action_type: str):
         return self.I_AS_BOSS_FIRE if action_type == 'boss' else self.I_ACT_FIRE
+
+    def _record_climb_consumption(self, action_type: str) -> None:
+        """成功进入战斗时保存本场不可变的资源消耗快照。"""
+        penta_enabled = (
+            self.penta_pass_active
+            and self.climb_consumable_count['penta_pass'] > 0
+        )
+        resource_consumption = 5 if penta_enabled else 1
+        penta_consumption = 1 if penta_enabled else 0
+        self.climb_pending_consumption[action_type] = resource_consumption
+        self.climb_pending_consumption['penta_pass'] = penta_consumption
+        logger.info(
+            'Record climb consumption snapshot: '
+            f'resource={action_type}:{resource_consumption}, '
+            f'penta_pass={penta_consumption}'
+        )
+
+    def _sync_climb_penta_pass(self) -> None:
+        """按通用配置及剩余数量同步五倍卷开关。"""
+        configured = self.conf.general_config.use_penta_pass
+        remain = None
+        desired_enabled = False
+        pending_consumption = self.climb_pending_consumption['penta_pass']
+        if configured or pending_consumption > 0:
+            raw_remain = self.O_REMAIN_PENTA_PASS.ocr_digit(
+                self.device.image
+            )
+            remain = self._update_climb_consumable_count(
+                'penta_pass', raw_remain
+            )
+            desired_enabled = configured and remain > 0
+            if not desired_enabled:
+                logger.info('Climb penta pass exhausted; disable penta mode')
+
+        enabled_rule = self.I_FIGHT_PENTA_USE
+        disabled_rule = self.I_FIGHT_PENTA_DISUSE
+        target_rule = enabled_rule if desired_enabled else disabled_rule
+        click_rule = disabled_rule if desired_enabled else enabled_rule
+
+        for attempt in range(1, 4):
+            self.screenshot()
+            if self.appear(target_rule):
+                self.penta_pass_active = desired_enabled
+                logger.debug(
+                    'Climb penta mode synchronized: '
+                    f'enabled={desired_enabled}, remain={remain}'
+                )
+                return
+            if not self.appear(click_rule):
+                self.penta_pass_active = self.appear(enabled_rule)
+                logger.warning(
+                    'Cannot identify climb penta toggle state; '
+                    f'enabled={desired_enabled}, remain={remain}'
+                )
+                return
+            self.click(click_rule, interval=0)
+            time.sleep(0.5)
+            logger.debug(
+                'Toggle climb penta mode: '
+                f'enabled={desired_enabled}, attempt={attempt}/3'
+            )
+
+        logger.warning(
+            'Failed to synchronize climb penta mode after 3 attempts: '
+            f'enabled={desired_enabled}, remain={remain}'
+        )
+        self.screenshot()
+        self.penta_pass_active = self.appear(enabled_rule)
+
+    @staticmethod
+    def _normalize_climb_consumable_count(
+            name: str,
+            raw_count: int,
+            previous_count: int,
+            expected_consumption: int,
+    ) -> int:
+        """根据上一场消耗快照修正任意爬塔资源的 OCR 异常下降。"""
+        if previous_count < 0:
+            if raw_count <= 0:
+                logger.info(
+                    f'Climb {name} count is 0 on entry; resource exhausted'
+                )
+            return max(raw_count, 0)
+
+        if expected_consumption <= 0:
+            return max(raw_count, 0)
+
+        expected_count = max(previous_count - expected_consumption, 0)
+        if raw_count < expected_count:
+            logger.warning(
+                f'Climb {name} OCR decreased beyond consumption snapshot: '
+                f'previous={previous_count}, raw={raw_count}, '
+                f'consumption={expected_consumption}, '
+                f'corrected={expected_count}'
+            )
+            return expected_count
+
+        if raw_count < previous_count:
+            logger.info(
+                f'Climb {name} count decreased: '
+                f'{previous_count} -> {raw_count}, '
+                f'expected_consumption={expected_consumption}'
+            )
+        return raw_count
+
+    def _update_climb_consumable_count(
+            self, name: str, raw_count: int
+    ) -> int:
+        """用公共修复器更新一种爬塔资源，并消费其待确认快照。"""
+        previous_count = self.climb_consumable_count[name]
+        expected_consumption = self.climb_pending_consumption[name]
+        remain = self._normalize_climb_consumable_count(
+            name=name,
+            raw_count=raw_count,
+            previous_count=previous_count,
+            expected_consumption=expected_consumption,
+        )
+        self.climb_consumable_count[name] = remain
+        self.climb_pending_consumption[name] = 0
+        logger.info(
+            f'Climb {name} remain: raw={raw_count}, normalized={remain}, '
+            f'previous={previous_count}, '
+            f'expected_consumption={expected_consumption}'
+        )
+        return remain
 
     def _enter_climb_battle(self, action_type: str) -> bool:
         click_times = 0
@@ -140,43 +267,7 @@ class NormalClimbAct:
         else:
             raw_remain = self.O_REMAIN_AP100.ocr_digit(self.device.image)
 
-        remain = self._normalize_climb_resource_count(action_type, raw_remain)
-        previous = self.pre_resource_count[action_type]
-        if previous >= 0 and remain < previous:
-            logger.info(
-                f'Climb {action_type} resource count decreased: '
-                f'{previous} -> {remain}'
-            )
-        if previous - remain > 1:
-            self.pre_resource_count[action_type] -= 1
-            return True
-        self.pre_resource_count[action_type] = remain
-        return remain > 0
-
-    def _normalize_climb_resource_count(
-            self, action_type: str, raw_count: int
-    ) -> int:
-        """依据上一次挑战前的数量，修正四种爬塔资源 OCR 的零值。"""
-        if raw_count > 0:
-            return raw_count
-
-        previous_count = self.pre_resource_count[action_type]
-        if previous_count < 0:
-            logger.info(
-                f'Climb {action_type} resource count is 0 on entry; '
-                'resource exhausted'
-            )
-            return 0
-        if previous_count <= 1:
-            logger.info(
-                f'Climb {action_type} previous resource count was '
-                f'{previous_count}, current count is 0; resource exhausted'
-            )
-            return 0
-
-        corrected_count = previous_count - 1
-        logger.warning(
-            f'Climb {action_type} resource OCR returned 0 after previous '
-            f'count {previous_count}; correct current count to {corrected_count}'
+        remain = self._update_climb_consumable_count(
+            action_type, raw_remain
         )
-        return corrected_count
+        return remain > 0
