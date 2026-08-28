@@ -8,6 +8,7 @@ from enum import Enum
 from cached_property import cached_property
 from datetime import timedelta, time
 from module.atom.image import RuleImage
+from module.base.utils.random import random_point_in_roi
 
 from module.base.timer import Timer
 from tasks.GameUi.assets import GameUiAssets
@@ -389,15 +390,7 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
         x, y, w, h = area
         w = max(1, int(w))
         h = max(1, int(h))
-        if w == 1:
-            click_x = x
-        else:
-            click_x = int(np.random.randint(x, x + w))
-        if h == 1:
-            click_y = y
-        else:
-            click_y = int(np.random.randint(y, y + h))
-        return click_x, click_y
+        return random_point_in_roi((x, y, w, h))
 
     def _wait_selected_appear(self, pre_cnt: int, timeout: float = 2) -> bool:
         """

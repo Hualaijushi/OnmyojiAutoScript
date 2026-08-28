@@ -7,6 +7,7 @@ import cv2
 
 from module.ocr.base_ocr import BaseCor, OcrMode, OcrMethod, OcrMethodType
 from module.ocr.sub_ocr import Full, Single, Digit, DigitCounter, Duration, Quantity
+from module.base.utils.random import random_point_in_roi
 from module.logger import logger
 
 
@@ -85,10 +86,7 @@ class RuleOcr(Digit, DigitCounter, Duration, Single, Full, Quantity):
         else:
             area = self.roi
 
-        x, y, w, h = self.area
-        x = np.random.randint(x, x + w)
-        y = np.random.randint(y, y + h)
-        return x, y
+        return random_point_in_roi(self.area)
 
 
 if __name__ == "__main__":
