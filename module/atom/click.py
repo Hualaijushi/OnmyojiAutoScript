@@ -1,9 +1,8 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-import numpy as np
-
 from module.base.decorator import cached_property
+from module.base.utils.random import random_point_in_roi
 from module.logger import logger
 
 
@@ -27,20 +26,14 @@ class RuleClick:
         获取坐标, 从roi_front随机获取坐标
         :return:
         """
-        x, y, w, h = self.roi_front
-        x = np.random.randint(x, x + w)
-        y = np.random.randint(y, y + h)
-        return x, y
+        return random_point_in_roi(self.roi_front)
 
     def coord_more(self) -> tuple:
         """
         从roi_back随机获取坐标
         :return:
         """
-        x, y, w, h = self.roi_back
-        x = np.random.randint(x, x + w)
-        y = np.random.randint(y, y + h)
-        return x, y
+        return random_point_in_roi(self.roi_back)
 
     @property
     def center(self) -> tuple:
