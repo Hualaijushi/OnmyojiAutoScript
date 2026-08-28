@@ -15,6 +15,7 @@ from module.atom.long_click import RuleLongClick
 from module.atom.ocr import RuleOcr
 from module.atom.swipe import RuleSwipe
 from module.base.timer import Timer
+from module.base.utils.random import random_delay
 from module.config.config import Config
 from module.device.device import Device
 from module.exception import ScriptError
@@ -231,7 +232,8 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                           action: Union[RuleClick, RuleLongClick] = None,
                           interval: float = None,
                           threshold: float = None,
-                          duration: float = None):
+                          duration: float = None,
+                          confirm_delay: tuple[float, float] = None):
         """
         出现了就点击，默认点击图片的位置，如果添加了click参数，就点击click的位置
         :param duration: 如果是长按，可以手动指定duration，不指定默认.单位是ms！！！！
@@ -239,8 +241,46 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         :param target: 可以是RuleImage后续支持RuleOcr
         :param interval:
         :param threshold:
+        :param confirm_delay: 识别成功后等待指定随机范围，并在新截图中再次确认后点击
         :return: True or False
         """
+        if confirm_delay is not None:
+            timer_key = target.name
+            if interval:
+                if timer_key in self.interval_timer:
+                    if self.interval_timer[timer_key].limit != interval:
+                        self.interval_timer[timer_key] = Timer(interval)
+                else:
+                    self.interval_timer[timer_key] = Timer(interval)
+                if not self.interval_timer[timer_key].reached():
+                    return False
+
+            if not self.appear(target, threshold=threshold):
+                return False
+
+            delay = random_delay(*confirm_delay)
+            sleep(delay)
+            self.screenshot()
+            if not self.appear(target, threshold=threshold):
+                return False
+
+            if not action:
+                x, y = target.coord()
+                self.device.click(x, y, control_name=target.name)
+            else:
+                x, y = action.coord()
+                if isinstance(action, RuleLongClick):
+                    if duration is None:
+                        self.device.long_click(x, y, duration=action.duration / 1000, control_name=target.name)
+                    else:
+                        self.device.long_click(x, y, duration=duration / 1000, control_name=target.name)
+                elif isinstance(action, RuleClick):
+                    self.device.click(x, y, control_name=target.name)
+
+            if interval:
+                self.interval_timer[timer_key].reset()
+            return True
+
         appear = self.appear(target, interval=interval, threshold=threshold)
         if appear and not action:
             x, y = target.coord()
