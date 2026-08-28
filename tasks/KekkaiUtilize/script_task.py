@@ -47,6 +47,12 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         CardClass.FISH5: ('斗鱼', 5, 134),
         CardClass.FISH6: ('斗鱼', 6, 151),
     }
+    # 当前策略的全局最高收益。普通浏览一旦实际 OCR 到对应数值，
+    # 当前卡已经是最终目标，不再继续向下翻页。
+    STRATEGY_MAX_REWARDS = {
+        '太鼓': 76,
+        '斗鱼': 151,
+    }
 
     def run(self):
         con = self.config.kekkai_utilize.utilize_config
@@ -659,7 +665,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         self.utilize_current_group_scan_completed = False
         try:
             logger.hr('浏览列表并保留最优结界卡', 2)
-            self._current_select_best()
+            reached_strategy_maximum = self._current_select_best()
+            if reached_strategy_maximum:
+                logger.info('🏁 已命中当前策略最高收益，停止下划并直接进入结界')
             logger.info(
                 f'📝 第一阶段浏览完成 | '
                 f'斗鱼:{self.ap_max_num} 太鼓:{self.jade_max_num}'
@@ -688,7 +696,27 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         finally:
             self.ap_max_num, self.jade_max_num = 0, 0
 
-    def _current_select_best(self):
+    def _is_strategy_maximum_reward(
+        self,
+        card_type: str,
+        card_value: int,
+    ) -> bool:
+        """判断当前卡是否已经达到所选策略的全局最高收益。"""
+        maximum = self.STRATEGY_MAX_REWARDS.get(card_type)
+        if maximum is None or card_value < maximum:
+            return False
+
+        rule = self.config.kekkai_utilize.utilize_config.utilize_rule
+        if rule == UtilizeRule.TAIKO:
+            return card_type == '太鼓'
+        if rule == UtilizeRule.FISH:
+            return card_type == '斗鱼'
+        if rule == UtilizeRule.DEFAULT:
+            return card_type in ('太鼓', '斗鱼')
+        logger.error('Unknown utilize rule')
+        raise ValueError('Unknown utilize rule')
+
+    def _current_select_best(self) -> bool:
         """浏览好友列表、记录奖励，并保留当前选中的最佳结界卡。"""
         # ============== 配置常量 ==============#
         RESOURCE_CONFIG = {
@@ -714,7 +742,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             # 超时检测
             if timer.reached():
                 logger.warning('⏰ 操作超时，终止流程')
-                return None
+                return False
 
             # ------ 步骤1: 截图识别结界卡 ------#
             self.screenshot()
@@ -731,7 +759,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                         f'⚠️ 连续{miss_count}次未检测到目标结界卡，终止当前分组扫描'
                     )
                     self.utilize_current_group_scan_completed = True
-                    return None
+                    return False
                 # 执行滑动操作
                 self.perform_swipe_action()
                 continue
@@ -814,10 +842,17 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                     logger.info(f'📈 更新记录: {card_type} | {current_record} → {card_value}')
                     setattr(self, record_attr, card_value)
 
+                if self._is_strategy_maximum_reward(card_type, card_value):
+                    logger.info(
+                        f'✅ 当前策略最高收益已确认: '
+                        f'{card_type}@{card_value}，保留当前选项并停止浏览'
+                    )
+                    return True
+
             if self.appear(self.I_U_EMPTY_CARD):
                 logger.info('Empty card already appeared, exit explore')
                 self.utilize_current_group_scan_completed = True
-                return None
+                return False
             # ------ 步骤3: 滑动到下一屏 ------#
             self.perform_swipe_action()
 
@@ -826,7 +861,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         logger.info(
             f'已按最大滑动次数{MAX_SWIPES}完成当前分组的有界全量扫描'
         )
-        return None
+        return False
 
     def perform_swipe_action(self):
         """统一滑动操作"""
