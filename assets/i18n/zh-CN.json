@@ -322,5 +322,17 @@
   "strict_platform_order_help": "开启后检查前ios_count个为iOS，后续账号为安卓",
   "account_list": "账号列表",
   "related_account": "关联账号",
-  "related_account_help": "同一固定队伍中，oas3、oas4、oas5三个实例对应账号的完整对照关系"
+  "related_account_help": "同一固定队伍中，oas3、oas4、oas5三个实例对应账号的完整对照关系",
+  "anti_ban": "防风控作息",
+  "antiban_enable_help": "开启后启用作息约束（睡眠时间窗、累计活跃上限、强制休息），用于避免24小时不间断或深夜连续运行这类服务端可见的异常行为特征。",
+  "sleep_start": "睡眠开始时间",
+  "sleep_start_help": "进入睡眠时间窗的时刻。支持跨午夜，例如23:00到次日06:00。",
+  "sleep_end": "睡眠结束时间",
+  "sleep_end_help": "退出睡眠时间窗并恢复运行的时刻。",
+  "daily_active_limit": "累计活跃上限",
+  "daily_active_limit_help": "累计活跃时长达到此值后强制休息。设为0表示不限制。格式：天 时:分:秒。",
+  "long_rest_duration": "强制休息时长",
+  "long_rest_duration_help": "触发累计活跃上限后的强制休息时长。格式：天 时:分:秒。",
+  "min_run_interval": "最小再运行间隔",
+  "min_run_interval_help": "两次蹭卡运行之间的最小间隔。设为0保持原逻辑。格式：天 时:分:秒。"
 }

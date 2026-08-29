@@ -305,6 +305,58 @@ class Script:
             if self.config.should_reload():
                 return False
 
+    @staticmethod
+    def _in_sleep_window(t, start, end) -> bool:
+        if start == end:
+            return False
+        if start < end:
+            return start <= t < end
+        return t >= start or t < end
+
+    @staticmethod
+    def _next_time_point(now: datetime, end) -> datetime:
+        candidate = now.replace(
+            hour=end.hour,
+            minute=end.minute,
+            second=end.second,
+            microsecond=0,
+        )
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
+    def _antiban_wake_time(self, now: datetime):
+        anti_ban = self.config.script.anti_ban
+        if not anti_ban.enable:
+            return None
+
+        wake_time = None
+        if self._in_sleep_window(
+            now.time(),
+            anti_ban.sleep_start,
+            anti_ban.sleep_end,
+        ):
+            wake_time = self._next_time_point(now, anti_ban.sleep_end)
+
+        active_limit = anti_ban.daily_active_limit.total_seconds()
+        if active_limit > 0:
+            if getattr(self, '_active_date', None) != now.date():
+                self._active_date = now.date()
+                self._active_seconds_today = 0
+
+            rest_until = getattr(self, '_rest_until', None)
+            if rest_until and now < rest_until:
+                wake_time = max(wake_time, rest_until) if wake_time else rest_until
+            elif getattr(self, '_active_seconds_today', 0) >= active_limit:
+                self._rest_until = now + anti_ban.long_rest_duration
+                self._active_seconds_today = 0
+                wake_time = (
+                    max(wake_time, self._rest_until)
+                    if wake_time
+                    else self._rest_until
+                )
+        return wake_time
+
     def get_next_task(self) -> str:
         """
         获取下一个任务的名字, 大驼峰。
@@ -316,6 +368,9 @@ class Script:
             if self.state_queue:
                 self.state_queue.put({"schedule": self.config.get_schedule_data()})
             now = datetime.now()
+            anti_ban_wake = self._antiban_wake_time(now)
+            if anti_ban_wake is not None:
+                task.next_run = max(task.next_run, anti_ban_wake)
             # 任务时间到了返回任务名称
             if task.next_run <= now:
                 return task.command
@@ -415,6 +470,9 @@ class Script:
         start_day = date.today()
         logger.info(f'Start scheduler loop: {self.config_name}')
         self.config.model.running_task = ''
+        self._active_seconds_today = 0
+        self._active_date = date.today()
+        self._rest_until = None
 
         # Update GUI 防呆, 读取设置并立刻显示后台模拟器到前台
         if not self.config.script.device.run_background_only and IS_WINDOWS:
@@ -464,10 +522,17 @@ class Script:
             self.device.click_record_clear()
             logger.hr(task, level=0)
             self.config.model.running_task = task
+            task_started_at = datetime.now()
             success = self.run(inflection.camelize(task))
             self.config.model.running_task = ''
             logger.info(f'Scheduler: End task `{task}`')
             self.is_first_task = False
+            if self._active_date != date.today():
+                self._active_date = date.today()
+                self._active_seconds_today = 0
+            self._active_seconds_today += (
+                datetime.now() - task_started_at
+            ).total_seconds()
 
             # Check failures
             # failed = deep_get(self.failure_record, keys=task, default=0)

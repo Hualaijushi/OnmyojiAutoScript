@@ -1,13 +1,13 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-import numpy as np
 import random
 
 from math import dist
 
 from module.base.decorator import cached_property
 from module.atom.cBezier import BezierTrajectory
+from module.base.utils.random import random_center_point_in_roi
 from module.logger import logger
 
 
@@ -51,13 +51,9 @@ class RuleSwipe:
         获取坐标, 从roi_front随机获取坐标 和从roi_back随机获取的坐标
         :return: 两个坐标的tuple
         """
-        x, y, w, h = self.roi_front
-        x = np.random.randint(x, x + w)
-        y = np.random.randint(y, y + h)
-        x2, y2, w2, h2 = self.roi_back
-        x2 = np.random.randint(x2, x2 + w2)
-        y2 = np.random.randint(y2, y2 + h2)
-        return x, y, x2, y2
+        start_x, start_y = random_center_point_in_roi(self.roi_front)
+        end_x, end_y = random_center_point_in_roi(self.roi_back)
+        return start_x, start_y, end_x, end_y
 
     def trace(self) -> list:
         """
@@ -109,7 +105,6 @@ class RuleSwipe:
 
         else:
             raise ValueError(f'Invalid mode: {self.mode}')
-
 
 
 

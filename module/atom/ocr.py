@@ -86,7 +86,7 @@ class RuleOcr(Digit, DigitCounter, Duration, Single, Full, Quantity):
         else:
             area = self.roi
 
-        return random_point_in_roi(self.area)
+        return random_point_in_roi(area)
 
 
 if __name__ == "__main__":
