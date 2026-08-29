@@ -73,6 +73,8 @@ class Device(BaseModel):
     emulator_window_minimize: bool = Field(default=False, description='模拟器静默启动并最小化')
     # 启动时纯后台运行模拟器，不显示窗口和任务栏
     run_background_only: bool = Field(default=False, description='模拟器无UI后台运行，关掉后重启脚本会重新显示（无需重启OAS）')
+    # 低配置设备使用更宽松、更轻量的识别参数；只在脚本进程启动时读取
+    low_spec_mode: bool = Field(default=False, description='low_spec_mode_help')
 
 
 if __name__ == '__main__':

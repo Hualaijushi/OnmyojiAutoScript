@@ -13,7 +13,8 @@
       "emulatorinfo_name": "",
       "emulatorinfo_path": "",
       "emulator_window_minimize": false,
-      "run_background_only": false
+      "run_background_only": false,
+      "low_spec_mode": false
     },
     "error": {
       "handle_error": true,

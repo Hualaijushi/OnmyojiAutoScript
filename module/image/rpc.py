@@ -21,6 +21,37 @@ _IMAGE_SERVER_CONTEXT = multiprocessing.get_context("spawn")
 _IMAGE_SERVER_PROCESS: Optional[multiprocessing.Process] = None
 # 按地址缓存 RPC 客户端，避免同一入口反复建立 zerorpc 连接。
 _IMAGE_CLIENT_CACHE: dict[str, "ImageClient"] = {}
+# 脚本进程级识别参数。由 Script 启动时设置，运行中不随配置热更新。
+_IMAGE_FRAME_CACHE_EXPIRE_SECONDS: float | None = None
+_IMAGE_THRESHOLD_OFFSET = 0.0
+
+
+def set_image_low_spec_mode(enabled: bool) -> None:
+    """设置当前脚本进程的低配图像识别参数。"""
+    global _IMAGE_FRAME_CACHE_EXPIRE_SECONDS, _IMAGE_THRESHOLD_OFFSET
+    if enabled:
+        _IMAGE_FRAME_CACHE_EXPIRE_SECONDS = 10.0
+        _IMAGE_THRESHOLD_OFFSET = 0.1
+    else:
+        _IMAGE_FRAME_CACHE_EXPIRE_SECONDS = None
+        _IMAGE_THRESHOLD_OFFSET = 0.0
+
+
+def _adjust_threshold(threshold: float | None) -> float | None:
+    if threshold is None:
+        return None
+    return max(0.0, min(1.0, float(threshold) - _IMAGE_THRESHOLD_OFFSET))
+
+
+def _adjust_rule_threshold(rule_data: dict[str, Any]) -> dict[str, Any]:
+    adjusted = dict(rule_data)
+    if "threshold" in adjusted:
+        adjusted["threshold"] = _adjust_threshold(adjusted["threshold"])
+    return adjusted
+
+
+def _adjust_rules_threshold(rules_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_adjust_rule_threshold(rule_data) for rule_data in rules_data]
 
 
 def _normalize_address(address: str) -> str:
@@ -251,7 +282,11 @@ class ImageClient:
             config_name: 当前脚本配置名；服务端用它删除同配置旧截图帧。
         """
         payload = pickle.dumps(image, protocol=4)
-        return self.client.register_frame(payload, config_name)
+        return self.client.register_frame(
+            payload,
+            config_name,
+            _IMAGE_FRAME_CACHE_EXPIRE_SECONDS,
+        )
 
     def get_frame_info(self, frame_id: str) -> dict[str, Any]:
         """
@@ -301,7 +336,12 @@ class ImageClient:
             threshold: 可选的临时阈值覆盖值；为空时沿用规则自身阈值。
         """
         payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_rule(rule_data, frame_id, payload, threshold)
+        return self.client.match_rule(
+            _adjust_rule_threshold(rule_data),
+            frame_id,
+            payload,
+            _adjust_threshold(threshold),
+        )
 
     def match_rule_with_brightness_window(
         self,
@@ -316,7 +356,12 @@ class ImageClient:
         该接口仅适用于普通模板匹配，会在命中后额外校验源区域和模板区域的平均亮度范围。
         """
         payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_rule_with_brightness_window(rule_data, frame_id, payload, threshold)
+        return self.client.match_rule_with_brightness_window(
+            _adjust_rule_threshold(rule_data),
+            frame_id,
+            payload,
+            _adjust_threshold(threshold),
+        )
 
     def match_many(
         self,
@@ -331,7 +376,12 @@ class ImageClient:
         适用于 `RuleGif`、`ImageGrid` 这类需要在同帧内判断多个候选模板的场景。
         """
         payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_many(rules_data, frame_id, payload, threshold)
+        return self.client.match_many(
+            _adjust_rules_threshold(rules_data),
+            frame_id,
+            payload,
+            _adjust_threshold(threshold),
+        )
 
     def match_all(
         self,
@@ -348,7 +398,13 @@ class ImageClient:
             roi: 可选的搜索区域覆盖值；提供后由服务端在该区域内枚举所有命中。
         """
         payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_all(rule_data, frame_id, payload, threshold, roi)
+        return self.client.match_all(
+            _adjust_rule_threshold(rule_data),
+            frame_id,
+            payload,
+            _adjust_threshold(threshold),
+            roi,
+        )
 
     def match_all_any(
         self,
@@ -366,7 +422,14 @@ class ImageClient:
             nms_threshold: NMS 去重阈值，用于移除高度重叠的冗余框。
         """
         payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_all_any(rule_data, frame_id, payload, threshold, roi, nms_threshold)
+        return self.client.match_all_any(
+            _adjust_rule_threshold(rule_data),
+            frame_id,
+            payload,
+            _adjust_threshold(threshold),
+            roi,
+            nms_threshold,
+        )
 
     def match_all_any_many(
         self,
@@ -382,7 +445,13 @@ class ImageClient:
         该接口适合一次性拿到多组模板的非冗余命中列表。
         """
         payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_all_any_many(rules_data, frame_id, payload, threshold, nms_threshold)
+        return self.client.match_all_any_many(
+            _adjust_rules_threshold(rules_data),
+            frame_id,
+            payload,
+            _adjust_threshold(threshold),
+            nms_threshold,
+        )
 
     def match_dynamic_template(
         self,
@@ -406,7 +475,14 @@ class ImageClient:
         """
         template_payload = pickle.dumps(template, protocol=4)
         image_payload = self._encode_image_payload(image=image, frame_id=frame_id)
-        return self.client.match_dynamic_template(template_payload, frame_id, image_payload, roi_back, threshold, name)
+        return self.client.match_dynamic_template(
+            template_payload,
+            frame_id,
+            image_payload,
+            roi_back,
+            _adjust_threshold(threshold),
+            name,
+        )
 
 
 def get_image_client(address: str | None = None, refresh: bool = False) -> ImageClient:
