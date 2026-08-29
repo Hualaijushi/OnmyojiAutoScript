@@ -153,10 +153,10 @@ class HuntRotationAdapter:
             self.owner.screenshot()
             if self._battle_finished():
                 return self._return_to_activity(mode, exit_page, error_type=error_type)
-            if self.owner.appear_then_click(GeneralBattleAssets.I_EXIT_ENSURE, interval=0.5):
+            if self.owner.appear_then_click(GeneralBattleAssets.I_EXIT_ENSURE, interval=3.0):
                 clicked = True
                 continue
-            if self.owner.appear_then_click(GeneralBattleAssets.I_EXIT, interval=0.5):
+            if self.owner.appear_then_click(GeneralBattleAssets.I_EXIT, interval=3.0):
                 clicked = True
                 continue
             if clicked and not self._is_real_battle():
@@ -166,18 +166,31 @@ class HuntRotationAdapter:
 
     def _return_to_activity(self, mode, activity_page, error_type=TimeoutError) -> bool:
         """退出结算页并确认回到对应活动页。"""
-        try:
-            current = self.owner.get_current_page(skip_first_screenshot=True, fallback=True)
-            if current in (activity_page, page_main, page_town):
+        safe_pages = (activity_page, page_main, page_town)
+
+        def confirm_safe_page() -> bool:
+            """导航可能已经部分成功，重新确认是否到达安全页面。"""
+            try:
+                current = self.owner.get_current_page(skip_first_screenshot=True, fallback=True)
+            except Exception as exc:
+                logger.warning("账号轮换%s退出后页面识别失败: %s", mode, exc)
+                return False
+            if current in safe_pages:
                 logger.info("账号轮换%s退出战斗成功，当前页面=%s", mode, current)
                 return True
-            if self.owner.goto_page(activity_page, timeout=5):
-                logger.info("账号轮换%s退出战斗成功", mode)
+            return False
+
+        if confirm_safe_page():
+            return True
+
+        for target, label in ((activity_page, "活动页"), (page_main, "主页面")):
+            try:
+                if self.owner.goto_page(target, timeout=5):
+                    logger.info("账号轮换%s退出战斗成功，已回到%s", mode, label)
+                    return True
+            except Exception as exc:
+                logger.warning("账号轮换%s退出后返回%s失败: %s", mode, label, exc)
+            # goto_page 抛错时可能已经到达町中或庭院，不能因此误判任务失败。
+            if confirm_safe_page():
                 return True
-            # 结算页有时不能直接规划回活动页，回到主页面同样说明已经离开战斗。
-            if self.owner.goto_page(page_main, timeout=5):
-                logger.info("账号轮换%s退出战斗成功，已回到主页面", mode)
-                return True
-        except Exception as exc:
-            logger.warning("账号轮换%s退出后返回活动页失败: %s", mode, exc)
         raise error_type(f"{mode} 退出后页面状态无法确认")

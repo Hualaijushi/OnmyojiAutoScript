@@ -31,6 +31,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         if callback is not None:
             callback()
 
+    def _return_to_main_after_run(self) -> None:
+        if getattr(self, '_embedded_evo_zone', None) is None:
+            self.goto_page(page_main)
+            return
+        # 多账号组队觉醒收尾只允许从探索页直接返回庭院，避免导航器绕行其他页面。
+        self.ui_click(self.I_UI_BACK_YELLOW, self.I_CHECK_MAIN, interval=4)
+
     def _register_custom_pages(self) -> None:
         reward_page = self.navigator.resolve_page(page_reward)
         if reward_page is None:
@@ -125,7 +132,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             case _:
                 logger.error('Unknown user status')
 
-        self.goto_page(page_main)
+        self._return_to_main_after_run()
         # 记得关掉
         if config.evo_zone_config.soul_buff_enable:
             self.open_buff()
