@@ -513,6 +513,27 @@ Script.loop → get_next_task → run(command)
 
 所有出口（正常 / fail / Exception→return / `exit(1)` 引发的 SystemExit）都经过 `finally`，`set_task('')` 一定执行（见 `docs/DECISIONS.md` D005）。
 
+每次任务执行都会 `ScriptTask(config, device)` **重新实例化**，因此任务实例上的可变状态
+（`BattleContext`、`utilize_*` 计数、`_fatigue_owns_macro_idle` 等）不跨任务、也不跨账号继承；
+账号轮换在任务之间切号时同样落在这个边界内（见 §4.70 的账号切换状态检查）。
+
+### 多账号 / 多实例层（仅 `zoombies-account-rotation-dailytask/synevo` 分支，2026-09-14 整合）
+
+```
+tasks/AccountRotation/script_task.py      # 账号轮换主流程（登录 → 庭院确认 → 每日任务 → 切号）
+tasks/MultiAccountEvo/script_task.py      # 多实例组队觉醒（队长/队员角色 + 三实例同步）
+  ├─ EvoZoneScriptTask.run_embedded(...)  # 复用 EvoZone 业务，配置走 active_evo_zone 注入
+  └─ ClickSampler.sample_target(...)      # 好友名点击（2026-09-14 起与 GeneralInvite 同一 contract）
+module/multi_account/                     # account / switcher / coordinator / daily_state /
+                                          # daily_task_report / file_lock / ocr_service / rotation_runner
+tasks/DailyTrifles/{cooperation,hunt}_adapter.py
+```
+
+`EvoZone.active_evo_zone` 是这一层的配置入口：无嵌入配置时回落 `self.config.evo_zone`，
+被 `MultiAccountEvo` 注入 `_embedded_evo_zone` 时按当前账号/角色生效。**EvoZone 的 FIRE 与结算
+仍走公共 contract**（`_fire_evozone_alone()` 三态 FIRE + `run_general_battle`），多账号层只负责
+选配置、切号与实例间同步，不自建第二套战斗/FIRE 实现。
+
 ### 疲劳安全节点
 
 ```

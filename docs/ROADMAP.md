@@ -94,7 +94,21 @@
 
 ## 当前任务
 
-**当前阶段：CODE FREEZE（2026-09-14）——推送准备中，不接新功能。**
+**当前阶段（2026-09-14 更新）：synevo 分支 Level C 真机测试准备——不接新功能。**
+
+`integration/custom-oas`（7f244a8c）已分别合入 `master`（merge `a5e2d7e6`）与测试分支
+`zoombies-account-rotation-dailytask/synevo`（merge `6d635e98`，`--no-ff`，17 处冲突全部语义
+合并）。当前工作分支为 **`zoombies-account-rotation-dailytask/synevo`**，回归 **1494/1494 OK**。
+
+**下一步只有真机验收**：账号轮换 / DailyTrifles / 觉醒（单人·队长·队员）/ 组队 20 次与账号组
+切换 / 三实例协作。清单见 `docs/AI_CONTEXT.md` §4.70 末尾。真机发现问题再按 Level C hotfix
+流程处理，不在验收期新增功能。
+
+---
+
+以下为上一阶段（推送准备）的记录：
+
+**CODE FREEZE（2026-09-14）——推送准备中，不接新功能。**
 
 工作树是一份跨多轮的大型集成 WIP（77 个 tracked 改动 + 约 108 个 untracked 新文件），已完成
 pre-push 深度审查并修掉审查发现的唯一 BLOCKER（ActivityShikigami macro idle ownership 泄漏）。

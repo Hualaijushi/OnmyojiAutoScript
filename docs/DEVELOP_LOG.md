@@ -9183,3 +9183,107 @@ untracked 文件按要求本轮不做 staging 处理。未启动 MuMu / 游戏 /
   （`tasks/Component/GeneralBattle/assets.py` 8、`tasks/Component/GeneralRoom/assets.py` 6、
   `tasks/KekkaiUtilize/assets.py` 2）——上一轮审查因为命令被 `head -10` 截断而漏报，本轮按
   「只处理被授权的 ActivityShikigami」范围约束未动，待用户决定。
+
+## 2026-09-14 - integration/custom-oas → zoombies-account-rotation-dailytask/synevo 分支整合
+
+### 目标
+
+把已冻结、`BLOCKER=0`、回归 1494/1494 的 `integration/custom-oas` 合入账号轮换测试分支，
+供用户直接在 synevo 上做真机测试：账号轮换、DailyTask/DailyTrifles、觉醒组队、觉醒战斗、
+多账号/多实例协作链。`master` 与 `integration/custom-oas` 本轮保持不动。
+
+### 分支关系
+
+- source：`integration/custom-oas` = `7f244a8c`（local == `origin/integration/custom-oas`）
+- target：`zoombies-account-rotation-dailytask/synevo` = `45385eac`（合并前只有 remote，
+  本轮用 `--track` 建了本地跟踪分支）
+- merge-base：`73bcafcb`；target 领先 8 commits，source 领先 36 commits
+- 两边共同修改 38 个文件，实际冲突 **17 个**（51 个冲突 hunk）
+- merge commit：**`6d635e98`**（`--no-ff`，parents = `45385eac` + `7f244a8c`）
+
+### 冲突解决（逐文件语义合并，无批量 ours/theirs）
+
+**取 source（已验证是 target 的严格超集，target 改动全部包含在内）**：
+`module/atom/{click,gif,image,ocr}.py`（target 把 numpy RNG 换成 `random_point_in_roi`；
+source 更进一步换成 `ClickSampler.sample_target`，其 LEGACY_UNIFORM 内部仍用
+`random_point_in_roi`）、`module/atom/swipe.py`（target 的 `coord()` 改动已在 source 内，
+冲突部分是 source 有意删除的零消费者 `RuleSwipe.trace`，全仓已确认无调用方）、
+`module/base/utils/random.py`（add/add：逐行 diff 证明 source = target + `random_normal`）、
+`tasks/KekkaiUtilize/script_task.py`（target 的 `min_run_interval` 地板已在 source 的
+Scheduler v1 内并已自动合并，冲突部分是 source 的 `_schedule_target` + U3 导航守卫）、
+`tasks/Component/GeneralBattle/general_battle.py`（target 的 settlement 计时器/采样 helper
+在 source 中同名同义且被 Contract V3 + Micro-Burst v1.1 扩展；确认 target 无 synevo 专属改动，
+且 `MultiAccountEvo` 用的是自己的 task-local 结算点击）、
+`tests/test_general_battle_timing.py`（add/add：source 17 例 ⊃ target 13 例共有；target 另外
+2 例断言的正是本次整合有意改掉的旧值，已被 source 的 4 个新例取代）。
+
+**取 target（目标分支业务，source 侧不存在）**：`module/image/runtime.py` 的 `config_name`
+文案（旧帧保留到 TTL/容量淘汰，这是 target 为三实例并发做的真实行为改动，已自动合并进代码体）。
+
+**真三方合并（两边都有真实新增，都必须留）**：
+- `module/image/rpc.py`（7 hunk）：target 的 `_call_with_frame_fallback`（帧过期 → 内联图片重试）
+  与 source 的低配阈值 `_adjust_rule(s)_threshold`/`_adjust_threshold` 合并为同一条调用链——
+  保留 fallback 包装，把阈值调整放进 lambda 内部，两个能力同时生效。
+- `module/ocr/rpc.py`：保留 target 的 `_OCR_RPC_TIMEOUT_SECONDS/_HEARTBEAT_SECONDS`（多实例
+  共享单模型必须有 heartbeat）与 source 的 `_ocr_request_timeout(model_size)`；客户端超时取
+  `max(模型规格超时, 多实例下限)`——小模型首启 90s、常规 30s，两边都不被对方收窄。
+- `module/config/config_manual.py`：source 删掉了 `Fakegod > RichMan`（这两个 task 目录已被
+  source 合进 ActivityShikigami 并删除，合并后确认 `tasks/Fakegod`、`tasks/RichMan` 已不存在），
+  target 加上了 `AccountRotation > MultiAccountEvo`；取两边并集。
+- `module/image/runtime.py` docstring：target 的行为描述 + source 新增的 `expire_seconds` 参数说明。
+- `script.py`（5 hunk）：全部是同一份 AntiBan 逻辑的排版/命名差异（`anti_ban` vs `ab` 等），
+  语义完全一致，取 target 风格；source 的 fatigue / behavior_trace 接线在冲突区外已自动合并。
+- `assets/i18n/zh-CN.json`：两边在同一位置加了**不同**的 key，取并集；随后发现 source 追加的
+  12 个 anti_ban/min_run_interval key 目标分支已全部定义（10 个值相同、2 条 help 文案 source
+  更完整），于是删掉重复块、只把那 2 条 help 文案就地换成 source 版本；最终 0 重复 key
+  （顺带把 source 侧原有的 25 个重复 key 也归一，语义与运行时 last-wins 一致）。
+- `tasks/EvoZone/script_task.py`（3 hunk，最关键）：**保留 target 的 `active_evo_zone` 配置源**
+  （多账号/多实例按当前账号选生效配置），**吸收 source 的** `confirm_delay=REACTION_FAST`、
+  `begin_fatigue_task('EvoZone')` + `try_fatigue_break(deadline=...)`、以及
+  `_fire_evozone_alone()` 三态 FIRE（取代旧的「按钮消失即算开战」`while 1` 循环）。
+- `tasks/Component/GeneralInvite/general_invite.py`：取 source（ClickSampler + 删除
+  `_random_point_in_area`）后，**手工把 target 的 `invite_retry_seconds_first/invite_retry_seconds`
+  可配置邀请重试间隔补回**（`git checkout --theirs` 会丢掉它，已修正）。
+
+**适配而非二选一**：
+- `tasks/MultiAccountEvo/script_task.py` 原本调用 `GeneralInvite._random_point_in_area`
+  （source 已删除、且 source 的测试断言它必须消失）。按「让目标分支调用新版公共 contract」
+  原则，把好友名点击迁到 `ClickSampler.sample_target(select_area, rule.name)` 并补 import。
+- `tests/test_ryoutoppa_c_area_1_point_opt_in.py::test_normal_button_still_provisional_zero_consumers`
+  原本用整词子串扫描 `normal_button`，与 target `DailyTrifles/cooperation_adapter.py` 里同名
+  局部变量（指邀请按钮 `I_WQ_INVITE_*`）误报。已收紧为只匹配**字符串字面量**形式的 profile key，
+  保持原断言意图（该 click profile 仍然零生产消费者，已验证）。
+
+### 验证
+
+`git diff --check` 干净 → `compileall -q module tasks tests dev_tools` OK →
+完整 `unittest discover -s tests` **1494/1494 OK** → 分域 targeted：
+rotation/DailyTrifles/diagnostic（28）、GeneralBattle/settlement/timing/reaction（140）、
+EvoZone/invite/FIRE/battle-entry（214）、click model/swipe/FrameWait（124）全部 OK →
+关键模块 import 冒烟（EvoZone / MultiAccountEvo / AccountRotation / DailyTrifles /
+GeneralInvite / GeneralBattle / KekkaiUtilize / rotation_runner / click_sampler / fatigue /
+behavior_trace / script）全部 OK。
+
+**测试数量**：合并后仍为 1494。target 只有 5 个测试文件且与 source 同名，其中 4 个两边一致，
+`test_general_battle_timing.py` 取 source 版（17 ≥ target 15）。逐文件核对 merged ≥ 两边，
+**无测试丢失**。
+
+**静态 smoke**：无冲突标记残留；settlement 只有一套实现（旧 `_advance_generic_result` 仅存在于
+注释）；reaction 常量只有 `module/reaction_profile.py` 一个来源；Kekkai quiet window 仅在
+KekkaiUtilize 内部，未扩散到 DailyTrifles/rotation；无对已删除 API（`_random_point_in_area` /
+`RuleSwipe.trace` / `tasks.Fakegod` / `tasks.RichMan`）的调用（剩余 3 处均为迁移说明注释）。
+
+### 已知遗留（本轮不处理）
+
+- `git diff --cached --check` 相对 target 基线会报 ActivityShikigami / CostumeShikigami /
+  DemonEncounter 等 assets.py 的行尾空格：这些文件与 source 分支**逐字节相同**、由 assets
+  生成器产出，且已随 `master` 发布，非本次合并引入。本轮要求的 `git diff --check` 为干净。
+- `SCHEDULER_PRIORITY` 里的 `OrochiJudgement` 无对应 `tasks/` 目录——两个分支都有，pre-existing。
+- Level C 全部待真机（账号轮换 / DailyTrifles / 觉醒队长·队员 / 组队 20 次 / 账号组切换）。
+
+### Git
+
+分支 `zoombies-account-rotation-dailytask/synevo`，merge commit `6d635e98`
+（parents `45385eac` + `7f244a8c`）。未 force / rebase / squash / reset / clean / stash，
+未删除 `integration/custom-oas`。`master`、`origin/master`、`origin/oas_xy`、`upstream/*`
+本轮均未修改。未启动 MuMu / 游戏 / OCR / 设备。

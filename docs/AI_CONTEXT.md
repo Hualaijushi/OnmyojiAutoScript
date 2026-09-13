@@ -3018,6 +3018,51 @@ CASE1/CASE2 在修复前失败、CASE4 在修复前直接 `AttributeError`，确
 `tasks/ActivityShikigami/assets.py` 本轮新增的 3 处 trailing whitespace。回归
 **1489 → 1494**（+5，0 regression）。
 
+### 4.70 integration/custom-oas → zoombies-account-rotation-dailytask/synevo 分支整合
+
+**目的**：把冻结并通过 1494/1494 回归的 `integration/custom-oas` 合入账号轮换测试分支，
+供用户直接在 synevo 上做账号轮换 / DailyTrifles / 觉醒（单人·队长·队员）/ 多实例协作的真机测试。
+
+**分支关系**：merge-base `73bcafcb`；target 领先 8 个提交（多账号轮换体系），source 领先 36 个
+提交（含 upstream 整合 `2cdf3a05` 与 `7f244a8c`）。两边共改 38 个文件，实际冲突 17 个。
+merge commit `6d635e98`（`--no-ff`，parents = `45385eac` + `7f244a8c`）。
+
+**冲突解决原则**：目标分支专属业务语义优先保留；公共基础设施吸收 source 的最新版本；
+两边都有实现的地方做三方语义合并，不保留两套。逐项决策见 `docs/DEVELOP_LOG.md` 同名条目。
+
+**保留的 synevo 专属业务**：`EvoZone.active_evo_zone`（多账号按当前账号选生效配置）、
+`GeneralInvite.invite_retry_seconds(_first)`（可配置组队邀请重试）、`AccountRotation` /
+`MultiAccountEvo` 的 `SCHEDULER_PRIORITY` 注册、`image/runtime.py` 旧帧保留到 TTL（三实例并发
+不再频繁触发 `Unknown frame id` 内联重试）、`image/rpc.py` 帧过期内联重试、`ocr/rpc.py`
+多实例 heartbeat + gevent 让步、`script.py` AntiBan 作息、账号轮换/每日任务 i18n。
+
+**吸收的公共能力**：ClickSampler 点击空间模型（atom 四件套全部改走 `sample_target`）、
+swipe 端点采样 v2（移除零消费者的 `RuleSwipe.trace`）、`random.py` 取并集（补 `random_normal`）、
+GeneralBattle Settlement Contract V3 + Micro-Burst v1.1、FIRE 三态状态机与 reaction timing、
+KekkaiUtilize Scheduler v1（仍 task-local，未扩散到 DailyTrifles）+ U3、FrameWait / Fatigue /
+BehaviorTrace、低配阈值与帧缓存期限。
+
+**做了适配而不是二选一的三处**：① `MultiAccountEvo` 好友名点击迁到 `ClickSampler.sample_target`，
+删除随 GeneralInvite 一起退役的私有 `_random_point_in_area`；② `EvoZone` 单人挑战改走
+`_fire_evozone_alone()` 三态 FIRE（不再「按钮消失即算开战」），配置源仍是 `active_evo_zone`；
+③ `image/rpc.py` 把目标的帧过期重试与 source 的阈值调整合并成同一条调用链，
+`ocr/rpc.py` 超时取 `max(模型规格超时, 多实例下限)`，两边都不被对方收窄。
+
+**验证**：compileall 通过；full regression **1494/1494 OK**；`git diff --check` 干净；
+关键模块 import 冒烟全部 OK；静态审查确认无冲突标记、无重复 settlement/reaction owner、
+Kekkai quiet window 未泄漏到 DailyTrifles/rotation、无对已删除 API 的调用。
+
+**测试数量说明**：目标分支只有 5 个测试文件且全部与 source 同名（`test_base_task_confirm_click`
+/ `test_diagnostic_scrub` / `test_general_battle_timing` / `test_minitouch_randomization` /
+`test_random_center_point`），其中 4 个两边一致、`test_general_battle_timing` 取 source 版
+（17 > target 15，target 那 2 个断言的是被本次整合有意改掉的旧值）。因此合并后总数仍为
+**1494**，无测试丢失。
+
+**Level C（本分支下一步，真机）**：账号轮换（登录 / 庭院账号识别 / DailyTrifles / 结果记录 /
+切换账号 / 状态不跨账号继承 / Android·iOS 主键区分）、觉醒队长（选层 / 建队 / 等人 / FIRE /
+战斗 / 结算 / 回房 / battle count）、觉醒队员（接邀请 / ready / 不越权 FIRE / 战斗 / 回房）、
+组队 20 次与账号组切换、三实例状态同步与 OCR 顺序。
+
 ## 5. 已确认保留的 upstream 修改
 
 ### 5.1 NemuIPC 与 scrcpy
@@ -3082,7 +3127,13 @@ Easy Install 当前主要预置 medium OCR 模型；small 模型可能首次自�
 
 ## 7. 测试与验证状态
 
-**当前基线（2026-09-14，§4.69 Pre-Push Blocker Fix：ActivityShikigami macro idle ownership）**：
+**当前分支：`zoombies-account-rotation-dailytask/synevo`（2026-09-14 起）**——
+`integration/custom-oas`（7f244a8c）已通过 `--no-ff` 合入本分支（merge commit `6d635e98`），
+本分支现在同时含「账号轮换 / DailyTrifles / 多实例觉醒」业务与「拟人化交互层 + 任务可靠性」
+公共能力。下一步是**账号轮换与觉醒的 Level C 真机测试**（见 §4.70）。`master`（a5e2d7e6）与
+`integration/custom-oas` 保持不动，作为集成基线与远程备份点。
+
+**当前基线（2026-09-14，§4.70 synevo 分支整合；此前 §4.69 Pre-Push Blocker Fix）**：
 `toolkit/python.exe -m compileall module tasks tests dev_tools` 通过；
 `toolkit/python.exe -m unittest discover -s tests` = **1494/1494 OK**（`1489 → 1494` = §4.69
 2026-09-14 推送前审查发现并修复唯一 BLOCKER：`_fatigue_owns_macro_idle` 在同一个 `ScriptTask`
