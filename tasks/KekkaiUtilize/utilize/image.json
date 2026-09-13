@@ -214,5 +214,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "好友列表已经无卡"
+  },
+  {
+    "itemName": "k_search",
+    "imageName": "utilize_k_search.png",
+    "roiFront": "545,171,65,37",
+    "roiBack": "537,170,77,38",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "结界卡顶部搜索框"
+  },
+  {
+    "itemName": "is_selected",
+    "imageName": "utilize_is_selected.png",
+    "roiFront": "606,298,21,59",
+    "roiBack": "602,168,30,442",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "是否已经选中结界卡，作为滑动距离判断的"
   }
 ]

@@ -18,7 +18,17 @@ from tasks.Orochi.config import Orochi, UserStatus, Layer
 from tasks.TrueOrochi.assets import TrueOrochiAssets
 from module.logger import logger
 from module.exception import TaskEnd
+from module.base.timer import Timer
+from module.base.utils.random import random_delay
+from module.reaction_profile import REACTION_FAST, REACTION_NORMAL, REACTION_FIRE
 from tasks.Orochi.page import page_orochi
+
+
+# 御魂单人挑战 FIRE 的有限 attempt / 总超时 / 点击后确认等待。engineering baseline，非 Level C 标定：
+# 对齐 RealmRaid.fire()（RR_FIRE_MAX_TRIES=4 / RR_FIRE_TIMEOUT=10 / RR_FIRE_POST_CLICK_TIMEOUT=3）。
+OROCHI_FIRE_MAX_TRIES = 4
+OROCHI_FIRE_TIMEOUT = 10
+OROCHI_FIRE_POST_CLICK_TIMEOUT = 3
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets, TrueOrochiAssets):
@@ -154,14 +164,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self.check_layer(layer)
         # https://github.com/runhey/OnmyojiAutoScript/issues/592
         self.config.orochi.general_battle_config.lock_team_enable = True
-        self.check_lock(self.config.orochi.general_battle_config.lock_team_enable, self.I_OROCHI_LOCK, self.I_OROCHI_UNLOCK)
+        self.check_lock(self.config.orochi.general_battle_config.lock_team_enable, self.I_OROCHI_LOCK, self.I_OROCHI_UNLOCK, confirm_delay=REACTION_FAST)
         # 创建队伍
         logger.info('Create team')
         while 1:
             self.screenshot()
             if self.appear(self.I_CHECK_TEAM):
                 break
-            if self.appear_then_click(self.I_FORM_TEAM, interval=1):
+            # 普通进入组队：稳定按钮，NORMAL reaction
+            if self.appear_then_click(self.I_FORM_TEAM, interval=1, confirm_delay=REACTION_NORMAL):
                 continue
         # 创建房间
         self.create_room()
@@ -273,12 +284,91 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         return True
 
+    def _is_orochi_challenge_retryable(self) -> bool:
+        """当前 fresh frame 是否**明确仍处于御魂单人挑战可操作页面**（可再次点击挑战）。
+
+        只读当前帧：不截图 / 不点击 / 不 sleep / 不改状态。御魂单人挑战页除进攻按钮外没有
+        其它稳定持久 marker，用 `I_OROCHI_FIRE` 仍在场即可与 loading / 页面切换过渡帧区分。
+        """
+        return self.appear(self.I_OROCHI_FIRE)
+
+    def _wait_orochi_fire_state(self, timeout: float = OROCHI_FIRE_POST_CLICK_TIMEOUT) -> str:
+        """FIRE post-click / FIRE 未就绪时的有界状态轮询，区分三态、**不点任何坐标**：
+
+        - `'battle'`：`is_in_battle()` —— 已进入 GeneralBattle 可接管的战斗流程（唯一 positive success）；
+        - `'retryable'`：`_is_orochi_challenge_retryable()` —— 仍在御魂挑战页 → 允许下一 bounded attempt；
+        - `'timeout'`：整个 `timer` 内都是「挑战按钮消失、战斗未出现」的过渡 / 未知帧 ——
+          **既不当 success 也不当 immediate failure**，timer 内持续等 `'battle'` / `'retryable'`。
+
+        复用 `GeneralBattle.is_in_battle()` + 已有御魂 marker，不新造 page detector。
+        """
+        timer = Timer(timeout).start()
+        while not timer.reached():
+            self.screenshot()
+            if self.is_in_battle(False):
+                return 'battle'
+            if self._is_orochi_challenge_retryable():
+                return 'retryable'
+        return 'timeout'
+
+    def _fire_orochi_alone(self) -> bool:
+        """御魂单人：点击挑战按钮直到**正向确认进入战斗**。
+
+        与 RealmRaid.fire() 同一 FIRE Contract（见 `docs/DECISIONS.md` D001 补记 FIRE 分节）：
+        成功判据是 `is_in_battle()`，不以「`I_OROCHI_FIRE` 消失」单独判成功；每次 attempt
+        独立采样 `REACTION_FIRE` → `sleep` → fresh screenshot → 二次确认 `I_OROCHI_FIRE` 仍在 →
+        点击；post-click 走 `_wait_orochi_fire_state()` 的三态（battle / retryable / transition-unknown）。
+        有限 `OROCHI_FIRE_MAX_TRIES` + 有限 `Timer(OROCHI_FIRE_TIMEOUT)`，用尽仍未进入战斗返回
+        False，由调用方决定**不交接 `run_general_battle`**。
+
+        :return: True 已进入战斗流程；False 有限重试 / 超时仍未进入
+        """
+        self.device.click_record_clear()
+        timeout_timer = Timer(OROCHI_FIRE_TIMEOUT).start()
+        for attempt in range(1, OROCHI_FIRE_MAX_TRIES + 1):
+            if timeout_timer.reached():
+                break
+            self.screenshot()
+            if self.is_in_battle(False):
+                logger.info('Orochi fire: entered battle')
+                return True
+            if not self.appear(self.I_OROCHI_FIRE):
+                # 挑战按钮未就绪：页面切换中 / loading / 弹窗遮挡 / 临时识别失败。
+                # 有界等一个决定性状态，不在过渡帧里乱点。
+                state = self._wait_orochi_fire_state()
+                if state == 'battle':
+                    logger.info('Orochi fire: entered battle')
+                    return True
+                # 'retryable'（挑战页仍在，下一 attempt 顶端会点）/ 'timeout'（过渡 / 未知，不点）
+                continue
+            fire_delay = random_delay(*REACTION_FIRE)
+            logger.info(f'Orochi fire: attempt {attempt}, reaction {fire_delay:.2f}s')
+            sleep(fire_delay)
+            self.screenshot()
+            if self.is_in_battle(False):
+                return True
+            if not self.appear(self.I_OROCHI_FIRE):
+                logger.info('Orochi fire: button gone during reaction, re-evaluate')
+                continue
+            self.appear_then_click(self.I_OROCHI_FIRE, interval=0)
+            state = self._wait_orochi_fire_state()
+            if state == 'battle':
+                logger.info('Orochi fire: entered battle after click')
+                return True
+            # 'retryable' / 'timeout' → 下一 attempt（transition-unknown 不当 immediate failure）
+        logger.warning('Orochi fire: bounded retry / timeout without entering battle')
+        return False
+
     def run_alone(self):
         logger.info('Start run alone')
         self.goto_page(page_orochi)
         layer = self.config.orochi.orochi_config.layer
         self.check_layer(layer)
-        self.check_lock(self.config.orochi.general_battle_config.lock_team_enable, self.I_OROCHI_LOCK, self.I_OROCHI_UNLOCK)
+        self.check_lock(self.config.orochi.general_battle_config.lock_team_enable, self.I_OROCHI_LOCK, self.I_OROCHI_UNLOCK, confirm_delay=REACTION_FAST)
+        # 御魂单人是 host-controlled 连续循环：疲劳安全节点放在「一场战斗完整结束、run_general_battle
+        # 已回到稳定挑战页」之后，休息结束回循环顶会先 screenshot + is_in_orochi 重新确认业务页面。
+        self.begin_fatigue_task('Orochi')
+        deadline = self.start_time + self.limit_time
 
         def is_in_orochi(screenshot=False) -> bool:
             if screenshot:
@@ -298,17 +388,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if datetime.now() - self.start_time >= self.limit_time:
                 logger.info('Orochi time limit out')
                 break
-            # 点击挑战
-            while True:
-                self.screenshot()
-                if self.appear_then_click(self.I_OROCHI_FIRE, interval=1):
-                    pass
-                if not self.appear(self.I_OROCHI_FIRE):
-                    self.run_general_battle(
-                        config=self.config.orochi.general_battle_config,
-                        battle_key=self._orochi_battle_key(),
-                        exit_matcher=self.I_OROCHI_FIRE)
-                    break
+            # 点击挑战：FIRE 三态状态机，正向确认进入战斗才交接 run_general_battle
+            if self._fire_orochi_alone():
+                self.run_general_battle(
+                    config=self.config.orochi.general_battle_config,
+                    battle_key=self._orochi_battle_key(),
+                    exit_matcher=self.I_OROCHI_FIRE)
+                # 一场完整御魂战斗结束、已回到稳定挑战页 → 疲劳安全节点
+                self.try_fatigue_break(safe=True, repeat_completed=True, deadline=deadline)
+            # 未进入战斗 → 回外层循环顶重新 screenshot + is_in_orochi 判定，不误交接 run_general_battle
 
     def run_wild(self):
         logger.info('Start run wild')
@@ -318,14 +406,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.goto_page(page_orochi)
             layer = self.config.orochi.orochi_config.layer
             self.check_layer(layer)
-            self.check_lock(self.config.orochi.general_battle_config.lock_team_enable, self.I_OROCHI_LOCK, self.I_OROCHI_UNLOCK)
+            self.check_lock(self.config.orochi.general_battle_config.lock_team_enable, self.I_OROCHI_LOCK, self.I_OROCHI_UNLOCK, confirm_delay=REACTION_FAST)
             # 创建队伍
             logger.info('Create team')
             while 1:
                 self.screenshot()
                 if self.appear(self.I_CHECK_TEAM):
                     break
-                if self.appear_then_click(self.I_FORM_TEAM, interval=1):
+                # 普通进入组队：稳定按钮，NORMAL reaction
+                if self.appear_then_click(self.I_FORM_TEAM, interval=1, confirm_delay=REACTION_NORMAL):
                     continue
             # 创建房间
             self.create_room()

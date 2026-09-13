@@ -21,6 +21,37 @@ _IMAGE_SERVER_CONTEXT = multiprocessing.get_context("spawn")
 _IMAGE_SERVER_PROCESS: Optional[multiprocessing.Process] = None
 # 按地址缓存 RPC 客户端，避免同一入口反复建立 zerorpc 连接。
 _IMAGE_CLIENT_CACHE: dict[str, "ImageClient"] = {}
+# 脚本进程级识别参数。由 Script 启动时设置，运行中不随配置热更新。
+_IMAGE_FRAME_CACHE_EXPIRE_SECONDS: float | None = None
+_IMAGE_THRESHOLD_OFFSET = 0.0
+
+
+def set_image_low_spec_mode(enabled: bool) -> None:
+    """设置当前脚本进程的低配图像识别参数。"""
+    global _IMAGE_FRAME_CACHE_EXPIRE_SECONDS, _IMAGE_THRESHOLD_OFFSET
+    if enabled:
+        _IMAGE_FRAME_CACHE_EXPIRE_SECONDS = 10.0
+        _IMAGE_THRESHOLD_OFFSET = 0.1
+    else:
+        _IMAGE_FRAME_CACHE_EXPIRE_SECONDS = None
+        _IMAGE_THRESHOLD_OFFSET = 0.0
+
+
+def _adjust_threshold(threshold: float | None) -> float | None:
+    if threshold is None:
+        return None
+    return max(0.0, min(1.0, float(threshold) - _IMAGE_THRESHOLD_OFFSET))
+
+
+def _adjust_rule_threshold(rule_data: dict[str, Any]) -> dict[str, Any]:
+    adjusted = dict(rule_data)
+    if "threshold" in adjusted:
+        adjusted["threshold"] = _adjust_threshold(adjusted["threshold"])
+    return adjusted
+
+
+def _adjust_rules_threshold(rules_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_adjust_rule_threshold(rule_data) for rule_data in rules_data]
 
 
 def _normalize_address(address: str) -> str:
@@ -251,7 +282,11 @@ class ImageClient:
             config_name: 当前脚本配置名；服务端用它删除同配置旧截图帧。
         """
         payload = pickle.dumps(image, protocol=4)
-        return self.client.register_frame(payload, config_name)
+        return self.client.register_frame(
+            payload,
+            config_name,
+            _IMAGE_FRAME_CACHE_EXPIRE_SECONDS,
+        )
 
     def get_frame_info(self, frame_id: str) -> dict[str, Any]:
         """
@@ -319,7 +354,10 @@ class ImageClient:
         """
         return self._call_with_frame_fallback(
             lambda active_frame_id, payload: self.client.match_rule(
-                rule_data, active_frame_id, payload, threshold
+                _adjust_rule_threshold(rule_data),
+                active_frame_id,
+                payload,
+                _adjust_threshold(threshold),
             ),
             image,
             frame_id,
@@ -339,7 +377,10 @@ class ImageClient:
         """
         return self._call_with_frame_fallback(
             lambda active_frame_id, payload: self.client.match_rule_with_brightness_window(
-                rule_data, active_frame_id, payload, threshold
+                _adjust_rule_threshold(rule_data),
+                active_frame_id,
+                payload,
+                _adjust_threshold(threshold),
             ),
             image,
             frame_id,
@@ -359,7 +400,10 @@ class ImageClient:
         """
         return self._call_with_frame_fallback(
             lambda active_frame_id, payload: self.client.match_many(
-                rules_data, active_frame_id, payload, threshold
+                _adjust_rules_threshold(rules_data),
+                active_frame_id,
+                payload,
+                _adjust_threshold(threshold),
             ),
             image,
             frame_id,
@@ -381,7 +425,11 @@ class ImageClient:
         """
         return self._call_with_frame_fallback(
             lambda active_frame_id, payload: self.client.match_all(
-                rule_data, active_frame_id, payload, threshold, roi
+                _adjust_rule_threshold(rule_data),
+                active_frame_id,
+                payload,
+                _adjust_threshold(threshold),
+                roi,
             ),
             image,
             frame_id,
@@ -404,7 +452,12 @@ class ImageClient:
         """
         return self._call_with_frame_fallback(
             lambda active_frame_id, payload: self.client.match_all_any(
-                rule_data, active_frame_id, payload, threshold, roi, nms_threshold
+                _adjust_rule_threshold(rule_data),
+                active_frame_id,
+                payload,
+                _adjust_threshold(threshold),
+                roi,
+                nms_threshold,
             ),
             image,
             frame_id,
@@ -425,7 +478,11 @@ class ImageClient:
         """
         return self._call_with_frame_fallback(
             lambda active_frame_id, payload: self.client.match_all_any_many(
-                rules_data, active_frame_id, payload, threshold, nms_threshold
+                _adjust_rules_threshold(rules_data),
+                active_frame_id,
+                payload,
+                _adjust_threshold(threshold),
+                nms_threshold,
             ),
             image,
             frame_id,
@@ -454,7 +511,12 @@ class ImageClient:
         template_payload = pickle.dumps(template, protocol=4)
         return self._call_with_frame_fallback(
             lambda active_frame_id, payload: self.client.match_dynamic_template(
-                template_payload, active_frame_id, payload, roi_back, threshold, name
+                template_payload,
+                active_frame_id,
+                payload,
+                roi_back,
+                _adjust_threshold(threshold),
+                name,
             ),
             image,
             frame_id,

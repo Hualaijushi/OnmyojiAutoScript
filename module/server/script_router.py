@@ -295,7 +295,20 @@ async def script_task(script_name: str, task: str, group: str, argument: str, ty
     except Exception as e:
         # 类型不正确
         raise HTTPException(status_code=400, detail=f'Argument type error: {e}')
-    return mm.config_cache(script_name).model.script_set_arg(task, group, argument, value)
+    updated = mm.config_cache(script_name).model.script_set_arg(task, group, argument, value)
+    is_fatigue_config = (
+        convert_to_underscore(task) == 'global_game'
+        and convert_to_underscore(group) == 'fatigue'
+    )
+    if updated and is_fatigue_config:
+        if script_name not in mm.script_process:
+            mm.script_process[script_name] = ScriptProcess(script_name)
+        script_process = mm.script_process[script_name]
+        if convert_to_underscore(argument) == 'load_factor':
+            await script_process.set_fatigue_load_factor(float(value))
+        elif script_process.state == ScriptState.INACTIVE:
+            await script_process.refresh_fatigue_state()
+    return updated
 
 
 @script_app.put('/{script_name}/{task}/sync_next_run')
@@ -355,6 +368,7 @@ async def websocket_endpoint(websocket: WebSocket, script_name: str):
     try:
         await script_process.send_json(websocket, {"state": script_process.state})
         log_ws_event(f"ws[{script_name}] connect state: {script_process.state}")
+        await script_process.send_json(websocket, {'fatigue': script_process.fatigue_state})
         config = mm.config_cache(script_name)
         config.get_next()
         schedule_data = config.get_schedule_data()

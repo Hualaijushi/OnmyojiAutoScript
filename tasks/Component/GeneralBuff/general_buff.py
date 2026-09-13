@@ -142,7 +142,9 @@ class GeneralBuff(BaseTask, GeneralBuffAssets):
             if area:
                 self.set_switch_area(area)
             if not area or (not self.appear(self.I_CLOSE_RED) and not self.appear(self.I_OPEN_YELLOW)):
-                self.device.swipe(p2=(530, 240), p1=(580, 320))
+                # 普通 buff 列表向上滚动：minitouch 走 TouchSwipeModel 轨迹，其它后端回退端点滑动。
+                # 起终点 / 方向 / 距离 / 之后的固定等待均不变。
+                self.swipe_trajectory((580, 320), (530, 240), control_name='GENERAL_BUFF_LIST')
                 max_swipe -= 1
                 time.sleep(1)
                 continue
@@ -172,7 +174,9 @@ class GeneralBuff(BaseTask, GeneralBuffAssets):
             if area:
                 self.set_switch_area(area)
             if not area or (not self.appear(self.I_CLOSE_RED) and not self.appear(self.I_OPEN_YELLOW)):
-                self.device.swipe(p2=(530, 240), p1=(580, 320))
+                # 普通 buff 列表向上滚动：minitouch 走 TouchSwipeModel 轨迹，其它后端回退端点滑动。
+                # 起终点 / 方向 / 距离 / 之后的固定等待均不变。
+                self.swipe_trajectory((580, 320), (530, 240), control_name='GENERAL_BUFF_LIST')
                 max_swipe -= 1
                 time.sleep(1)
                 continue

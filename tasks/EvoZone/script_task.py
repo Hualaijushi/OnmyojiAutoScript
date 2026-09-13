@@ -18,6 +18,16 @@ from tasks.EvoZone.assets import EvoZoneAssets
 from tasks.EvoZone.config import EvoZone, UserStatus, KirinType, Layer
 from module.logger import logger
 from module.exception import TaskEnd
+from module.base.timer import Timer
+from module.base.utils.random import random_delay
+from module.reaction_profile import REACTION_FAST, REACTION_NORMAL, REACTION_DELIBERATE, REACTION_FIRE
+
+
+# 觉醒单人挑战 FIRE 的有限 attempt / 总超时 / 点击后确认等待。engineering baseline，非 Level C 标定：
+# 对齐 RealmRaid.fire()（RR_FIRE_MAX_TRIES=4 / RR_FIRE_TIMEOUT=10 / RR_FIRE_POST_CLICK_TIMEOUT=3）。
+EVOZONE_FIRE_MAX_TRIES = 4
+EVOZONE_FIRE_TIMEOUT = 10
+EVOZONE_FIRE_POST_CLICK_TIMEOUT = 3
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, EvoZoneAssets, SwitchSoul):
@@ -157,7 +167,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.screenshot()
             if self.appear(self.I_FORM_TEAM):
                 return True
-            if self.appear_then_click(kirintype, interval=1):
+            # 麒麟 / 材料类型选择：需要明显选择判断的稳定目标，DELIBERATE reaction
+            if self.appear_then_click(kirintype, interval=1, confirm_delay=REACTION_DELIBERATE):
                 continue
         return False
 
@@ -180,7 +191,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         logger.info("test0")
         self.check_layer(layer)
         logger.info("test1")
-        self.check_lock(self.active_evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK)
+        # 同上：保留 synevo 的 `active_evo_zone` 配置源，吸收公共 reaction timing。
+        self.check_lock(self.active_evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK, confirm_delay=REACTION_FAST)
         logger.info("test2")
         # 创建队伍
         logger.info('Create team')
@@ -189,7 +201,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.screenshot()
             if self.appear(self.I_CHECK_TEAM) or self.appear(self.I_CHECK_TEAM_2):
                 break
-            if self.appear_then_click(self.I_FORM_TEAM, interval=1):
+            # 普通进入组队：稳定按钮，NORMAL reaction
+            if self.appear_then_click(self.I_FORM_TEAM, interval=1, confirm_delay=REACTION_NORMAL):
                 continue
         # 创建房间
         if not self.create_room():
@@ -305,13 +318,94 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 pass
         return True
 
+    def _is_evozone_challenge_retryable(self) -> bool:
+        """当前 fresh frame 是否**明确仍处于觉醒单人挑战可操作页面**（可再次点击挑战）。
+
+        只读当前帧：不截图 / 不点击 / 不 sleep / 不改状态。觉醒单人挑战页除进攻按钮外没有
+        其它稳定持久 marker，用 `I_EVOZONE_FIRE` 仍在场即可与 loading / 页面切换过渡帧区分。
+        """
+        return self.appear(self.I_EVOZONE_FIRE)
+
+    def _wait_evozone_fire_state(self, timeout: float = EVOZONE_FIRE_POST_CLICK_TIMEOUT) -> str:
+        """FIRE post-click / FIRE 未就绪时的有界状态轮询，区分三态、**不点任何坐标**：
+
+        - `'battle'`：`is_in_battle()` —— 已进入 GeneralBattle 可接管的战斗流程（唯一 positive success）；
+        - `'retryable'`：`_is_evozone_challenge_retryable()` —— 仍在觉醒挑战页 → 允许下一 bounded attempt；
+        - `'timeout'`：整个 `timer` 内都是「挑战按钮消失、战斗未出现」的过渡 / 未知帧 ——
+          **既不当 success 也不当 immediate failure**，timer 内持续等 `'battle'` / `'retryable'`。
+
+        复用 `GeneralBattle.is_in_battle()` + 已有觉醒 marker，不新造 page detector。
+        """
+        timer = Timer(timeout).start()
+        while not timer.reached():
+            self.screenshot()
+            if self.is_in_battle(False):
+                return 'battle'
+            if self._is_evozone_challenge_retryable():
+                return 'retryable'
+        return 'timeout'
+
+    def _fire_evozone_alone(self) -> bool:
+        """觉醒单人：点击挑战按钮直到**正向确认进入战斗**。
+
+        与 RealmRaid.fire() 同一 FIRE Contract（见 `docs/DECISIONS.md` D001 补记 FIRE 分节）：
+        成功判据是 `is_in_battle()`，不以「`I_EVOZONE_FIRE` 消失」单独判成功；每次 attempt
+        独立采样 `REACTION_FIRE` → `sleep` → fresh screenshot → 二次确认 `I_EVOZONE_FIRE` 仍在 →
+        点击；post-click 走 `_wait_evozone_fire_state()` 的三态（battle / retryable / transition-unknown）。
+        有限 `EVOZONE_FIRE_MAX_TRIES` + 有限 `Timer(EVOZONE_FIRE_TIMEOUT)`，用尽仍未进入战斗返回
+        False，由调用方决定**不交接 `run_general_battle`**。
+
+        :return: True 已进入战斗流程；False 有限重试 / 超时仍未进入
+        """
+        self.device.click_record_clear()
+        timeout_timer = Timer(EVOZONE_FIRE_TIMEOUT).start()
+        for attempt in range(1, EVOZONE_FIRE_MAX_TRIES + 1):
+            if timeout_timer.reached():
+                break
+            self.screenshot()
+            if self.is_in_battle(False):
+                logger.info('EvoZone fire: entered battle')
+                return True
+            if not self.appear(self.I_EVOZONE_FIRE):
+                # 挑战按钮未就绪：页面切换中 / loading / 弹窗遮挡 / 临时识别失败。
+                # 有界等一个决定性状态，不在过渡帧里乱点。
+                state = self._wait_evozone_fire_state()
+                if state == 'battle':
+                    logger.info('EvoZone fire: entered battle')
+                    return True
+                # 'retryable'（挑战页仍在，下一 attempt 顶端会点）/ 'timeout'（过渡 / 未知，不点）
+                continue
+            fire_delay = random_delay(*REACTION_FIRE)
+            logger.info(f'EvoZone fire: attempt {attempt}, reaction {fire_delay:.2f}s')
+            sleep(fire_delay)
+            self.screenshot()
+            if self.is_in_battle(False):
+                return True
+            if not self.appear(self.I_EVOZONE_FIRE):
+                logger.info('EvoZone fire: button gone during reaction, re-evaluate')
+                continue
+            self.appear_then_click(self.I_EVOZONE_FIRE, interval=0)
+            state = self._wait_evozone_fire_state()
+            if state == 'battle':
+                logger.info('EvoZone fire: entered battle after click')
+                return True
+            # 'retryable' / 'timeout' → 下一 attempt（transition-unknown 不当 immediate failure）
+        logger.warning('EvoZone fire: bounded retry / timeout without entering battle')
+        return False
+
     def run_alone(self):
         logger.info('Start run alone')
         self.goto_page(page_awake_zones)
         self.evozone_enter()
         layer = self.active_evo_zone.evo_zone_config.layer
         self.check_layer(layer)
-        self.check_lock(self.active_evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK)
+        # 配置源保持 synevo 的 `active_evo_zone`（多账号/多实例按当前账号选生效配置），
+        # 只吸收公共 reaction timing（confirm_delay）与疲劳安全节点。
+        self.check_lock(self.active_evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK, confirm_delay=REACTION_FAST)
+        # 觉醒单人是 host-controlled 连续循环：疲劳安全节点放在「一场战斗完整结束、run_general_battle
+        # 已回到稳定挑战页」之后，休息结束回循环顶会先 screenshot + is_in_evozone 重新确认业务页面。
+        self.begin_fatigue_task('EvoZone')
+        deadline = self.start_time + self.limit_time
 
         def is_in_evozone(screenshot=False) -> bool:
             if screenshot:
@@ -328,18 +422,17 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if datetime.now() - self.start_time >= self.limit_time:
                 logger.info('EvoZone time limit out')
                 break
-            # 点击挑战
-            while 1:
-                self.screenshot()
-                if self.appear_then_click(self.I_EVOZONE_FIRE, interval=1):
-                    pass
-
-                if not self.appear(self.I_EVOZONE_FIRE):
-                    self.run_general_battle(
-                        config=self.active_evo_zone.general_battle_config,
-                        exit_matcher=self.I_EVOZONE_FIRE,
-                    )
-                    break
+            # 点击挑战：FIRE 三态状态机，正向确认进入战斗才交接 run_general_battle
+            # （取代旧的「按钮消失即算开战」while 循环）；战斗配置仍取 synevo 的
+            # `active_evo_zone`，保证多账号/多实例按当前账号选生效配置。
+            if self._fire_evozone_alone():
+                self.run_general_battle(
+                    config=self.active_evo_zone.general_battle_config,
+                    exit_matcher=self.I_EVOZONE_FIRE,
+                )
+                # 一场完整觉醒战斗结束、已回到稳定挑战页 → 疲劳安全节点
+                self.try_fatigue_break(safe=True, repeat_completed=True, deadline=deadline)
+            # 未进入战斗 → 回外层循环顶重新 screenshot + is_in_evozone 判定，不误交接 run_general_battle
 
     def run_wild(self):
         logger.error('Wild mode is not implemented')

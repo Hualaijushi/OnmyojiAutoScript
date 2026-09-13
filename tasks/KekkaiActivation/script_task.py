@@ -20,7 +20,6 @@ from tasks.KekkaiUtilize.page import page_guild_realm, page_guild_realm_growth, 
 from tasks.KekkaiUtilize.script_task import ScriptTask as KU
 from tasks.KekkaiUtilize.utils import CardClass
 from tasks.KekkaiActivation.assets import KekkaiActivationAssets
-from tasks.KekkaiActivation.utils import parse_rule
 from tasks.KekkaiActivation.config import ActivationConfig
 from tasks.Utils.config_enum import ShikigamiClass
 from tasks.GameUi.page import page_main, page_guild

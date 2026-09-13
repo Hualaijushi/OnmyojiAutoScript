@@ -144,6 +144,10 @@ class KekkaiUtilizeAssets:
 	I_SELECT_REALM_ON_4 = RuleImage(roi_front=(607,516,21,59), roi_back=(607,516,21,59), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/select_realm_on_4.png")
 	# 好友列表已经无卡 
 	I_U_EMPTY_CARD = RuleImage(roi_front=(540,197,67,62), roi_back=(536,164,75,442), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_u_empty_card.png")
+	# 结界卡顶部搜索框
+	I_K_SEARCH = RuleImage(roi_front=(545,171,65,37), roi_back=(537,170,77,38), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_k_search.png")
+	# 是否已经选中结界卡，作为滑动距离判断的
+	I_IS_SELECTED = RuleImage(roi_front=(606,298,21,59), roi_back=(602,168,30,442), threshold=0.8, method="Template matching", file="./tasks/KekkaiUtilize/utilize/utilize_is_selected.png")
 
 
 	# Image Rule Assets

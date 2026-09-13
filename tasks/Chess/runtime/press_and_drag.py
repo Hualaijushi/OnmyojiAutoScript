@@ -11,6 +11,7 @@ from module.base.utils import (
     point2str,
     random_rectangle_point,
 )
+from module.base.utils.random import random_delay, random_int
 from module.device.method.minitouch import insert_swipe
 from module.logger import logger
 
@@ -19,7 +20,7 @@ def Press_and_Drag(
     device,
     p1,
     p2,
-    hold_duration=0.5,
+    hold_duration=(0.2, 0.3),
     point_random=(-10, -10, 10, 10),
     swipe_duration=0.5,
     name='Press_and_Drag',
@@ -27,6 +28,7 @@ def Press_and_Drag(
     """在起点按住后拖到终点；仅供 Chess 手牌、棋盘和御魂操作。"""
     device.handle_control_check(name)
     p1, p2 = ensure_int(p1, p2)
+    hold_duration = ensure_time(hold_duration)
     action_log = 'Press_and_Drag %s -> %s' % (
         point2str(*p1),
         point2str(*p2),
@@ -91,12 +93,22 @@ def _press_and_drag_minitouch(
     p1, p2 = _randomized_points(p1, p2, point_random)
     points = insert_swipe(p0=p1, p3=p2, speed=20)
     builder = device.minitouch_builder
+    pressure_getter = getattr(device, '_humanized_pressure', None)
+    pressure = pressure_getter() if callable(pressure_getter) else 100
 
-    builder.down(*points[0]).commit().wait(int(hold_duration * 1000))
+    builder.down(
+        *points[0],
+        pressure=pressure,
+    ).commit().wait(int(hold_duration * 1000))
     device.minitouch_send()
     for point in points[1:]:
-        builder.move(*point).commit().wait(10)
+        builder.move(
+            *point,
+            pressure=pressure,
+        ).commit().wait(random_int(6, 15))
     device.minitouch_send()
+    # 终点两次固定 140ms 是拖拽落点的 settle 等待，游戏需要稳定停留才会确认放置，
+    # 属于可靠性时序而非拟人化延迟，不做随机化。
     builder.move(*p2).commit().wait(140)
     builder.move(*p2).commit().wait(140)
     device.minitouch_send()
@@ -138,7 +150,7 @@ def _press_and_drag_scrcpy(
         device.sleep(hold_duration)
         for point in points[1:-1]:
             device._scrcpy_control.touch(*point, scrcpy_const.ACTION_MOVE)
-            device.sleep(0.002)
+            device.sleep(random_delay(0.001, 0.004))
         device._scrcpy_control.touch(*p2, scrcpy_const.ACTION_MOVE)
         device.sleep(0.14)
         device._scrcpy_control.touch(*p2, scrcpy_const.ACTION_UP)

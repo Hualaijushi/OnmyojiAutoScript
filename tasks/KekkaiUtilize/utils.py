@@ -7,6 +7,26 @@ from module.atom.image import RuleImage
 
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets as KUA
 
+
+# 好友结界卡的真实离散奖励档位（升序）。游戏里同类型/星级的收益只会落在这几个值上，
+# 不存在 128、137 之类的中间值。搜索第一阶段用满值当高阈值，第一阶段全部失败后按
+# 这些档位「向下取一档」再搜一遍，而不是「阈值 - 固定数字」。
+FISH_REWARD_TIERS = (101, 109, 118, 126, 134, 143, 151)   # 斗鱼给体力
+TAIKO_REWARD_TIERS = (42, 50, 59, 67, 76)                  # 太鼓给勾玉
+
+
+def lower_reward_tier(value: int, tiers) -> int:
+    """取「严格小于 value 的最大真实奖励档位」。
+
+    - value 高于最高档 / 等于某一档 → 落到下一档（151→143、143→134、150→143、130→126）。
+    - value 已经等于或低于最低档 → 保持最低档（斗鱼 101→101、太鼓 42→42）。
+
+    只在「第一阶段高阈值全部失败」后调用一次，用于把第二阶段阈值降低一档。
+    """
+    ordered = sorted(tiers)
+    lower = [tier for tier in ordered if tier < value]
+    return lower[-1] if lower else ordered[0]
+
 class CardClass(str, Enum):
 
     UNKNOWN = 'unknown'  # 未知

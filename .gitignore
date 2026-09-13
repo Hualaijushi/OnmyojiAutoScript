@@ -54,6 +54,10 @@ openspec/
 .agents/
 skills-lock.json
 .codegraph/
+# CLAUDE.md / AGENTS.md 作为跨 clone 的 AI 启动入口纳入版本控制（覆盖上面两行忽略）；
+# 其余本地 AI 目录（.claude/ .codex/ 等）仍保持忽略。
+!AGENTS.md
+!CLAUDE.md
 
 
 # Created by .ignore support plugin (hsz.mobi)

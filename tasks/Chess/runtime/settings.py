@@ -25,6 +25,10 @@ class ChessRuntimeSettings:
     SCREENSHOT_INTERVAL = 0.35
     ACTION_SETTLE_INTERVAL = 0.6
     SLOW_POLL_INTERVAL = 1.0
+    ACTION_ICON_WAIT_TIMEOUT = 3.0
+    ACTION_ICON_MAX_ATTEMPTS = 3
+    # 首领挑战会大幅改变棋盘显示位置，固定站位的勾玉检测框不可用。
+    BOSS_CHALLENGE_ROUNDS = frozenset({9, 15, 21, 27, 33})
     HAND_DEPLOY_SAFETY_LIMIT = 20
     HAND_CLEANUP_SAFETY_LIMIT = 30
     HAND_CLEANUP_CLEAN_CONFIRM_FRAMES = 3
@@ -37,6 +41,9 @@ class ChessRuntimeSettings:
     GAME_END_CONFIRM_FRAMES = 3
     GAME_OVER_WAIT_TIMEOUT = 60.0
     GAME_ENTER_TIMEOUT = 120.0
+    # 匹配到 8/8 后，取消匹配按钮会先消失，随后可能长时间停留在
+    # “匹配成功/加载中 100%”页面。该阶段不再沿用开战按钮的短超时。
+    MATCHED_LOADING_TIMEOUT = 600.0
     UNKNOWN_STATE_TIMEOUT = 25.0
     SHOP_OPEN_TIMEOUT = 8.0
     SHOP_CLOSE_TIMEOUT = 8.0
@@ -54,7 +61,6 @@ class ChessRuntimeSettings:
     HAKUZOSU_PROTECT_IMAGE = 'c/c_hakuzosu_protect.png'
     HAKUZOSU_NAME = 'yume_san_byakuzou'
     ARAKAWA_BOND_NAME = '荒川'
-    ARAKAWA_GOLDFISH_SPAWN_POSITIONS = (12, 11, 10, 9)
     DEFAULT_LINEUP_KEY = REGISTERED_DEFAULT_LINEUP_KEY
     LINEUP_REGISTRY = REGISTERED_LINEUP_REGISTRY
     SOUL_EQUIP_SAFETY_LIMIT = 20

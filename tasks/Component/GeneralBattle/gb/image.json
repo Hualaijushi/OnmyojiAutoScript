@@ -2,8 +2,8 @@
   {
     "itemName": "reward",
     "imageName": "gb_reward.png",
-    "roiFront": "547,518,172,96",
-    "roiBack": "547,518,172,96",
+    "roiFront": "558,508,166,106",
+    "roiBack": "558,508,166,106",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "奖励，就是那个魂"
@@ -277,5 +277,23 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "御魂溢出"
+  },
+  {
+    "itemName": "get_battle_reward",
+    "imageName": "gb_get_battle_reward.png",
+    "roiFront": "557,439,146,149",
+    "roiBack": "557,439,146,149",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "通用结算奖励区域，判断是否战斗结束以及奖励是否过多"
+  },
+  {
+    "itemName": "get_battle_reward_2",
+    "imageName": "gb_get_battle_reward_2.png",
+    "roiFront": "557,439,146,149",
+    "roiBack": "557,439,146,149",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "通用结算奖励区域，判断是否战斗结束以及奖励是否过多"
   }
 ]

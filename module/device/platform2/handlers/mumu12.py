@@ -192,7 +192,9 @@ class MuMu12Handler(EmulatorHandler):
             return {}
         command = f'"{manager}" info -v {mumu_id}'
         try:
-            result = platform.execute_output(command, timeout=10)
+            # MuMuManager JSON 使用 UTF-8；Windows 中文系统默认的 GBK
+            # 无法解码实例名称等字段，会导致 main_wnd 一并丢失。
+            result = platform.execute_output(command, timeout=10, encoding='utf-8')
         except Exception as e:
             self._remember_info_result(instance, error=f'Query failed: {e}')
             return {}

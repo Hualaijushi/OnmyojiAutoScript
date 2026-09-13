@@ -5,6 +5,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from module.click_sampler import ClickSampler
 from module.exception import RequestHumanTakeover, TaskEnd
 from module.logger import logger
 from module.multi_account.account import Account
@@ -99,7 +100,10 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             if select_area is None:
                 logger.info('Current page no exact friend')
                 return False
-            click_x, click_y = self._random_point_in_area(select_area)
+            # T7-5 Stage 2：好友名 OCR bbox 即安全点击 ROI；随 GeneralInvite 一起从任务私有
+            # 整框均匀 `_random_point_in_area` 迁到统一 preferred 热点模型（未登记 →
+            # RULE_FALLBACK），不再保留两套点位实现。
+            click_x, click_y = ClickSampler.sample_target(select_area, rule.name)
             self.device.click(x=click_x, y=click_y, control_name=rule.name)
             if self._wait_selected_appear(pre_cnt):
                 return True

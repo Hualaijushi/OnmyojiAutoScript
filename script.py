@@ -10,6 +10,7 @@ import time
 import os
 import inflection
 import json
+from queue import Empty
 
 from datetime import date
 import threading
@@ -28,9 +29,15 @@ from module.base.utils import load_module
 from module.base.decorator import del_cached_property
 from module.logger import logger
 from module.exception import *
+from module.fatigue import get_fatigue_manager
+from module.behavior_trace import configure_behavior_trace, get_behavior_trace
 from module.server.i18n import I18n
-from module.image.rpc import ensure_image_server_ready
-from module.ocr.rpc import ensure_ocr_server_ready, set_ocr_logging_enabled
+from module.image.rpc import ensure_image_server_ready, set_image_low_spec_mode
+from module.ocr.rpc import (
+    ensure_ocr_server_ready,
+    set_ocr_logging_enabled,
+    set_ocr_model_size,
+)
 from module.script import ScriptRuntimeController, ScriptRuntimeDecision
 from tasks.Restart.server_update import delay_pending_tasks_for_server_update, is_server_update_window
 from module.server.log_service import build_error_log_dir_name
@@ -43,6 +50,7 @@ class Script:
         logger.hr('Start', level=0)
         self.server = None
         self.state_queue: Queue = None
+        self.command_queue: Queue = None
         self._emulator_down = False
         self.runtime = ScriptRuntimeController(self)
         self.gui_update_task: Callable = None  # 回调函数, gui进程注册当每次config更新任务的时候更新gui的信息
@@ -55,6 +63,50 @@ class Script:
         self.last_task_runtime_outcome: dict[str, Any] | None = None
         # 运行loop的线程
         self.loop_thread: Thread = None
+        # 低配模式属于进程级运行参数，只在脚本进程创建时读取一次。
+        # OASX 中途修改配置不会影响正在运行的脚本。
+        self.low_spec_mode = bool(self.config.script.device.low_spec_mode)
+        set_image_low_spec_mode(self.low_spec_mode)
+        set_ocr_model_size('small' if self.low_spec_mode else 'medium')
+        if self.low_spec_mode:
+            logger.info(
+                'Low spec mode enabled: frame cache=10s, '
+                'OCR model=small, image threshold offset=-0.1'
+            )
+        self.fatigue_manager = get_fatigue_manager(
+            self.config_name, self.config.global_game.fatigue
+        )
+        self.fatigue_manager.end_global_activity()
+        # 行为观测开关属进程级运行参数，只在脚本进程创建时读取一次，运行中不动态重载。
+        configure_behavior_trace(
+            self.config_name,
+            enabled=bool(self.config.script.optimization.behavior_trace_enable),
+        )
+
+    def attach_runtime_channels(self, state_queue: Queue, command_queue: Queue) -> None:
+        self.state_queue = state_queue
+        self.command_queue = command_queue
+        Thread(target=self._publish_fatigue_state, daemon=True).start()
+        Thread(target=self._listen_runtime_commands, daemon=True).start()
+
+    def _publish_fatigue_state(self) -> None:
+        while True:
+            if self.state_queue:
+                self.state_queue.put({'fatigue': self.fatigue_manager.ui_snapshot()})
+            time.sleep(2)
+
+    def _listen_runtime_commands(self) -> None:
+        while True:
+            try:
+                command = self.command_queue.get(timeout=1)
+            except Empty:
+                continue
+            if not isinstance(command, dict):
+                continue
+            if command.get('command') == 'set_fatigue_load_factor':
+                self.fatigue_manager.set_load_factor(command.get('value', 1.1))
+                if self.state_queue:
+                    self.state_queue.put({'fatigue': self.fatigue_manager.ui_snapshot()})
 
     @cached_property
     def config(self) -> "Config":
@@ -449,6 +501,27 @@ class Script:
 
         self._reset_task_runtime_outcome()
         set_ocr_logging_enabled(self.config.global_game.ocr.save_ocr_log)
+        self.fatigue_manager = get_fatigue_manager(
+            self.config_name, self.config.global_game.fatigue
+        )
+        previous_fatigue_task = self.fatigue_manager.task_identity
+        switched = self.fatigue_manager.begin_task(
+            command,
+            load_factor=self.fatigue_manager.load_factor,
+            restart=True,
+        )
+        if switched and self.fatigue_manager.enabled:
+            snapshot = self.fatigue_manager.snapshot()
+            logger.info(
+                f'疲劳任务切换：{previous_fatigue_task or "无"} -> {command}，'
+                f'当前任务疲劳：{snapshot.task:.1f}，总疲劳：{snapshot.global_:.1f}'
+            )
+        self.fatigue_manager.begin_global_activity()
+        # 观测：记录一次任务 episode 的耗时与结果，不改变任何异常传播路径
+        trace = get_behavior_trace(self.config_name)
+        trace.set_task(command)
+        trace_started_at = time.perf_counter()
+        trace_result = 'fail'
         try:
             self.device.screenshot()
             module_name = 'script_task'
@@ -456,8 +529,18 @@ class Script:
             logger.info(f'module_path: {module_path}, module_name: {module_name}')
             task_module = load_module(module_name, module_path)
             task_module.ScriptTask(config=self.config, device=self.device).run()
+            trace_result = 'ok'
         except Exception as e:
-            return self._handle_task_exception(e, command)
+            outcome = self._handle_task_exception(e, command)
+            trace_result = 'ok' if outcome else 'fail'
+            return outcome
+        finally:
+            trace.record(
+                'TASK', action='run', target=command, result=trace_result,
+                elapsed_ms=round((time.perf_counter() - trace_started_at) * 1000),
+            )
+            trace.set_task('')
+            self.fatigue_manager.end_global_activity()
         return False
 
     def loop(self):

@@ -15,15 +15,21 @@ class ChessBattleNavigationMixin:
     CHESS_EXIT_TIMEOUT = 60.0
     CHESS_EXIT_SCREENSHOT_INTERVAL = 0.35
 
-    def chess_result_flow_visible(self) -> bool:
-        """检测百鬼棋局大厅或任一结算页面。"""
+    def chess_result_page_visible(self) -> bool:
+        """检测百鬼棋局任一结算、分享或排名页面。"""
         return (
-            self.appear(self.I_CHECK_CHESS)
-            or self.appear(self.I_CHESS_EXIT_TO_LOBBY)
+            self.appear(self.I_CHESS_EXIT_TO_LOBBY)
             or self.appear(self.I_CHESS_EXIT_TO_LOBBY_2)
             or self.appear(self.I_CHESS_SHARE)
             or self.appear(self.I_CHECK_CHESS_RANK)
             or self.appear(self.I_CHESS_RANK_GOTO_LOBBY)
+        )
+
+    def chess_result_flow_visible(self) -> bool:
+        """检测百鬼棋局大厅或任一结算页面。"""
+        return (
+            self.appear(self.I_CHECK_CHESS)
+            or self.chess_result_page_visible()
         )
 
     def return_to_chess_lobby(self) -> bool:
@@ -34,6 +40,7 @@ class ChessBattleNavigationMixin:
         exit_clicked = False
         safe_clicks = 0
         rank_recovery_started = False
+        next_rank_safe_click_at = 0.0
         fallback_exit_at = time.monotonic() + 1.5
 
         while time.monotonic() < deadline:
@@ -46,13 +53,22 @@ class ChessBattleNavigationMixin:
 
             rank_page = self.appear(self.I_CHECK_CHESS_RANK)
             rank_button = self.appear(self.I_CHESS_RANK_GOTO_LOBBY)
-            if (rank_page or rank_button) and not exit_clicked:
+            if rank_page or rank_button:
                 rank_recovery_started = True
                 if rank_button:
                     self.appear_then_click(
                         self.I_CHESS_RANK_GOTO_LOBBY,
                         interval=1.5,
                     )
+                elif time.monotonic() >= next_rank_safe_click_at:
+                    # 部分结算只显示“点击空白处继续”，没有返回大厅按钮。
+                    logger.info(
+                        'Global Chess result flow: advance rank page with '
+                        'safe click'
+                    )
+                    self.click(GeneralBattleAssets.C_RANDOM_LEFT)
+                    safe_clicks += 1
+                    next_rank_safe_click_at = time.monotonic() + 1.5
                 time.sleep(self.CHESS_EXIT_SCREENSHOT_INTERVAL)
                 continue
 
@@ -93,16 +109,6 @@ class ChessBattleNavigationMixin:
                 share_seen = True
 
             if not share_seen:
-                time.sleep(self.CHESS_EXIT_SCREENSHOT_INTERVAL)
-                continue
-
-            if rank_page or rank_button:
-                rank_recovery_started = True
-                if rank_button:
-                    self.appear_then_click(
-                        self.I_CHESS_RANK_GOTO_LOBBY,
-                        interval=1.5,
-                    )
                 time.sleep(self.CHESS_EXIT_SCREENSHOT_INTERVAL)
                 continue
 
@@ -166,3 +172,8 @@ class ChessBattleNavigationMixin:
 def handle_chess_battle_page(task) -> bool:
     """GameUi 页面边动作：退出棋局战斗并返回棋局大厅。"""
     return task.exit_chess_battle()
+
+
+def handle_chess_result_page(task) -> bool:
+    """GameUi 页面边动作：完成遗留结算并返回棋局大厅。"""
+    return task.return_to_chess_lobby()

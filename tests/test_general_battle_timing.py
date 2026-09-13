@@ -44,9 +44,21 @@ class GeneralBattleTimingTest(TestCase):
         config = SimpleNamespace(battle_timeout=60, quick_exit=False)
         return self.task._build_context(config, None, 'test'), config
 
-    def test_default_ranges_keep_old_values(self):
+    def test_default_ranges(self):
         self.assertEqual(self.task._next_prepare_click_delay(), 3.0)
-        self.assertEqual(self.task._next_settlement_click_interval(), 0.8)
+        # Contract v2：settlement 间隔从固定 0.8 改为每次随机 0.7~1.0
+        self.assertEqual(GeneralBattle.SETTLEMENT_CLICK_INTERVAL_RANGE, (0.7, 1.0))
+        for _ in range(20):
+            got = self.task._next_settlement_click_interval()
+            self.assertGreaterEqual(got, 0.7)
+            self.assertLessEqual(got, 1.0)
+
+    @patch('tasks.Component.GeneralBattle.general_battle.random_delay')
+    def test_settlement_interval_resampled_each_call(self, random_delay_mock):
+        random_delay_mock.side_effect = (0.72, 0.91, 0.78)
+        got = [self.task._next_settlement_click_interval() for _ in range(3)]
+        self.assertEqual(got, [0.72, 0.91, 0.78])
+        self.assertEqual(random_delay_mock.call_args_list, [call(0.7, 1.0)] * 3)
 
     @patch('tasks.Component.GeneralBattle.general_battle.random_delay')
     def test_custom_ranges_use_public_random_delay(self, random_delay_mock):
@@ -122,38 +134,57 @@ class GeneralBattleTimingTest(TestCase):
 
         self.assertFalse(context.prepare_click_timer.started())
 
+    def _settlement_ns(self, **overrides):
+        """构造带结算节流计时器 + Settlement Micro-Burst v1 字段的最小 context。"""
+        base = dict(
+            settlement_click_timer=_TimerStub(),
+            settlement_session_active=False,
+            settlement_click_budget=0,
+            settlement_clicks_used=0,
+            settlement_anchor=None,
+            settlement_region_name=None,
+            settlement_stage_name=None,
+            settlement_anchor_switches=0,
+        )
+        base.update(overrides)
+        return SimpleNamespace(**base)
+
     def test_first_settlement_click_is_immediate(self):
         timer = _TimerStub()
-        context = SimpleNamespace(settlement_click_timer=timer)
-        self.task.click = Mock()
+        context = self._settlement_ns(settlement_click_timer=timer)
+        self.task._sample_settlement_click = Mock()
         self.task._next_settlement_click_interval = Mock(return_value=0.8)
 
         self.assertTrue(self.task._settlement_click(context))
-        self.task.click.assert_called_once()
+        self.task._sample_settlement_click.assert_called_once()
         self.task._next_settlement_click_interval.assert_called_once_with()
         self.assertEqual(timer.limit, 0.8)
         self.assertEqual(timer.reset_count, 1)
 
     def test_later_settlement_click_waits_and_resamples(self):
         timer = _TimerStub(started=True, reached=False)
-        context = SimpleNamespace(settlement_click_timer=timer)
-        self.task.click = Mock()
+        context = self._settlement_ns(settlement_click_timer=timer)
+        self.task._sample_settlement_click = Mock()
         self.task._next_settlement_click_interval = Mock(return_value=0.9)
 
         self.assertFalse(self.task._settlement_click(context))
-        self.task.click.assert_not_called()
+        self.task._sample_settlement_click.assert_not_called()
         self.task._next_settlement_click_interval.assert_not_called()
 
         timer._reached = True
         self.assertTrue(self.task._settlement_click(context))
-        self.task.click.assert_called_once()
+        self.task._sample_settlement_click.assert_called_once()
         self.task._next_settlement_click_interval.assert_called_once_with()
         self.assertEqual(timer.limit, 0.9)
         self.assertEqual(timer.reset_count, 1)
 
     def test_result_and_reward_share_settlement_timer(self):
+        """result 与 reward 共用同一个结算节流计时器：result 点一次后，reward 首帧被节流跳过。
+
+        这里 `appear` 恒 False → 非通用结果上下文 → result 走单次节流点击（不是强制双击）。
+        """
         timer = _TimerStub()
-        context = SimpleNamespace(
+        context = self._settlement_ns(
             settlement_click_timer=timer,
             reward_no_battle_ts=None,
             is_win=False,
@@ -163,15 +194,28 @@ class GeneralBattleTimingTest(TestCase):
         self.task.device = SimpleNamespace(click_record_clear=Mock())
         self.task.appear = Mock(return_value=False)
         self.task.appear_then_click = Mock(return_value=False)
-        self.task.click = Mock()
+        self.task._sample_settlement_click = Mock()
         self.task._next_settlement_click_interval = Mock(return_value=0.8)
 
-        self.task._handle_result(context, config)
+        self.task._handle_result(context, config)          # DEFAULT 一次
         context.last_page = page_battle_result
-        self.task._handle_reward(context, config)
+        self.task._handle_reward(context, config)          # 同一 timer 未到点 → 跳过
 
-        self.task.click.assert_called_once()
+        self.task._sample_settlement_click.assert_called_once()
+        self.assertIs(self.task._sample_settlement_click.call_args[0][0], self.task.C_RANDOM_DEFAULT)
         self.assertEqual(timer.reset_count, 1)
+
+    def test_result_uses_default_region_when_not_generic(self):
+        """非通用结果标志（appear 恒 False）→ result 页单次节流点 C_RANDOM_DEFAULT。"""
+        context = self._settlement_ns(reward_no_battle_ts=None, is_win=False, last_page=None)
+        self.task.device = SimpleNamespace(click_record_clear=Mock())
+        self.task.appear = Mock(return_value=False)
+        clicked = []
+        self.task._sample_settlement_click = Mock(side_effect=lambda rule: clicked.append(rule))
+
+        self.task._handle_result(context, SimpleNamespace())
+
+        self.assertEqual(clicked, [self.task.C_RANDOM_DEFAULT])
 
     @patch('tasks.Component.GeneralBattle.general_battle.random_delay')
     def test_new_round_replaces_settlement_timer(self, random_delay_mock):
@@ -191,8 +235,8 @@ class GeneralBattleTimingTest(TestCase):
 
     def test_click_exception_does_not_reset_timer(self):
         timer = _TimerStub()
-        context = SimpleNamespace(settlement_click_timer=timer)
-        self.task.click = Mock(side_effect=RuntimeError('click failed'))
+        context = self._settlement_ns(settlement_click_timer=timer)
+        self.task._sample_settlement_click = Mock(side_effect=RuntimeError('click failed'))
         self.task._next_settlement_click_interval = Mock(return_value=0.8)
 
         with self.assertRaises(RuntimeError):
@@ -216,13 +260,17 @@ class GeneralBattleTimingTest(TestCase):
     def test_realm_raid_has_no_click_reaction_delay(self):
         self.assertNotIn('CLICK_REACTION_DELAY', RealmRaidScriptTask.__dict__)
 
-    def test_realm_raid_fire_keeps_original_timing_arguments(self):
+    def test_realm_raid_fire_uses_reaction_fire_not_confirm_delay_or_legacy_api(self):
+        # 2026-09-08 R-R1：fire() 现在带 FIRE reaction（REACTION_FIRE / random_delay），
+        # 但仍不是 confirm_delay，也不是被删过的 reaction_delay / CLICK_REACTION_DELAY。
         source = inspect.getsource(RealmRaidScriptTask.fire)
 
-        self.assertIn('self.appear_then_click(self.I_FIRE, interval=1)', source)
-        self.assertIn('self.click(click, interval=2)', source)
+        self.assertIn('random_delay(*REACTION_FIRE)', source)
+        self.assertIn('self.appear_then_click(self.I_FIRE, interval=0, threshold=0.8)', source)
+        self.assertIn('self.click(click, interval=2)', source)   # partition 打开详情不变
         self.assertNotIn('confirm_delay', source)
         self.assertNotIn('reaction_delay', source)
+        self.assertNotIn('CLICK_REACTION_DELAY', source)
 
     def test_realm_raid_quick_exit_skips_settlement_click(self):
         task = RealmRaidScriptTask.__new__(RealmRaidScriptTask)

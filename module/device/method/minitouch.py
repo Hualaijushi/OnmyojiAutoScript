@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import re
 import socket
 import time
@@ -140,6 +141,52 @@ def smooth_path(points: list, min_distance: float = 30.0, offset_range: float = 
         smooth_points.append(points[-1])
 
     return smooth_points
+
+
+def _ensure_trajectory(trajectory):
+    """校验并规整自定义滑动轨迹，返回 ``[(int x, int y, int dt_ms), ...]``。
+
+    - 至少 2 个点；每个点必须是 ``(x, y, dt_ms)``。
+    - ``x`` / ``y`` 必须是有限数值，取整。
+    - 第 0 点是落点，其 ``dt`` 被忽略（不做按压前置停顿），此处规整为 0。
+    - 其余点的 ``dt`` 必须是有限正数（取整后 ``>= 1`` ms）。
+
+    非法输入直接抛 ``ValueError``，不静默修正（严重结构错误必须让调用方知道）。
+    该函数是纯校验、无副作用，被 `Minitouch.swipe_minitouch_trajectory` 在 ``@retry``
+    之外先调用，保证非法输入立即失败、不会被重试逻辑吞掉。
+    """
+    try:
+        points = list(trajectory)
+    except TypeError:
+        raise ValueError(f'轨迹必须是可迭代的点序列：{trajectory!r}')
+    if len(points) < 2:
+        raise ValueError(f'轨迹至少需要 2 个点，收到 {len(points)} 个')
+
+    cleaned = []
+    for idx, point in enumerate(points):
+        try:
+            x, y, dt = point
+        except (TypeError, ValueError):
+            raise ValueError(f'第 {idx} 个轨迹点必须是 (x, y, dt_ms)：{point!r}')
+        for name, value in (('x', x), ('y', y)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f'第 {idx} 点的 {name} 非法：{value!r}')
+            if not math.isfinite(value):
+                raise ValueError(f'第 {idx} 点的 {name} 不是有限数值：{value!r}')
+        xi, yi = int(round(x)), int(round(y))
+        if idx == 0:
+            cleaned.append((xi, yi, 0))
+            continue
+        if isinstance(dt, bool) or not isinstance(dt, (int, float)):
+            raise ValueError(f'第 {idx} 点的 dt_ms 非法：{dt!r}')
+        if not math.isfinite(dt):
+            raise ValueError(f'第 {idx} 点的 dt_ms 不是有限数值：{dt!r}')
+        dti = int(round(dt))
+        if dti < 1:
+            raise ValueError(f'第 {idx} 点的 dt_ms 取整后必须 >= 1：{dt!r}')
+        cleaned.append((xi, yi, dti))
+    return cleaned
+
 
 class Command:
     def __init__(
@@ -644,6 +691,43 @@ class Minitouch(Connection):
 
         builder.up().commit()
         self.minitouch_send()
+
+    def swipe_minitouch_trajectory(self, trajectory):
+        """按调用方给定的自定义轨迹执行一次 minitouch 滑动（Plan B 的执行层）。
+
+        trajectory: ``[(x, y, dt_ms), ...]``，至少 2 个点（见 `_ensure_trajectory`）。
+          - 第 1 点 = DOWN 落点，其 ``dt_ms`` 被忽略（不加按压前置停顿）。
+          - 之后每个点 = 一次 MOVE；「到达」该点后 ``wait(dt_ms)`` 再走下一点
+            （``dt`` 语义 = 到点后、下次移动前的停留）。
+          - 走完最后一点后 UP。
+
+        路径与逐段时间**完全由调用方（`TouchSwipeModel`）决定**：这里不套用
+        `insert_swipe`，也不对 ``dt`` 叠加 ``random_int(6, 15)``。``pressure`` 与
+        `click_minitouch` / `_press_and_drag_minitouch` 一致，整个手势用同一个
+        `_humanized_pressure()`（MuMu 环境恒为 1，仅协议兼容字段，不是轨迹变量）。
+
+        输入校验放在 ``@retry`` 之外：非法轨迹立即抛 ``ValueError``，不进入重试。
+        """
+        points = _ensure_trajectory(trajectory)
+        self._swipe_minitouch_trajectory_run(points)
+
+    @retry
+    def _swipe_minitouch_trajectory_run(self, points):
+        """真正发命令的部分，套用现有 `@retry`（长战斗后 socket 断开时重建控制连接）。"""
+        builder = self.minitouch_builder
+        pressure = self._humanized_pressure()
+
+        x0, y0, _ = points[0]
+        builder.down(x0, y0, pressure=pressure).commit()
+        self.minitouch_send()
+
+        for x, y, dt in points[1:]:
+            builder.move(x, y, pressure=pressure).commit().wait(dt)
+        self.minitouch_send()
+
+        builder.up().commit()
+        self.minitouch_send()
+
 
 if __name__ == '__main__':
     mm = Minitouch(config='oas1')
