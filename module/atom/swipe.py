@@ -1,12 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-import random
-
-from math import dist
-
-from module.base.decorator import cached_property
-from module.atom.cBezier import BezierTrajectory
+from module.atom.swipe_endpoint import sample_swipe_endpoints
 from module.base.utils.random import random_center_point_in_roi
 from module.logger import logger
 
@@ -30,81 +25,23 @@ class RuleSwipe:
 
         self.interval: int = 8  # 每次移动的间隔时间
 
-    @cached_property
-    def is_default_mode(self) -> bool:
-        """
-        是否是默认模式
-        :return:
-        """
-        return self.mode == 'default'
-
-    @cached_property
-    def is_vector_mode(self) -> bool:
-        """
-        是否是向量模式
-        :return:
-        """
-        return self.mode == 'vector'
-
     def coord(self) -> tuple:
         """
         获取坐标, 从roi_front随机获取坐标 和从roi_back随机获取的坐标
         :return: 两个坐标的tuple
+
+        旧端点访问器：起终点各在自己 ROI 内中心偏置随机。保留给兼容 / 测试
+        （生产滑动已改走 `sample_endpoints()`，见 `docs/DECISIONS.md` D022）。
         """
         start_x, start_y = random_center_point_in_roi(self.roi_front)
         end_x, end_y = random_center_point_in_roi(self.roi_back)
         return start_x, start_y, end_x, end_y
 
-    def trace(self) -> list:
+    def sample_endpoints(self) -> tuple:
+        """普通滑动的 v2 端点采样（`BaseTask.swipe` 使用）。
+
+        `roi_front` / `roi_back` 只表达方向与基准距离；具体起点 / 终点由
+        `module/atom/swipe_endpoint.py` 采样：起终点各自独立、主成分集中 + 少量更宽尾部、
+        夹到安全范围，并联合保证方向 / 有效距离不被破坏。见 `docs/DECISIONS.md` D022。
         """
-        获取滑动的路径,list的每一项都是tuple
-        :return:
-        """
-        if self.is_default_mode:
-            start_pos, end_pos = self.coord()
-            # 表示每秒移动1.5个像素点， 总的时间除以每个点10ms就得到总的点的个数
-            number_list: int = int(dist(start_pos, end_pos) / (1.5 * self.interval))
-            le = random.randint(2, 4)  #
-            deviation = random.randint(20, 40)  # 幅度
-            b_type = 3
-            obbs_type = random.random()  # 0.8的概率是先快中间慢后面快， 0.1概率是先快后慢， 0.1概率先慢后快
-            if 0 < obbs_type <= 0.8:
-                b_type = 3
-            elif obbs_type < 0.9:
-                b_type = 2
-            else:
-                b_type = 1
-
-            return BezierTrajectory.trackArray(start=start_pos, end=end_pos, numberList=number_list, le=le,
-                     deviation=30, bias=0.5, type=b_type, cbb=0, yhh=20)
-
-        elif self.is_vector_mode:
-            # 获取两个点的直线的规矩
-            start_pos, end_pos = self.coord()
-            # 表示每秒移动1.5个像素点， 总的时间除以每个点10ms就得到总的点的个数
-            number_list: int = int(dist(start_pos, end_pos) / (1.5 * self.interval))
-
-            def generate_linear_trajectory(start_pos: tuple, end_pos: tuple, num_points: int) -> list:
-                """
-                生成线性轨迹
-                :param start_pos:
-                :param end_pos:
-                :param num_points:
-                :return:
-                """
-                trajectory = []
-                delta_x = (end_pos[0] - start_pos[0]) / (num_points - 1)
-                delta_y = (end_pos[1] - start_pos[1]) / (num_points - 1)
-                for i in range(num_points):
-                    x = start_pos[0] + delta_x * i
-                    y = start_pos[1] + delta_y * i
-                    trajectory.append((x, y))
-                return trajectory
-
-            return generate_linear_trajectory(start_pos, end_pos, number_list)
-
-        else:
-            raise ValueError(f'Invalid mode: {self.mode}')
-
-
-
+        return sample_swipe_endpoints(self.roi_front, self.roi_back)

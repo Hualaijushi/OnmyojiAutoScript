@@ -50,20 +50,26 @@ class GeneralBattleAssets:
 	# 战斗的时候有一定的概率随机点击 
 	C_RANDOM_CLICK = RuleClick(roi_front=(104,79,1050,507), roi_back=(255,65,100,100), name="random_click")
 	# 左边随机点击 
-	C_RANDOM_LEFT = RuleClick(roi_front=(17,104,55,370), roi_back=(17,104,55,370), name="random_left")
+	C_RANDOM_LEFT = RuleClick(roi_front=(17,104,192,506), roi_back=(17,104,192,506), name="random_left")
 	# 右边随机点击 
-	C_RANDOM_RIGHT = RuleClick(roi_front=(1185,115,79,388), roi_back=(1185,115,79,388), name="random_right")
+	C_RANDOM_RIGHT = RuleClick(roi_front=(1185,209,87,441), roi_back=(1185,209,87,441), name="random_right")
 	# 上边随机点击 
 	C_RANDOM_TOP = RuleClick(roi_front=(250,58,868,68), roi_back=(250,58,868,68), name="random_top")
 	# 下边随机点击 
-	C_RANDOM_BOTTOM = RuleClick(roi_front=(462,599,492,78), roi_back=(462,599,492,78), name="random_bottom")
+	C_RANDOM_BOTTOM = RuleClick(roi_front=(819,639,425,69), roi_back=(819,639,425,69), name="random_bottom")
 	# 整体随机点击 
 	C_RANDOM_ALL = RuleClick(roi_front=(42,94,1207,543), roi_back=(42,94,1207,543), name="random_all")
+	# 战斗结算/奖励默认点击范围
+	C_RANDOM_DEFAULT = RuleClick(roi_front=(742,430,362,230), roi_back=(742,430,362,230), name="random_default")
+	# 结算安全点击区域底部
+	C_RANDOM_SAVE_BOTTOM = RuleClick(roi_front=(819,639,425,69), roi_back=(819,639,425,69), name="random_save_bottom")
+	# 结算安全点击
+	C_RANDOM_SAVE_RIGHT = RuleClick(roi_front=(1185,209,87,441), roi_back=(1185,209,87,441), name="random_save_right")
 
 
 	# Image Rule Assets
 	# 奖励，就是那个魂 
-	I_REWARD = RuleImage(roi_front=(547,518,172,96), roi_back=(547,518,172,96), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_reward.png")
+	I_REWARD = RuleImage(roi_front=(558,508,166,106), roi_back=(558,508,166,106), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_reward.png")
 	# 预设的小图标 
 	I_PRESET = RuleImage(roi_front=(32,650,47,45), roi_back=(32,650,47,45), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_preset.png")
 	# 准备 
@@ -124,6 +130,10 @@ class GeneralBattleAssets:
 	I_GB_CLOSE_RED = RuleImage(roi_front=(1108,128,45,41), roi_back=(1108,128,45,41), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_gb_close_red.png")
 	# 御魂溢出
 	I_OVER_GHOST = RuleImage(roi_front=(697,409,89,32), roi_back=(697,409,89,32), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_over_ghost.png")
+	# 通用结算奖励区域，判断是否战斗结束以及奖励是否过多
+	I_GET_BATTLE_REWARD = RuleImage(roi_front=(557,439,146,149), roi_back=(557,439,146,149), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_get_battle_reward.png")
+	# 通用结算奖励区域，判断是否战斗结束以及奖励是否过多
+	I_GET_BATTLE_REWARD_2 = RuleImage(roi_front=(557,439,146,149), roi_back=(557,439,146,149), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_get_battle_reward_2.png")
 
 
 	# Image Rule Assets

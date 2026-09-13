@@ -4,7 +4,9 @@
 import re
 import time
 from cached_property import cached_property
+from dataclasses import dataclass, field
 from datetime import timedelta, datetime
+from enum import Enum
 
 from module.base.timer import Timer
 from module.atom.image_grid import ImageGrid
@@ -17,17 +19,44 @@ from tasks.KekkaiUtilize.page import page_guild_realm, page_guild_realm_utilize,
 from tasks.Utils.config_enum import ShikigamiClass
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
 from tasks.KekkaiUtilize.config import UtilizeRule, SelectFriendList
-from tasks.KekkaiUtilize.utils import CardClass, target_to_card_class
+from tasks.KekkaiUtilize.utils import CardClass, target_to_card_class, \
+    FISH_REWARD_TIERS, TAIKO_REWARD_TIERS, lower_reward_tier
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.GameUi.page import page_main, page_guild
 from module.base.utils import point2str
-import random
+from module.base.utils.random import random_delay, random_int
+from module.base.frame_wait import wait_for_changed_and_stable
+from module.device.touch_swipe_model import TouchSwipeModel
+from tasks.KekkaiUtilize.selected_anchor import detect_selected_anchor
+from tasks.KekkaiUtilize.frame_projection import actual_scroll_dy_px, dedup_by_projection
+from tasks.KekkaiUtilize.scheduling import is_in_quiet_window, normalize_for_quiet_window
 
 """ 结界蹭卡 """
 
 
+class PassResult(str, Enum):
+    """单个搜索 PASS 的结果。"""
+    HIT = 'hit'                        # 命中当前阈值：当前 UI 已选中的卡就是目标
+    PASS_MISS = 'pass_miss'           # 扫到列表底部但没有达标候选：换下一个 PASS
+    FINAL_USE_LAST = 'final_use_last'  # 最后一个 PASS 扫到底：直接用最后一次点击、仍保持选中的候选
+    ABORT = 'abort'                   # 超时 / 达到滑动上限 / 页面异常：交外层按失败重试
+
+
+@dataclass
+class SearchPass:
+    """一次单向（TOP→BOTTOM）好友结界卡搜索的完整描述。
+
+    切换同区 / 跨区分组后，游戏会把好友列表重新滚回顶部，所以每个 PASS 都只需要向下扫描，
+    不存在反向 swipe / 蛇形搜索 / TOP marker。
+    """
+    friend_group: SelectFriendList        # 本 PASS 扫描哪个好友分组
+    stars: frozenset                       # 允许的星级集合：{6} 或 {5, 6}
+    threshold_map: dict                    # {'斗鱼': int, '太鼓': int}，本 PASS 的收益阈值
+    final_fallback: bool                   # 是否是最后一个 PASS（到底后用最后点击的候选兜底）
+    targets: ImageGrid = field(compare=False)  # 本 PASS 用于 find_everyone 的结界卡模板
+
+
 class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
-    last_best_index = 99
     utilize_add_count = 0
     utilize_failed_count = 0
     utilize_terminal_failure = False
@@ -35,8 +64,6 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     utilize_current_group_has_eligible_card = False
     utilize_current_group_scan_completed = False
     utilize_lazy_mode_active = False
-    ap_max_num = 0
-    jade_max_num = 0
 
     # 同类型、同星级结界卡的最高奖励。达到最高值后，本轮不再打开同档卡片。
     CARD_TIER_INFO = {
@@ -47,14 +74,86 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         CardClass.FISH5: ('斗鱼', 5, 134),
         CardClass.FISH6: ('斗鱼', 6, 151),
     }
-    # 当前策略的全局最高收益。普通浏览一旦实际 OCR 到对应数值，
-    # 当前卡已经是最终目标，不再继续向下翻页。
-    STRATEGY_MAX_REWARDS = {
-        '太鼓': 76,
-        '斗鱼': 151,
-    }
+    # 寄养剩余时间 OCR 的兜底：识别失败或数值明显不合理时，按固定间隔重试，
+    # 而不是把 next_run 设成当前时刻。
+    UTILIZE_RES_TIME_FALLBACK = timedelta(minutes=5)
+    UTILIZE_RES_TIME_MAX = timedelta(hours=12)
+    # 切换好友分组的总超时，超时视为页面异常。
+    SWITCH_FRIEND_LIST_TIMEOUT = 20
+    # 好友结界卡列表的下划参数。起点在列表安全区内随机取。
+    SWIPE_START_X_RANGE = (340, 600)
+    SWIPE_START_Y_RANGE = (500, 565)
+    # 怠惰路径 / 非 minitouch 回退（`perform_swipe_action` → `swipe_adb`）的固定位移，本轮不动。
+    SWIPE_DISTANCE = 416
+    # K2（2026-09-07）：标准 PASS 的 minitouch 路径改成每次 `_perform_search_swipe()` 独立随机
+    # 一个「较短」commanded finger 位移。Level C 几何：好友结界卡列表一屏约 4 格、相邻卡片中心
+    # 间距 row_pitch ≈ 106px（y≈220/326/432/538）；旧 416px ≈ 3.9 格、接近整屏，加上游戏列表
+    # 惯性会更远 → 严重跨项漏卡。本轮只控制 commanded 位移，不做惯性补偿 / 实际 scroll dy 测量（那是 K4）。
+    KEKKAI_ROW_PITCH_PX = 106
+    # commanded finger 位移随机范围（**provisional，Level C 分档调参**）：
+    #   首档 (212, 265)（≈2.0~2.5 row_pitch）—— 2026-09-07 首次 Level C 实测「一次内容仍滚 >4 格」，
+    #                    证明 commanded finger distance ≠ actual content scroll（列表惯性放大），判定过大。
+    #   当前 (140, 180)（≈1.3~1.7 row_pitch 的手指位移）—— 整体降约 1/3；受惯性放大预计实际仍滚 2~3 格，
+    #                    目标是相邻两屏至少保留 1~2 格重叠（A B C D → B C D E / C D E F），避免几乎无重叠的大跨步。
+    #   若二次 Level C 仍实际 >3 格，下一档再缩到 (110, 150)——单变量分阶段，本轮不直接跳第二档。
+    # 只调这个 consumer 参数，不改 TouchSwipeModel / K1 起点范围 / K3 settle。
+    SWIPE_DISTANCE_RANGE = (140, 180)
+    # 轻微整体斜度（2026-09-07，仅标准 PASS + minitouch）：旧 `end_x == start_x` 让宏观轨迹接近
+    # 严格竖直（TouchSwipeModel 只在中段给轻微曲率）。这里每次 `_perform_search_swipe()` 独立随机
+    # 一个小幅横向偏移，只作用于**最终 end_x**（不给每个 MOVE 点加噪声）：有的轻微左斜、有的轻微
+    # 右斜、有的接近竖直，整体仍明确向上 swipe。`end_x` 再夹回起点安全区 `SWIPE_START_X_RANGE`
+    # （不扩大 start_x 范围）：start_x 靠边界时偏移被有界裁掉、退化成竖直，不会滑出可接受区。
+    # provisional，需 Level C 调整。纵向距离 `SWIPE_DISTANCE_RANGE` 不因本轮再动。
+    SWIPE_LATERAL_OFFSET_RANGE = (-12, 12)
+
+    # K3（2026-09-07，仅标准 PASS + minitouch）：swipe settle 从固定 `time.sleep(2)` 改成
+    # FrameWait —— baseline（swipe 前帧）→ swipe → 等「相对 baseline **changed 且 stable**」。
+    # ROI 只盯好友结界卡列表滚动主体（card-column，取 `I_U_*_6` / `I_U_EMPTY_CARD` 的 `roi_back`
+    # 包络：x≈530~620、y≈156~606；排除右侧详情栏 / tab / 底部 UI / OCR 数字，避免污染 changed·stable）。
+    # 格式 = `(x1, y1, x2, y2)`（frame_state 口径，非 (x,y,w,h)）。
+    SWIPE_WAIT_ROI = (525, 155, 620, 610)
+    # 以下 3 个阈值 + timeout 是 K3 **provisional 首版，需 Level C 调整**（用 wait 日志的
+    # `elapsed` 分布看旧 `sleep(2)` 实际通常要 0.4/0.8/1.3s…）。
+    SWIPE_WAIT_CHANGED_THRESHOLD = 0.10   # 列表滚 2~2.5 格，card-column 变化远超 10%
+    SWIPE_WAIT_STABLE_THRESHOLD = 0.02    # 停稳后相邻帧差异 < 2%
+    SWIPE_WAIT_STABLE_FRAMES = 3          # 连续 3 帧相邻安静
+    SWIPE_WAIT_TIMEOUT = 3.0             # 有限超时（旧固定等待 2s，惯性可能略长，3s 封顶）
+    # 两次取帧之间额外 sleep 的秒数（检测采样 pacing）。FrameWait 全局默认 `poll_interval=0.0`
+    # ——那是给「frame_provider 自带节流」的场景。这里**显式覆盖成正值**：好友列表 swipe 后的
+    # 惯性微滚，可能让相邻两帧差异 < `SWIPE_WAIT_STABLE_THRESHOLD`；零间隔高速轮询下连续
+    # `SWIPE_WAIT_STABLE_FRAMES` 帧就提前判 stable（甚至连抓到同一渲染帧）。加一档 pacing 让这
+    # 3 帧跨越更长真实时间窗、更接近「惯性真的停了」。叠在 `device.screenshot` 自带的
+    # `_screenshot_interval`（~0.1s）之上，**不是恢复固定 `sleep(2)`**（settle 仍以 changed&stable
+    # 为准、命中即返回）。**provisional，需 Level C 调整**（`_screenshot_interval` 已够 → 可回 0；
+    # 惯性帧仍 alias → 调大）。不动上面 4 个判定阈值。
+    SWIPE_WAIT_POLL_INTERVAL = 0.15
+
+    # 单个搜索 PASS 的安全边界。到底靠 I_U_EMPTY_CARD 判定；这里的两条只是「安全中止」，
+    # 达到即视为页面异常/卡死，不当作「已经扫到列表底部」。
+    SEARCH_MAX_SWIPES = 20
+    SEARCH_PASS_TIMEOUT = 120
+    # 点击一张候选后等右侧详情栏刷新（换成语义等待属 Level C，本轮沿用固定等待）。
+    DETAIL_LOAD_WAIT = 2
+
+    # K4（2026-09-07，解冻）：用 `I_IS_SELECTED` 发光竖线做**动态锚点**，测「上一稳定屏 → 当前
+    # 稳定屏」的**实际**列表滚动像素 `actual_scroll_dy`（= selected anchor before_y − after_y，
+    # **不是** commanded 位移 `SWIPE_DISTANCE_RANGE`——Level C 已确认 commanded ≠ actual）；把上一
+    # 屏 `find_everyone` 候选按该像素向上投影到当前屏，和当前屏 `find_everyone` 结果做「同模板 +
+    # bbox 真实几何交集」一对一去重，只把真正新进入的候选交给 D017 业务逻辑处理。
+    # 测量不可靠（首屏无选中 / 多匹配 / dy 非法 / glow 被边界裁切）→ 完全退回当前完整扫描，
+    # 绝不因 K4 漏卡。只 previous↔current 一帧对一帧、无持久历史。K3 失败仍 ABORT；BOTTOM 仍只
+    # 认 I_U_EMPTY_CARD；FINAL_USE_LAST / clicked_any 语义不变。K2 / K3 一行不改。provisional，
+    # 需 Level C（当前好友卡样本不足，本轮只做 Level A/B）。`K4_ENABLED` 是一处 kill switch。
+    K4_ENABLED = True
+    # 当前屏卡列可见 Y 范围 `(top, bottom)`：投影后中心出此范围的上一屏候选视为已滚出屏、忽略。
+    # 取 card-column（`I_U_*_6` / `I_U_EMPTY_CARD` 的 roi_back）纵向包络。provisional。
+    K4_LIST_VISIBLE_Y = (156, 606)
 
     def run(self):
+        # Scheduler v1 入口守卫：当前处于静默窗口则直接重排 next_run 并结束，不进入任何
+        # 页面 / OCR / 业务动作——即使 scheduler 意外在静默窗口内唤醒本任务也能立即拒绝。
+        if self._guard_quiet_window():
+            raise TaskEnd
         con = self.config.kekkai_utilize.utilize_config
         self.utilize_add_count = 0
         self.utilize_failed_count = 0
@@ -63,10 +162,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         self.utilize_current_group_has_eligible_card = False
         self.utilize_current_group_scan_completed = False
         self.utilize_lazy_mode_active = False
-        self.ap_max_num = 0
-        self.jade_max_num = 0
         if con.utilize_enable and con.lazy_mode:
-            lazy_roll = random.random()
+            lazy_roll = random_delay(0.0, 1.0)
             self.utilize_lazy_mode_active = (
                 lazy_roll < con.lazy_mode_weight
             )
@@ -85,8 +182,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 # 下次运行时间已由失败处理设置为 10 分钟后。
                 return
 
-        # 查看育成满级
-        self.check_max_lv(con.shikigami_class, con.auto_fill)
+        # 查看育成满级：开关关闭时完全跳过，不检测、不卸下、不切换、不补位
+        if con.auto_replace_max_level:
+            self.check_max_lv(con.shikigami_class, con.auto_fill)
         # 检查是否有蹭卡收获 是否收取
         if con.utilize_harvest:
             self.check_utilize_harvest()
@@ -99,6 +197,90 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         self.goto_page(page_main)
         raise TaskEnd
 
+    # ------------------------------------------------------------------------------------
+    # Scheduler v1：静默窗口归一化 + 短期 retry cooldown 随机化。
+    #
+    # 契约（详见 Inventory 报告 + 本轮实施报告）：
+    #   正常寄养：OCR 剩余时间 → min_run_interval 地板 → _normalize_quiet_target → set_next_run
+    #   短期 retry：_build_retry_target（随机 cooldown） → _schedule_target（内部同一次
+    #               normalize） → set_next_run
+    # 5 个 helper 只负责「候选值怎么来 / 怎么被静默窗口归一化 / 怎么写回」，不碰任何
+    # OCR / 页面 / 好友筛选逻辑；quiet window 判定与归一化算法在 `scheduling.py`
+    # 保持纯函数，这里只负责从 config 取参数、从统一随机源采样抖动秒数。
+    # ------------------------------------------------------------------------------------
+
+    def _is_in_quiet_window(self, now: datetime = None) -> bool:
+        """当前（或指定）时刻是否处于配置的静默窗口内。"""
+        sched = self.config.kekkai_utilize.scheduler
+        if not sched.quiet_window_enable:
+            return False
+        now = now or datetime.now()
+        return is_in_quiet_window(now.time(), sched.quiet_start, sched.quiet_end)
+
+    def _quiet_jitter_seconds(self) -> int:
+        """从项目统一随机源（SystemRandom）采样一次静默窗口恢复抖动（秒）。"""
+        sched = self.config.kekkai_utilize.scheduler
+        return random_int(sched.quiet_resume_jitter_min * 60, sched.quiet_resume_jitter_max * 60)
+
+    def _normalize_quiet_target(self, candidate: datetime) -> datetime:
+        """candidate → 静默窗口归一化。不调用 `set_next_run`，只算最终应该写入的时间。
+
+        candidate 落在窗内才会采样随机抖动；不落在窗内 / 窗口关闭时原样返回 candidate，
+        不产生任何随机数（保持在不需要归一化的多数情况下零副作用）。
+        """
+        sched = self.config.kekkai_utilize.scheduler
+        if not sched.quiet_window_enable or not is_in_quiet_window(
+                candidate.time(), sched.quiet_start, sched.quiet_end):
+            return candidate
+        return normalize_for_quiet_window(
+            candidate,
+            enable=sched.quiet_window_enable,
+            quiet_start=sched.quiet_start,
+            quiet_end=sched.quiet_end,
+            jitter_seconds=self._quiet_jitter_seconds(),
+        )
+
+    def _build_retry_target(self, now: datetime = None) -> datetime:
+        """短期 retry candidate：now + 随机 cooldown（`cooldown_min`~`cooldown_max` 分钟）。
+
+        只负责候选值本身，不做静默窗口判断——调用方统一交给 `_schedule_target` 归一化。
+        """
+        sched = self.config.kekkai_utilize.scheduler
+        now = now or datetime.now()
+        cooldown_seconds = random_int(sched.cooldown_min * 60, sched.cooldown_max * 60)
+        return now + timedelta(seconds=cooldown_seconds)
+
+    def _schedule_target(self, candidate: datetime) -> datetime:
+        """统一出口：candidate → 静默窗口归一化 → `set_next_run(target=final, server=False)`。
+
+        `server=False`——候选值已经是完整算好的最终时间，不需要 `Config.task_delay()`
+        再叠一层 `server_update` jitter（见本轮实施报告 §10 的逐出口核对）。
+        """
+        final = self._normalize_quiet_target(candidate)
+        self.set_next_run(task='KekkaiUtilize', target=final, server=False)
+        return final
+
+    def _schedule_retry(self, reason: str) -> datetime:
+        """短期失败 retry 统一出口：一个 owner、一个范围、一次随机——避免各分支各自
+        调 `random_int` 导致 cooldown 范围漂移。"""
+        candidate = self._build_retry_target()
+        final = self._schedule_target(candidate)
+        logger.info(
+            f'KekkaiUtilize 短期重试: {reason}, '
+            f'final_next_run={final.strftime("%Y-%m-%d %H:%M:%S")}'
+        )
+        return final
+
+    def _guard_quiet_window(self) -> bool:
+        """`run()` 入口守卫。当前处于静默窗口 → 直接把 next_run 重排到窗口结束 + 抖动、
+        `return True`（caller 应立即 `raise TaskEnd`，不进入任何业务）；否则 `return False`。
+        """
+        if not self._is_in_quiet_window():
+            return False
+        final = self._schedule_target(datetime.now())
+        logger.info(f'KekkaiUtilize 当前处于静默窗口，next_run 推迟至 {final.strftime("%Y-%m-%d %H:%M:%S")}')
+        return True
+
     def receive_guild_assets(self, max_tries: int = 3):
         """收取寮奖励 会自动前往寮界面探测, 最后会退出到庭院"""
         for i in range(1, max_tries+1):
@@ -106,6 +288,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             ret = self.check_and_get_guild_rewards()
             logger.info(f'第[{i}]次收取寮奖励: {ret}')
             self.goto_page(page_main)
+            # 一个都没收到说明已经没有可收取项，不必再往返
+            if not ret:
+                break
 
     def check_utilize_add(self):
         con = self.config.kekkai_utilize.utilize_config
@@ -118,12 +303,12 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                         UtilizeRule.FISH: '斗鱼',
                         UtilizeRule.DEFAULT: '太鼓或斗鱼',
                     }.get(con.utilize_rule, '目标结界卡')
-                    message = f'未检测到四星及以上{target_name}, 5分钟后再次执行蹭卡'
+                    message = f'未检测到四星及以上{target_name}, 稍后重试'
                     logger.warning(message)
                     self.push_notify(content=message)
                 else:
-                    logger.warning('已检测到四星及以上结界卡，但未能完成选择，5分钟后重试')
-                self.set_next_run(task='KekkaiUtilize', target=datetime.now() + timedelta(minutes=5))
+                    logger.warning('已检测到四星及以上结界卡，但未能完成选择，稍后重试')
+                self._schedule_retry('5 次尝试仍未找到合格结界卡')
                 return True
 
             # 无论收不收到菜，都会进入看看至少看一眼时间还剩多少
@@ -133,19 +318,47 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.screenshot()
             if not self.appear(self.I_UTILIZE_ADD):
                 remaining_time = self.O_UTILIZE_RES_TIME.ocr(self.device.image)
-                if not isinstance(remaining_time, timedelta):
-                    logger.warning('Ocr remaining time error')
                 logger.info(f'Utilize remaining time: {remaining_time}')
+                # ocr_duration 解析失败时返回 timedelta(0)，与真的剩余 0 无法区分。
+                # 直接拿来算 next_run 会把下次运行设成当前时刻，导致任务被立即
+                # 重复调度形成热循环；识别出异常大的值同样不可信。两种情况都按
+                # 固定兜底间隔重试。
+                if (not isinstance(remaining_time, timedelta)
+                        or remaining_time <= timedelta(0)
+                        or remaining_time > self.UTILIZE_RES_TIME_MAX):
+                    logger.warning(
+                        f'寄养剩余时间识别异常({remaining_time})，'
+                        f'按{self.UTILIZE_RES_TIME_FALLBACK}兜底重试'
+                    )
+                    remaining_time = self.UTILIZE_RES_TIME_FALLBACK
                 # 已经蹭上卡了，设置下次蹭卡时间  # 减少30秒
                 # remaining_time = remaining_time - timedelta(seconds=30)
+                # 正常寄养调度契约（Scheduler v1，不被短期 retry cooldown 取代）：
+                # OCR 剩余时间 → min_run_interval 地板 → 静默窗口归一化 → 写回。
                 next_time = datetime.now() + remaining_time
                 min_interval = con.min_run_interval
                 if min_interval and min_interval.total_seconds() > 0:
                     next_time = max(next_time, datetime.now() + min_interval)
-                self.set_next_run(task='KekkaiUtilize', target=next_time)
+                self._schedule_target(next_time)
                 return True
-            if not self.goto_page(page_guild_realm_utilize):
-                logger.info('Utilize failed, exit')
+            # U3（2026-09-14）：导航失败必须阻断寄养业务——`goto_page` 失败时按契约要么抛
+            # `GamePageUnknownError`/`GameStuckError`，要么（防御性地，兼容未来/测试注入的
+            # bool 返回）给出假值；两种信号统一收敛成 `reached_utilize_page`，一旦不为真就
+            # 禁止 `run_utilize(...)` 及其后续业务，复用既有终态失败出口（`_schedule_retry`
+            # + `utilize_terminal_failure`），不新增第二套重试机制，也不重复计入
+            # `utilize_add_count`/`utilize_failed_count`。
+            try:
+                reached_utilize_page = self.goto_page(page_guild_realm_utilize)
+            except (GamePageUnknownError, GameStuckError) as error:
+                reached_utilize_page = False
+                logger.warning(
+                    f'KekkaiUtilize navigation failed: target=page_guild_realm_utilize ({type(error).__name__})'
+                )
+            if not reached_utilize_page:
+                logger.warning('KekkaiUtilize navigation failed, skip utilize business')
+                self._schedule_retry('导航到好友结界寄养页失败')
+                self.utilize_terminal_failure = True
+                return False
             # 开始执行寄养
             self.run_utilize(con.select_friend_list, con.shikigami_class, con.shikigami_order)
             if self.utilize_terminal_failure:
@@ -281,7 +494,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         def _harvest_exp_jug():
             time_exp = Timer(12)
             time_exp.start()
-            max_tries = random.randint(2, 3)
+            max_tries = random_int(2, 3)
             while True:
                 if time_exp.reached():
                     logger.warning('Extract exp jug done')
@@ -337,11 +550,11 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         self.ui_get_reward(self.I_UTILIZE_EXP)
         return True
 
-    def switch_friend_list(self, friend: SelectFriendList = SelectFriendList.SAME_SERVER) -> bool:
+    def switch_friend_list(self, friend: SelectFriendList = SelectFriendList.SAME_SERVER) -> None:
         """
         切换不同的服务区
         :param friend:
-        :return:
+        :raise GamePageUnknownError: 超时仍未切到目标分组
         """
         logger.info('Switch friend list to %s', friend)
         if friend == SelectFriendList.SAME_SERVER:
@@ -351,10 +564,20 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
         timer_click = Timer(1)
         timer_click.start()
+        # 目标分组图标一直识别不到时不能无限点击，本方法在整条寄养链路上
+        # 调用非常频繁，缺少总超时会直接卡死任务。
+        timeout = Timer(self.SWITCH_FRIEND_LIST_TIMEOUT).start()
         while 1:
             self.screenshot()
             if self.appear(check_image):
                 break
+            if timeout.reached():
+                message = (
+                    f'切换好友分组超时，{self.SWITCH_FRIEND_LIST_TIMEOUT}秒内'
+                    f'未识别到[{friend.value}]分组'
+                )
+                logger.error(message)
+                raise GamePageUnknownError(message)
             if timer_click.reached():
                 timer_click.reset()
                 x, y = check_image.coord()
@@ -362,23 +585,6 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         if friend == SelectFriendList.DIFFERENT_SERVER:
             time.sleep(1)
         time.sleep(0.5)
-
-    @cached_property
-    def order_targets(self) -> ImageGrid:
-        rule = self.config.kekkai_utilize.utilize_config.utilize_rule
-        if rule == UtilizeRule.DEFAULT:
-            return ImageGrid([
-                self.I_U_FISH_6, self.I_U_TAIKO_6,
-                self.I_U_FISH_5, self.I_U_TAIKO_5,
-                self.I_U_FISH_4, self.I_U_TAIKO_4,
-            ])
-        elif rule == UtilizeRule.FISH:
-            return ImageGrid([self.I_U_FISH_6, self.I_U_FISH_5, self.I_U_FISH_4])
-        elif rule == UtilizeRule.TAIKO:
-            return ImageGrid([self.I_U_TAIKO_6, self.I_U_TAIKO_5, self.I_U_TAIKO_4])
-        else:
-            logger.error('Unknown utilize rule')
-            raise ValueError('Unknown utilize rule')
 
     @cached_property
     def lazy_scan_targets(self) -> ImageGrid:
@@ -389,28 +595,231 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             self.I_U_FISH_4, self.I_U_TAIKO_4,
         ])
 
-    @cached_property
-    def order_cards(self) -> list[CardClass]:
+    # 单向分区搜索：星级 → 结界卡模板。第一阶段只放 6★，第二阶段放 5★+6★。
+    # 真实奖励档位与星级不是一一对应（6★斗鱼也可能只有 118），所以第二阶段必须 5/6★ 都扫。
+    _STAR_TEMPLATE_ATTR = {
+        (6, '斗鱼'): 'I_U_FISH_6', (6, '太鼓'): 'I_U_TAIKO_6',
+        (5, '斗鱼'): 'I_U_FISH_5', (5, '太鼓'): 'I_U_TAIKO_5',
+    }
+
+    def _rule_card_types(self) -> tuple[str, ...]:
+        """当前 utilize_rule 允许的卡种。"""
         rule = self.config.kekkai_utilize.utilize_config.utilize_rule
-        result = []
+        if rule == UtilizeRule.TAIKO:
+            return ('太鼓',)
+        if rule == UtilizeRule.FISH:
+            return ('斗鱼',)
         if rule == UtilizeRule.DEFAULT:
-            result = [CardClass.FISH6, CardClass.TAIKO6, CardClass.FISH5, CardClass.TAIKO5,
-                      CardClass.TAIKO4, CardClass.FISH4, CardClass.TAIKO3, CardClass.FISH3]
-        elif rule == UtilizeRule.FISH:
-            result = [CardClass.FISH6, CardClass.FISH5,
-                      CardClass.TAIKO6, CardClass.TAIKO5, CardClass.FISH4, CardClass.TAIKO4, CardClass.FISH3,
-                      CardClass.TAIKO3]
-        elif rule == UtilizeRule.TAIKO:
-            result = [CardClass.TAIKO6, CardClass.TAIKO5,
-                      CardClass.FISH6, CardClass.FISH5, CardClass.TAIKO4, CardClass.FISH4, CardClass.TAIKO3,
-                      CardClass.FISH3]
-        else:
-            logger.error('Unknown utilize rule')
-            raise ValueError('Unknown utilize rule')
-        return result
+            return ('斗鱼', '太鼓')
+        logger.error('Unknown utilize rule')
+        raise ValueError('Unknown utilize rule')
+
+    def _pass_targets(self, stars) -> ImageGrid:
+        """按星级集合 + 当前 utilize_rule 组出本 PASS 用于 find_everyone 的模板网格。"""
+        images = []
+        for star in sorted(stars, reverse=True):          # 6★ 模板排前面，仅日志可读，不影响 y 排序
+            for card_type in self._rule_card_types():
+                images.append(getattr(self, self._STAR_TEMPLATE_ATTR[(star, card_type)]))
+        return ImageGrid(images)
+
+    def _card_type_matches_rule(self, card_type: str) -> bool:
+        """详情 OCR 出来的卡种是否符合当前 utilize_rule。"""
+        return card_type in self._rule_card_types()
+
+    def _card_meets_pass(self, card_type: str, card_value: int, search_pass: SearchPass) -> bool:
+        """当前详情卡是否满足本 PASS 的收益阈值（按详情 OCR 的卡种取阈值，并要求符合 rule）。"""
+        if card_type not in ('斗鱼', '太鼓') or not self._card_type_matches_rule(card_type):
+            return False
+        threshold = search_pass.threshold_map.get(card_type)
+        return threshold is not None and card_value >= threshold
+
+    def _build_search_passes(self, friend: SelectFriendList) -> list[SearchPass]:
+        """按「优先分组」生成完整 PASS 序列。
+
+        优先跨区：跨6★HIGH → 同6★HIGH → 降一档 → 跨5/6★LOWER → 同5/6★LOWER(final)
+        优先同区：同6★HIGH → 跨6★HIGH → 降一档 → 同5/6★LOWER(final)
+
+        **相邻 PASS 的 `friend_group` 一定不同**（契约，见 `RunSearchGroupSwitchOnlyTest`）。
+        `_run_search` 依赖这一点：每个 PASS 前只 `switch_friend_list(该分组)` 切一次即可——
+        Level C 已确认「只要 SAME/CROSS 发生实际切换，新进入的分组列表必定从顶部显示」，
+        所以全部 TOP→BOTTOM 单向扫描，不需要旧的 `_reset_utilize_friend_list` 回顶 / 预滚。
+        最后一个 PASS 自身兼任兜底，没有额外的 fallback 轮次。
+        """
+        con = self.config.kekkai_utilize.utilize_config
+        high = {'斗鱼': con.fish_reward_threshold, '太鼓': con.taiko_reward_threshold}
+        lower = {
+            '斗鱼': lower_reward_tier(con.fish_reward_threshold, FISH_REWARD_TIERS),
+            '太鼓': lower_reward_tier(con.taiko_reward_threshold, TAIKO_REWARD_TIERS),
+        }
+        cross, same = SelectFriendList.DIFFERENT_SERVER, SelectFriendList.SAME_SERVER
+        six, five_six = frozenset({6}), frozenset({5, 6})
+        if friend == SelectFriendList.DIFFERENT_SERVER:          # 优先跨区
+            specs = [
+                (cross, six, high, False),
+                (same, six, high, False),
+                (cross, five_six, lower, False),
+                (same, five_six, lower, True),
+            ]
+        else:                                                    # 优先同区（默认）
+            specs = [
+                (same, six, high, False),
+                (cross, six, high, False),
+                (same, five_six, lower, True),
+            ]
+        return [
+            SearchPass(group, stars, thresholds, final, self._pass_targets(stars))
+            for group, stars, thresholds, final in specs
+        ]
+
+    def _run_search(self, friend: SelectFriendList) -> bool | None:
+        """按 PASS 序列做单向分区搜索。
+
+        每个 PASS 前只 `switch_friend_list(search_pass.friend_group)` 切到目标分组：
+        `_build_search_passes` 保证相邻 PASS 的分组一定不同，而 Level C 已确认「只要
+        SAME/CROSS 发生实际切换，新进入的分组列表必定从顶部显示」，所以不需要旧的
+        `_reset_utilize_friend_list`（滚到底 + 切走再切回）来回顶或预加载。列表的第一次
+        滑动只发生在 `_run_search_pass` 的 TOP→BOTTOM 扫描里（`_perform_search_swipe`）。
+
+        :return: True  = 某个 PASS 已选中目标（当前 UI 选中的即目标，可直接进入结界）；
+                 None  = 从头到尾没有点开过任何 5/6★ 候选（两个分组都没有可用卡）；
+                 False = 见过候选但都没达标，或搜索被安全中止（超时 / 滑动上限 / 页面异常）。
+        :raise GamePageUnknownError: 切换好友分组超时，由 run_utilize 捕获按失败处理。
+        """
+        saw_any_candidate = False
+        for search_pass in self._build_search_passes(friend):
+            logger.hr(
+                f'搜索 PASS: {search_pass.friend_group.value} '
+                f'stars={sorted(search_pass.stars)} threshold={search_pass.threshold_map} '
+                f'final={search_pass.final_fallback}',
+                2,
+            )
+            self.switch_friend_list(search_pass.friend_group)            # 切到目标分组；实际切换后游戏自动回顶
+            result, clicked_any = self._run_search_pass(search_pass)
+            saw_any_candidate = saw_any_candidate or clicked_any
+            if result in (PassResult.HIT, PassResult.FINAL_USE_LAST):
+                return True
+            if result == PassResult.ABORT:
+                return False
+            # PASS_MISS —— 换下一个 PASS
+        return False if saw_any_candidate else None
+
+    def _run_search_pass(self, search_pass: SearchPass) -> tuple[PassResult, bool]:
+        """单个 PASS：列表已在该分组 TOP，只向下扫描。
+
+        - 命中阈值 → HIT。
+        - 到达列表底部（I_U_EMPTY_CARD）：final PASS 且本轮点开过候选 → FINAL_USE_LAST；否则 PASS_MISS。
+        - 超时 / 达到滑动上限 / 页面异常 → ABORT。
+
+        「当前屏没有本 PASS 的目标模板」**不等于**到底——好友列表是乱序的（6★/4★/太阴 交错），
+        中间某屏没有目标模板只说明这一屏没有候选，继续向下滑，绝不当作 BOTTOM。
+        """
+        timer = Timer(self.SEARCH_PASS_TIMEOUT).start()
+        clicked_any = False                        # 本 PASS 是否至少点开过一个候选（final 兜底用）
+        prev_detections = None                     # K4：上一稳定屏 find_everyone 的完整结果（一帧对一帧，无持久历史）
+        pending_anchor_before = None               # K4：上一屏 swipe 前的 selected anchor（配对本屏 anchor_after）
+        for screen_index in range(self.SEARCH_MAX_SWIPES + 1):
+            if timer.reached():
+                logger.warning('结界卡搜索 PASS 超时，安全中止')
+                return PassResult.ABORT, clicked_any
+
+            self.screenshot()
+            # K4：本屏是（上一屏 swipe 后的）稳定屏。若上一屏留了 detections + anchor_before，
+            # 在这一帧测 anchor_after → 实际滚动像素 actual_scroll_dy。不可靠则本屏退回完整扫描。
+            dedup_dy = None
+            if self.K4_ENABLED and prev_detections is not None and pending_anchor_before is not None:
+                anchor_after = detect_selected_anchor(
+                    self.device.image, self.I_IS_SELECTED,
+                    frame_id=self.device.image_frame_id,
+                )
+                dedup_dy = actual_scroll_dy_px(
+                    pending_anchor_before, anchor_after,
+                    max_dy=self.I_IS_SELECTED.roi_back[3],
+                )
+                if dedup_dy is None:
+                    logger.info(
+                        'Kekkai K4: measurement=unavailable '
+                        '(before_available=%s after_available=%s) fallback=full_scan'
+                        % (pending_anchor_before.available, anchor_after.available)
+                    )
+
+            cards = search_pass.targets.find_everyone(
+                self.device.image, frame_id=self.device.image_frame_id,
+            )
+            scan_cards = cards
+            if cards and prev_detections and dedup_dy is not None:
+                dedup = dedup_by_projection(
+                    prev_detections, cards, dedup_dy, visible_y=self.K4_LIST_VISIBLE_Y,
+                )
+                scan_cards = dedup.new_detections
+                logger.info(
+                    'Kekkai K4: actual_dy=%.1f rows≈%.2f previous=%d current=%d '
+                    'duplicates=%d new=%d'
+                    % (dedup_dy, dedup_dy / self.KEKKAI_ROW_PITCH_PX,
+                       len(prev_detections), len(cards),
+                       len(dedup.duplicate_indices), len(scan_cards))
+                )
+
+            for target, _, area in (scan_cards or []):
+                # 当前屏候选按 find_everyone 的位置序（y 从上到下）逐个点开读收益
+                self.C_SELECT_CARD.roi_front = area
+                self.click(self.C_SELECT_CARD)
+                time.sleep(self.DETAIL_LOAD_WAIT)
+                clicked_any = True
+                self.utilize_found_eligible_card = True
+                card_type, card_value = self.check_card_num()
+                if card_type == 'unknown' or card_value <= 0:
+                    # OCR 无效 / 详情没加载完 —— 跳过该候选继续下一张，不做无限重读
+                    logger.info(f'跳过无效卡: {card_type}@{card_value}')
+                    continue
+                if self._card_meets_pass(card_type, card_value, search_pass):
+                    logger.info(
+                        f'{search_pass.friend_group.value} 命中阈值: '
+                        f'{card_type}@{card_value} >= '
+                        f'{search_pass.threshold_map.get(card_type)}，直接使用当前选中的卡'
+                    )
+                    return PassResult.HIT, clicked_any
+
+            # 当前屏候选处理完（或本屏没有目标模板）——只有 I_U_EMPTY_CARD 才是真正的到底
+            if self.appear(self.I_U_EMPTY_CARD):
+                if search_pass.final_fallback and clicked_any:
+                    logger.info(
+                        '最终 PASS 已扫到列表底部：直接使用最后一次点击、仍保持选中的候选'
+                    )
+                    return PassResult.FINAL_USE_LAST, clicked_any
+                logger.info('本 PASS 已扫到列表底部，没有达标候选')
+                return PassResult.PASS_MISS, clicked_any
+
+            if screen_index == self.SEARCH_MAX_SWIPES:
+                break                              # 已经看过 MAX+1 屏，不再多滑一次
+            if self.K4_ENABLED:
+                # K4：把本屏完整检测结果 + swipe 前 selected anchor 留给下一稳定屏做投影去重
+                # （只保留上一屏、无持久历史）。swipe 前明确重截一帧，避免候选详情页污染锚点。
+                prev_detections = cards
+                self.screenshot()
+                pending_anchor_before = detect_selected_anchor(
+                    self.device.image, self.I_IS_SELECTED,
+                    frame_id=self.device.image_frame_id,
+                )
+            if not self._perform_search_swipe():
+                # K3：swipe 后列表未 changed&stable（滑不动 / 一直抖 / timeout）——
+                # 不是到底（BOTTOM 只认 I_U_EMPTY_CARD），当作页面异常安全中止
+                logger.warning('结界卡下划后未观察到有效滚动并稳定（FrameWait 失败），安全中止')
+                return PassResult.ABORT, clicked_any
+
+        # 达到最大滑动次数仍未见到底部 marker —— 当作页面异常安全中止，不当作到底
+        logger.warning(
+            f'结界卡搜索 PASS 达到最大滑动次数 {self.SEARCH_MAX_SWIPES}，安全中止'
+        )
+        return PassResult.ABORT, clicked_any
 
     def _reset_utilize_friend_list(self, friend: SelectFriendList) -> None:
-        """刷新好友列表并回到所选分组的顶部。"""
+        """[legacy / 仅怠惰模式] 滚到列表底部触发整份好友卡加载 + 切区来回双切刷新回顶。
+
+        标准（非怠惰）PASS 路径**不再调用本方法**：`_run_search` 每个 PASS 前只
+        `switch_friend_list(target)` 一次即可——Level C 已确认「只要 SAME/CROSS 发生实际
+        切换，新进入的分组列表必定从顶部显示」。本方法目前仅 `_run_lazy_utilize` 仍在用，
+        怠惰模式行为本轮保持不变；不要在标准路径重新引入本方法或 `S_U_END` 预滚。
+        """
         if friend == SelectFriendList.SAME_SERVER:
             self.switch_friend_list(SelectFriendList.SAME_SERVER)
             self.swipe(self.S_U_END, interval=3)
@@ -431,20 +840,16 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         if self.utilize_failed_count < 3:
             return False
 
-        message = '连续3次蹭卡失败，目标结界视为已经被蹭，任务失败，10分钟后重试'
+        message = '连续3次蹭卡失败，目标结界视为已经被蹭，任务失败，稍后重试'
         logger.error(message)
         self.push_notify(content=message)
-        self.set_next_run(
-            task='KekkaiUtilize',
-            finish=True,
-            server=False,
-            target=datetime.now() + timedelta(minutes=10),
-        )
+        self._schedule_retry(f'连续 3 次蹭卡失败（最后一次原因: {reason}）')
         self.utilize_terminal_failure = True
         return False
 
     def _finish_low_value_utilize(self) -> bool:
-        """两个好友分组都没有当前策略的四星以上卡，失败并延迟任务。"""
+        """跨区 + 同区搜索都完成，但没有找到符合「目标卡种 + 收益阈值」的结界卡——
+        属短期 retry 场景（不是好友列表里完全没有结界卡），失败并延迟任务。"""
         rule = self.config.kekkai_utilize.utilize_config.utilize_rule
         target_name = {
             UtilizeRule.TAIKO: '太鼓',
@@ -452,17 +857,12 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             UtilizeRule.DEFAULT: '太鼓或斗鱼',
         }.get(rule, '目标结界卡')
         message = (
-            f'同区和跨区全是当前策略低价值卡，未检测到四星及以上{target_name}，'
-            '任务失败，20分钟后重试'
+            f'本轮未找到符合"目标卡种（{target_name}）+ 收益阈值"的结界卡，'
+            '同区和跨区搜索均已完成，稍后重试'
         )
         logger.error(message)
         self.push_notify(content=message)
-        self.set_next_run(
-            task='KekkaiUtilize',
-            finish=True,
-            server=False,
-            target=datetime.now() + timedelta(minutes=20),
-        )
+        self._schedule_retry('跨区 + 同区都没有达标候选')
         self.utilize_terminal_failure = True
         return False
 
@@ -478,44 +878,28 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         :return:
         """
         logger.hr('Start utilize')
-        fallback_friend = (
-            SelectFriendList.DIFFERENT_SERVER
-            if friend == SelectFriendList.SAME_SERVER
-            else SelectFriendList.SAME_SERVER
-        )
-        selected_friend = None
 
-        # 配置项仅决定优先分组。优先分组没有当前策略可用的四星以上卡时，
-        # 才扫描另一个分组；一旦选中目标便立即停止，不再扫描另一区。
-        for index, target_friend in enumerate((friend, fallback_friend), start=1):
-            priority_text = '优先' if index == 1 else '备选'
-            logger.hr(f'{priority_text}好友分组: {target_friend.value}', 2)
-            self._reset_utilize_friend_list(target_friend)
+        # 怠惰模式保持原「优先分组 → 备选分组、首张够用即拿」的双分组流程（见 _run_lazy_utilize）；
+        # 非怠惰走新的单向分区 PASS 搜索（切区回顶、TOP→BOTTOM、最后一轮兼任兜底）。
+        try:
             if self.utilize_lazy_mode_active:
-                select_result = self._select_lazy_resource_card()
+                selected = self._run_lazy_utilize(friend)
             else:
-                select_result = self._select_optimal_resource_card()
-            if select_result is True:
-                selected_friend = target_friend
-                logger.info(
-                    f'已在{priority_text}分组[{target_friend.value}]选中蹭卡目标，'
-                    '不再检查其他分组'
-                )
-                break
-            if select_result is False:
-                logger.warning(
-                    f'分组[{target_friend.value}]存在可用卡，但第一阶段选卡失败，'
-                    '本轮不切换分组'
-                )
-                return False
-            logger.info(
-                f'分组[{target_friend.value}]没有当前策略可用的四星以上结界卡'
-            )
+                selected = self._run_search(friend)
+        except GamePageUnknownError as error:
+            # 分组切换超时按本任务的失败计数处理，不升级为重启游戏
+            return self._record_utilize_failure(f'刷新好友列表失败: {error}')
 
-        if selected_friend is None:
+        if selected is None:
+            # 两个分组都没有可用候选 → 低价值失败（20 分钟后重试）
             return self._finish_low_value_utilize()
+        if selected is not True:
+            # 见过候选但都没达标，或搜索被安全中止 → 软失败，交外层 3 次上限的重试链
+            if not self.utilize_terminal_failure:
+                return self._record_utilize_failure('结界卡搜索未选中满足阈值的目标')
+            return False
 
-        # 找到卡,重置次数
+        # 当前 UI 已选中目标，进入结界。重置次数
         self.utilize_add_count = 0
         logger.info('开始执行进入结界蹭卡流程')
         self.screenshot()
@@ -557,6 +941,35 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             )
         self.utilize_failed_count = 0
         return True
+
+    def _run_lazy_utilize(self, friend: SelectFriendList) -> bool | None:
+        """怠惰模式的选卡：保持原「优先分组 → 备选分组，首张符合策略的高星卡即拿」双分组流程。
+
+        本轮的单向分区 PASS 搜索只重写非怠惰路径；怠惰模式行为不变。
+
+        :return: True=已选中；None=两个分组都没有可用卡；False=扫描超时等异常。
+        :raise GamePageUnknownError: 切换好友分组超时，由 run_utilize 捕获。
+        """
+        fallback_friend = (
+            SelectFriendList.DIFFERENT_SERVER
+            if friend == SelectFriendList.SAME_SERVER
+            else SelectFriendList.SAME_SERVER
+        )
+        for index, target_friend in enumerate((friend, fallback_friend), start=1):
+            priority_text = '优先' if index == 1 else '备选'
+            logger.hr(f'{priority_text}好友分组: {target_friend.value}', 2)
+            self._reset_utilize_friend_list(target_friend)
+            select_result = self._select_lazy_resource_card()
+            if select_result is True:
+                logger.info(
+                    f'已在{priority_text}分组[{target_friend.value}]选中蹭卡目标，不再检查其他分组'
+                )
+                return True
+            if select_result is False:
+                logger.warning(f'分组[{target_friend.value}]怠惰扫描异常，本轮不切换分组')
+                return False
+            logger.info(f'分组[{target_friend.value}]没有当前策略可用的四星以上结界卡')
+        return None
 
     def _lazy_card_matches_rule(self, card_class: CardClass) -> bool:
         """判断一张四星以上资源卡是否符合当前怠惰策略。"""
@@ -653,232 +1066,112 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         )
         return None
 
-    def _select_optimal_resource_card(self) -> bool | None:
-        """浏览当前分组，并直接保留第一阶段选中的最佳卡。
-
-        浏览完成后不再重新计算目标或复位列表定位；当前界面保留的
-        最优卡直接供调用方点击“进入结界”。
-
-        :return: True=第一阶段已留下可用目标；
-                 None=当前策略没有四星以上卡；
-                 False=检测到可用卡但奖励识别或列表扫描失败。
-        """
-        self.ap_max_num, self.jade_max_num = 0, 0
-        self.utilize_current_group_has_eligible_card = False
-        self.utilize_current_group_scan_completed = False
-        try:
-            logger.hr('浏览列表并保留最优结界卡', 2)
-            reached_strategy_maximum = self._current_select_best()
-            if reached_strategy_maximum:
-                logger.info('🏁 已命中当前策略最高收益，停止下划并直接进入结界')
-            logger.info(
-                f'📝 第一阶段浏览完成 | '
-                f'斗鱼:{self.ap_max_num} 太鼓:{self.jade_max_num}'
-            )
-
-            rule = self.config.kekkai_utilize.utilize_config.utilize_rule
-            has_selected_card = (
-                rule == UtilizeRule.TAIKO and self.jade_max_num > 0
-                or rule == UtilizeRule.FISH and self.ap_max_num > 0
-                or rule == UtilizeRule.DEFAULT and (
-                    self.ap_max_num > 0 or self.jade_max_num > 0
-                )
-            )
-            if has_selected_card:
-                logger.info('✅ 第一阶段已保留最优选项，准备直接进入结界')
-                return True
-
-            if self.utilize_current_group_has_eligible_card:
-                logger.warning('🔄 检测到四星以上目标，但奖励数值识别失败')
-                return False
-            if not self.utilize_current_group_scan_completed:
-                logger.warning('当前好友分组未能完整扫描，不能判定为全是低价值卡')
-                return False
-            logger.info('当前分组全是当前策略低价值结界卡')
-            return None
-        finally:
-            self.ap_max_num, self.jade_max_num = 0, 0
-
-    def _is_strategy_maximum_reward(
-        self,
-        card_type: str,
-        card_value: int,
-    ) -> bool:
-        """判断当前卡是否已经达到所选策略的全局最高收益。"""
-        maximum = self.STRATEGY_MAX_REWARDS.get(card_type)
-        if maximum is None or card_value < maximum:
-            return False
-
-        rule = self.config.kekkai_utilize.utilize_config.utilize_rule
-        if rule == UtilizeRule.TAIKO:
-            return card_type == '太鼓'
-        if rule == UtilizeRule.FISH:
-            return card_type == '斗鱼'
-        if rule == UtilizeRule.DEFAULT:
-            return card_type in ('太鼓', '斗鱼')
-        logger.error('Unknown utilize rule')
-        raise ValueError('Unknown utilize rule')
-
-    def _current_select_best(self) -> bool:
-        """浏览好友列表、记录奖励，并保留当前选中的最佳结界卡。"""
-        # ============== 配置常量 ==============#
-        RESOURCE_CONFIG = {
-            '斗鱼': {'record_attr': 'ap_max_num'},
-            '太鼓': {'record_attr': 'jade_max_num'}
-        }
-        MAX_SWIPES = 20  # 最大滑动次数
-        CONSEC_MISS = 3  # 允许连续无卡次数
-        TIMEOUT = 120  # 操作超时(秒)
-
-        # ============== 初始化阶段 ==============#
-        logger.info('启动结界卡浏览选择')
-        timer = Timer(TIMEOUT).start()
-        miss_count = 0  # 连续无卡计数器
-        maxed_card_classes: set[CardClass] = set()
-        # 每种资源已经实际打开并确认过奖励的最高星级。更低星级的
-        # 理论上限不会超过更高星级，因此后续无需再打开确认；同星级
-        # 仍由 maxed_card_classes 判断是否已经达到该档最高奖励。
-        confirmed_highest_stars: dict[str, int] = {}
-
-        # ============== 主滑动循环 ==============#
-        for swipe_count in range(MAX_SWIPES + 1):
-            # 超时检测
-            if timer.reached():
-                logger.warning('⏰ 操作超时，终止流程')
-                return False
-
-            # ------ 步骤1: 截图识别结界卡 ------#
-            self.screenshot()
-            cards = self.order_targets.find_everyone(self.device.image, frame_id=self.device.image_frame_id)
-
-            # 处理无卡情况
-            if not cards:
-                miss_count += 1
-                logger.info(f'第{swipe_count}次滑动 | 未检测到结界卡' if swipe_count > 0 else '初始界面 | 未检测到结界卡')
-                # 游戏会优先排列有结界卡的好友，连续未命中或出现空卡时
-                # 即可视为当前分组已扫描完成。
-                if miss_count > CONSEC_MISS or self.appear(self.I_U_EMPTY_CARD):
-                    logger.warning(
-                        f'⚠️ 连续{miss_count}次未检测到目标结界卡，终止当前分组扫描'
-                    )
-                    self.utilize_current_group_scan_completed = True
-                    return False
-                # 执行滑动操作
-                self.perform_swipe_action()
-                continue
-
-            miss_count = 0  # 重置无卡计数器
-
-            # ------ 步骤2: 处理识别到的结界卡 ------
-            cards_list = [target for target, _, _ in cards]
-            logger.info((f'第{swipe_count}次滑动' if swipe_count > 0 else '初始界面') + f' | 检测到结界卡：{cards_list}')
-
-            # 遍历所有结界卡（已按位置排序）
-            for target, _, area in cards:
-                card_class = target_to_card_class(target)
-                tier_info = self.CARD_TIER_INFO.get(card_class)
-                if tier_info:
-                    self.utilize_found_eligible_card = True
-                    self.utilize_current_group_has_eligible_card = True
-
-                if card_class in maxed_card_classes:
-                    card_type, star, tier_max = tier_info
-                    logger.info(
-                        f'⏭️ {star}星{card_type}已确认最高奖励{tier_max}，'
-                        '本轮不再点击同档卡片'
-                    )
-                    continue
-
-                if tier_info:
-                    card_type, star, _ = tier_info
-                    confirmed_star = confirmed_highest_stars.get(
-                        card_type,
-                        0,
-                    )
-                    if star < confirmed_star:
-                        logger.info(
-                            f'⏭️ 已确认{confirmed_star}星{card_type}奖励，'
-                            f'不再向下确认{star}星{card_type}'
-                        )
-                        continue
-
-                # 设置点击区域并获取结界卡详情
-                self.C_SELECT_CARD.roi_front = area
-                self.click(self.C_SELECT_CARD)
-                time.sleep(2)  # 等待结界卡详情加载
-
-                # 解析结界卡类型和数值
-                card_type, card_value = self.check_card_num()
-
-                # 跳过无效结界卡（类型未知或数值异常）
-                if card_type == 'unknown' or card_value <= 0 or card_type not in RESOURCE_CONFIG:
-                    logger.info(f'⏭️ 跳过无效卡: {card_type}@{card_value}')
-                    continue
-
-                if tier_info:
-                    tier_type, star, tier_max = tier_info
-                    if tier_type == card_type:
-                        previous_star = confirmed_highest_stars.get(
-                            card_type,
-                            0,
-                        )
-                        if star > previous_star:
-                            confirmed_highest_stars[card_type] = star
-                            logger.info(
-                                f'✅ 已确认{star}星{card_type}奖励，'
-                                f'后续跳过{star}星以下同类型卡片'
-                            )
-                        if card_value >= tier_max:
-                            maxed_card_classes.add(card_class)
-                            logger.info(
-                                f'✅ {star}星{card_type}达到当前档位最高奖励: '
-                                f'{card_value}（标准{tier_max}）'
-                            )
-
-                # ====== 模式分支处理 ======#
-                record_attr = RESOURCE_CONFIG[card_type]['record_attr']
-                current_record = getattr(self, record_attr, 0)
-                logger.info(f'🔍 识别卡片: {card_type} | 当前值: {card_value}, 最优值: {current_record}')
-
-                # 更新最佳记录
-                if card_value > current_record:
-                    logger.info(f'📈 更新记录: {card_type} | {current_record} → {card_value}')
-                    setattr(self, record_attr, card_value)
-
-                if self._is_strategy_maximum_reward(card_type, card_value):
-                    logger.info(
-                        f'✅ 当前策略最高收益已确认: '
-                        f'{card_type}@{card_value}，保留当前选项并停止浏览'
-                    )
-                    return True
-
-            if self.appear(self.I_U_EMPTY_CARD):
-                logger.info('Empty card already appeared, exit explore')
-                self.utilize_current_group_scan_completed = True
-                return False
-            # ------ 步骤3: 滑动到下一屏 ------#
-            self.perform_swipe_action()
-
-        # ============== 终止处理 ==============#
-        self.utilize_current_group_scan_completed = True
-        logger.info(
-            f'已按最大滑动次数{MAX_SWIPES}完成当前分组的有界全量扫描'
-        )
-        return False
-
     def perform_swipe_action(self):
-        """统一滑动操作"""
+        """好友结界卡列表的统一下划操作。
+
+        这里刻意使用 swipe_adb 而不是公共 self.swipe：好友列表对滑动
+        距离敏感，引入该方法时就已经选定 adb swipe 并把公共实现注释保留
+        （见下方注释行）。改回公共滑动会改变实际滚动距离，必须先做真机
+        验证，不能只凭静态测试替换。
+        """
         duration = 2
-        safe_pos_x = random.randint(340, 600)
-        safe_pos_y = random.randint(500, 565)
+        safe_pos_x = random_int(*self.SWIPE_START_X_RANGE)
+        safe_pos_y = random_int(*self.SWIPE_START_Y_RANGE)
         p1 = (safe_pos_x, safe_pos_y)
-        p2 = (safe_pos_x, safe_pos_y - 416)
+        p2 = (safe_pos_x, safe_pos_y - self.SWIPE_DISTANCE)
         logger.info('Swipe %s -> %s, %sS ' % (point2str(*p1), point2str(*p2), duration))
         self.device.swipe_adb(p1, p2, duration=duration)
 
         # self.swipe(self.S_U_UP, duration=1, wait_up_time=1)
         self.device.click_record_clear()
         time.sleep(2)
+
+    def _perform_search_swipe(self) -> bool:
+        """标准 PASS 搜索路径的列表下划（K1 输入后端 + K2 随机小步距离 + K3 swipe 后 FrameWait）。
+
+        与 `perform_swipe_action` 的区别：
+        - **输入实现（K1）**：minitouch 配置走 `TouchSwipeModel` 生成的 minimum-jerk 轨迹 →
+          `Control.swipe_trajectory` → minitouch（BehaviorTrace 记 ACTION）；其它控制后端
+          （adb / uiautomator2 等）沿用旧的 `perform_swipe_action`（`swipe_adb` 直连、固定
+          `SWIPE_DISTANCE=416` + 2 秒固定等待），保证旧配置不崩。
+        - **滑动距离（K2，仅 minitouch）**：每次调用**独立** `random_int(*SWIPE_DISTANCE_RANGE)`
+          采样一个「较短」commanded 位移，取代固定 416px。`SWIPE_DISTANCE_RANGE` 是 provisional、
+          Level C 分档调参（具体档位与依据见该类常量的注释）——首档实测「一次内容仍滚 >4 格」，
+          已回调一档：commanded finger distance ≠ actual content scroll（列表惯性放大）。
+        - **轻微整体斜度（2026-09-07，仅 minitouch）**：`end_x = start_x + lateral_offset`，
+          `lateral_offset = random_int(*SWIPE_LATERAL_OFFSET_RANGE)`（小幅、有正有负），再夹回
+          `SWIPE_START_X_RANGE`。只作用于**最终 end_x**，不给 MOVE 点加噪声；宏观轨迹由旧的接近
+          严格竖直变成「有的轻微左斜 / 有的轻微右斜 / 有的接近竖直」，整体仍明确向上 swipe。
+        - **swipe settle（K3，2026-09-07，仅 minitouch）**：swipe 后不再固定「2 秒等待猜停稳」，
+          改成 `wait_for_changed_and_stable(baseline, self.device.screenshot, roi=SWIPE_WAIT_ROI,
+          ...)`。`baseline` 是 swipe **前**明确重截的一帧（不复用可能被右侧详情栏污染的
+          `self.device.image`）。只有相对 baseline **确实发生过变化（changed）且随后连续
+          `SWIPE_WAIT_STABLE_FRAMES` 帧安静（stable）** 才返回 `True`、允许 `_run_search_pass`
+          扫描下一屏。`changed` 迟迟不出现 / `changed` 后一直不 `stable` / timeout → 返回
+          `False`，由 `_run_search_pass` 映射成 `ABORT`（外层 bounded recovery）。
+          **`no change ≠ BOTTOM`**——D017 唯一 BOTTOM marker 仍是 `I_U_EMPTY_CARD`；本方法不新增
+          「滑不动 → PASS_MISS」隐式到底语义。判定阈值 / `stable_frames` / `timeout` /
+          `poll_interval`（检测采样 pacing，显式覆盖 FrameWait 默认 0.0）都是 provisional 首版，
+          需 Level C 调整。
+
+        决定「滑多远 / 往哪斜 / 何时算稳」在本方法（Kekkai 业务层）；`TouchSwipeModel` 只负责「怎么滑」
+        （给定 start/end → 平滑轨迹），本轮不改它、不让它定距离 / 斜度；`FrameStateDetector` 只做帧差算法。
+        起点安全区 / 曲率 / 时间模型 / tail 均与 K1/K2 一致；`end_x` 现在带有界的轻微斜度（见上）。
+        怠惰模式 + 非 minitouch 回退仍走 `perform_swipe_action`（固定 416px 纯竖直 + 2 秒等待），不受本轮影响。
+
+        :return: `True` = swipe 已执行且列表 `changed && stable`（或走非 minitouch 回退路径）；
+                 `False` = minitouch 路径 swipe 后未在 `SWIPE_WAIT_TIMEOUT` 内 `changed && stable`。
+        """
+        if self.config.script.device.control_method != 'minitouch':
+            # 非 minitouch：显式回退到旧 ADB 路径（`perform_swipe_action`，固定 416px + 2 秒等待，本轮不动）
+            self.perform_swipe_action()
+            return True
+
+        # K3：swipe 前的参考帧——明确重截，不复用 self.device.image（可能是候选卡详情页的截图）
+        baseline = self.device.screenshot()
+
+        start_x = random_int(*self.SWIPE_START_X_RANGE)
+        start_y = random_int(*self.SWIPE_START_Y_RANGE)
+        distance = random_int(*self.SWIPE_DISTANCE_RANGE)       # K2：每次独立采样较短位移
+        # 轻微整体斜度：小幅随机横向偏移只作用于最终 end_x，再夹回起点安全区（不扩大 start_x 范围）
+        lateral_offset = random_int(*self.SWIPE_LATERAL_OFFSET_RANGE)
+        lo_x, hi_x = self.SWIPE_START_X_RANGE
+        end_x = min(hi_x, max(lo_x, start_x + lateral_offset))
+        start = (start_x, start_y)
+        end = (end_x, start_y - distance)                       # 纵向 = 本次随机 distance（K2 范围内）；横向 = 有界后的轻微斜度
+        trajectory = TouchSwipeModel().generate(start, end)     # 只生成一次
+        total_dt = sum(dt for _, _, dt in trajectory)
+        logger.info(
+            'KekkaiUtilize trajectory swipe: start=%s end=%s distance=%d lateral=%+d points=%d total_dt=%dms'
+            % (point2str(*start), point2str(*end), distance, end_x - start_x,
+               len(trajectory), total_dt)
+        )
+        self.device.swipe_trajectory(trajectory, control_name='KEKKAI_UTILIZE_SWIPE')
+        self.device.click_record_clear()
+
+        # K3：等列表相对 baseline changed 且 stable，取代固定 2 秒等待
+        wait = wait_for_changed_and_stable(
+            baseline,
+            self.device.screenshot,
+            roi=self.SWIPE_WAIT_ROI,
+            changed_threshold=self.SWIPE_WAIT_CHANGED_THRESHOLD,
+            stable_threshold=self.SWIPE_WAIT_STABLE_THRESHOLD,
+            stable_frames=self.SWIPE_WAIT_STABLE_FRAMES,
+            timeout=self.SWIPE_WAIT_TIMEOUT,
+            poll_interval=self.SWIPE_WAIT_POLL_INTERVAL,   # 检测采样 pacing，叠在 _screenshot_interval 之上
+        )
+        logger.info(
+            'KekkaiUtilize swipe wait: changed=%s stable=%s timed_out=%s frames=%d elapsed=%.2fs diff=%.3f'
+            % (wait.changed, wait.stable, wait.timed_out,
+               wait.frames_checked, wait.elapsed, wait.last_difference)
+        )
+        if not wait.success:
+            logger.warning(
+                'KekkaiUtilize swipe 后未在 %.1fs 内 changed&stable（changed=%s stable=%s）——'
+                '不当作到底（BOTTOM 只认 I_U_EMPTY_CARD），交外层安全中止'
+                % (self.SWIPE_WAIT_TIMEOUT, wait.changed, wait.stable)
+            )
+        return wait.success
 
     def check_card_num(self) -> tuple[str, int]:
         """优化版数值提取方法，返回结界卡类型及对应数值"""

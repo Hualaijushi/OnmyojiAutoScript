@@ -31,4 +31,6 @@ class Optimization(BaseModel):
     close_emulator_limit_time: Time = Field(default=Time(minute=30), description='close_emulator_limit_time_help')
     emulator_startup_lead_time: Time = Field(default=Time(minute=2), description='emulator_startup_lead_time_help')
     schedule_rule: ScheduleRule = Field(default=ScheduleRule.FILTER, description='schedule_rule_help')
+    # 行为观测日志：默认关闭。开启后把关键业务动作和任务耗时写入 log/behavior/。
+    behavior_trace_enable: bool = Field(default=False, description='启用行为观测日志，记录关键业务动作与任务耗时到 log/behavior/（BehaviorTrace v1）')
 

@@ -2,7 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 from module.base.decorator import cached_property
-from module.base.utils.random import random_point_in_roi
+from module.click_sampler import ClickSampler
 from module.logger import logger
 
 
@@ -23,17 +23,19 @@ class RuleClick:
 
     def coord(self) -> tuple:
         """
-        获取坐标, 从roi_front随机获取坐标
+        获取坐标, 从roi_front按该目标的 preferred 热点 + 偏移模型取点（T7-5）。
+        未登记的目标 = RULE_FALLBACK 基础锚点 + default_point，并按 ROI 尺寸适配热点，
+        不是整 ROI 均匀。见 docs/DECISIONS.md D014。
         :return:
         """
-        return random_point_in_roi(self.roi_front)
+        return ClickSampler.sample_target(self.roi_front, self.name)
 
     def coord_more(self) -> tuple:
         """
-        从roi_back随机获取坐标
+        从roi_back按同一目标身份取点（roi_back 全仓无调用方，路由一致仅为收敛入口）。
         :return:
         """
-        return random_point_in_roi(self.roi_back)
+        return ClickSampler.sample_target(self.roi_back, self.name)
 
     @property
     def center(self) -> tuple:

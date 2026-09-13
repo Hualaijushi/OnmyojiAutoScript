@@ -256,6 +256,9 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
                 continue
 
             # 点击卡片左侧内容区，避开右侧状态文字；按需求连续点击两次。
+            # click_roi 是已避让右侧状态文字的安全点击区；T7-5 Stage 2：不再固定点几何中心，
+            # 每次点击独立经 RuleClick.coord() → ClickSampler.sample_target()（未标定 →
+            # RULE_FALLBACK 尺寸热点）取一次坐标，两次点击各自独立采样。
             click_roi = (
                 card_x + 12,
                 card_y + 8,
@@ -267,8 +270,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
                 roi_back=click_roi,
                 name=f'secret_layer_{candidate["layer"]}_card',
             )
-            click_x, click_y = click_rule.center
             for click_index in range(1, 3):
+                click_x, click_y = click_rule.coord()
                 self.device.click(
                     x=click_x,
                     y=click_y,

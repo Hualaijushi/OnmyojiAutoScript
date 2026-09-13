@@ -8,15 +8,27 @@ from enum import Enum
 from cached_property import cached_property
 from datetime import timedelta, time
 from module.atom.image import RuleImage
-from module.base.utils.random import random_point_in_roi
+from module.click_sampler import ClickSampler
 
 from module.base.timer import Timer
+from module.base.utils.random import random_delay
+from module.reaction_profile import REACTION_FIRE
 from tasks.GameUi.assets import GameUiAssets
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralInvite.assets import GeneralInviteAssets
 from tasks.Component.GeneralInvite.config_invite import InviteConfig, FindMode
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from module.logger import logger
+
+
+# 组队 battle-entry（房间内点「挑战 / 开始战斗」）的有限 attempt / 总超时 / 点击后确认等待。
+# engineering baseline，**PROVISIONAL / Level C 待标定**：max_tries 对齐 RealmRaid / Orochi / EvoZone
+# 的 4；总超时取 15（组队进战斗比个人突破慢——队友加载 / 队长开战同步；`run_invite` 的
+# `timer_wait` 是整轮邀请预算、`Timer(20/30)` 是补邀节奏，都不 bound 这个「按开始→战斗加载」窗口）；
+# 点击后确认 4（略宽于 RealmRaid 的 3，覆盖组队战斗加载）。
+GI_FIRE_MAX_TRIES = 4
+GI_FIRE_TIMEOUT = 15
+GI_FIRE_POST_CLICK_TIMEOUT = 4
 
 
 class FriendList(str, Enum):
@@ -89,8 +101,13 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
 
             # 点击挑战
             if self.room_check_can_fire(config):
-                self.click_fire()
-                return True
+                fire_result = self.click_fire()
+                if fire_result == 'battle':
+                    return True
+                # room_failed / timeout：不把「旧房间状态消失」当成功，返回 False 让 caller
+                # 走既有「邀请失败退出任务」分支，不误交接 run_general_battle
+                logger.warning(f'Room challenge did not confirm battle ({fire_result}), exit invite')
+                return False
             if self.timer_invite and self.timer_invite.reached():
                 if is_first:
                     logger.info('Invitation is triggered every 20s')
@@ -241,15 +258,158 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 continue
         return False
 
-    def click_fire(self):
-        while 1:
+    def _battle_entry_positive(self) -> bool:
+        """当前帧是否已进入 GeneralBattle 可接管的战斗流程。
+
+        优先复用 `GeneralBattle.is_in_battle()`——`click_fire()` 的 11 个 consumer 全部在 MRO
+        里带 `GeneralBattle`，正常生产路径都走这条。`GeneralInvite` 自身基类不含它
+        （`MysteryShop` 混入 `GeneralInvite` 但不调 `click_fire`），故留一个保守 fallback：
+        只取 `is_in_battle()` 里的两个 battle-entry marker `I_BATTLE_INFO` / `I_PREPARE_HIGHLIGHT`
+        （严格子集，不新造 detector、不引入 `is_in_battle` 未采用的更宽 heuristic）。只读当前帧、不截图。
+        """
+        checker = getattr(self, 'is_in_battle', None)
+        if callable(checker):
+            return bool(checker(False))
+        return (
+            self.appear(GeneralBattleAssets.I_BATTLE_INFO)
+            or self.appear(GeneralBattleAssets.I_PREPARE_HIGHLIGHT)
+        )
+
+    def _room_entry_failed(self) -> bool:
+        """当前帧是否**明确是「组队房间已失效」的业务失败**（非正常 battle transition）。
+
+        复用现有失败 marker、只读当前帧、不新造 detector：
+        - `I_MATCHING`：回到匹配 / 房间没了（`ensure_enter` / `run_invite` 已用此判 `return False`）；
+        - `GameUiAssets.I_CHECK_MAIN` / `I_CHECK_EXPLORATION`：回到庭院 / 探索 = 房间销毁
+          （`wait_battle` 已用此判 'Room destroyed'）。
+        「队长跑路」（`wait_battle` 里 `I_FIRE` 可见即判 leader gone）在 `click_fire` 语境里
+        不适用——这里本机就是房主 / 队长，`I_FIRE` 可见是正常的待点挑战按钮。
+        """
+        return (
+            self.appear(self.I_MATCHING)
+            or self.appear(GameUiAssets.I_CHECK_MAIN)
+            or self.appear(GameUiAssets.I_CHECK_EXPLORATION)
+        )
+
+    def _classify_room_entry_state(self) -> str:
+        """对当前 fresh frame 分类，**不截图 / 不点击 / 只读**。优先级：battle > room_failed > retryable > unknown。
+
+        - `'battle'`：`_battle_entry_positive()` —— 唯一 positive success；
+        - `'room_failed'`：`_room_entry_failed()` —— 明确房间失效（庭院 / 探索 / 匹配页）；
+        - `'retryable'`：`is_in_room(False)` —— 明确仍在可操作组队房间；
+        - `'unknown'`：三者都不是 —— loading / blank / 页面转换过渡帧。
+        """
+        if self._battle_entry_positive():
+            return 'battle'
+        if self._room_entry_failed():
+            return 'room_failed'
+        if self.is_in_room(False):
+            return 'retryable'
+        return 'unknown'
+
+    def _wait_room_entry_state(self, timeout: float = GI_FIRE_POST_CLICK_TIMEOUT) -> str:
+        """post-click / 挑战未就绪时的有界状态轮询，**期间不点任何坐标**。
+
+        返回 `'battle'` / `'room_failed'` / `'retryable'`（出现决定性状态即返回）/ `'timeout'`
+        （整个 timer 内一直是 `'unknown'` 过渡 / 未知帧 —— **既不当 success 也不当 failure**，
+        timer 内持续等）。
+        """
+        timer = Timer(timeout).start()
+        while not timer.reached():
             self.screenshot()
-            if not self.is_in_room(False):
+            state = self._classify_room_entry_state()
+            if state != 'unknown':
+                return state
+        return 'timeout'
+
+    def click_fire(self) -> str:
+        """房间内点击「挑战 / 开始战斗」的 **bounded battle-entry transaction**（组队进入战斗的公共 owner）。
+
+        返回值（`str`，测试锁全部取值）：
+        - `'battle'`：**正向战斗确认**（`_battle_entry_positive()` —— 复用 `is_in_battle()`）——
+          唯一 success，caller 才交接 `run_general_battle`；
+        - `'room_failed'`：明确房间失效（回庭院 / 探索 / 匹配页）——立即失败，不再点挑战；
+        - `'timeout'`：有限 attempt（`GI_FIRE_MAX_TRIES`）/ 墙钟（`GI_FIRE_TIMEOUT`）用尽仍未确认。
+
+        **四态**（`_classify_room_entry_state` / `_wait_room_entry_state`）：BATTLE / ROOM_FAILED /
+        RETRYABLE_ROOM / TRANSITION_UNKNOWN。**「不在房间」单独发生 ≠ success**——无 battle / 无
+        failure marker 时归 UNKNOWN，有界 polling 等决定性状态，不点任何坐标。
+
+        RETRYABLE_ROOM 下识别 `I_FIRE`（优先）/ `I_FIRE_SEA` → 每 attempt 独立
+        `random_delay(*REACTION_FIRE)`（0.4~0.8s，与 RealmRaid / Orochi / EvoZone 同一 profile）
+        → `sleep` → fresh `screenshot` → 重新分类 + 二次确认挑战按钮仍在 → `appear_then_click(...,
+        interval=1, threshold=0.7)`。reaction 期间离开 retryable / 按钮消失 → 不点旧坐标。
+
+        `is_in_room` 状态判据、`run_invite` 的 `Timer(20/30)` / `timer_wait`、`interval=1` click
+        节流、minitouch dwell 均不变；不叠 `confirm_delay` / 第二套 reaction。**不接 Fatigue**
+        （组队 critical path）。`GI_FIRE_*` 常量 PROVISIONAL / Level C 待标定。
+        """
+        overall_timer = Timer(GI_FIRE_TIMEOUT).start()
+        for attempt in range(1, GI_FIRE_MAX_TRIES + 1):
+            if overall_timer.reached():
                 break
-            if self.appear_then_click(self.I_FIRE, interval=1, threshold=0.7):
+            self.screenshot()
+            state = self._classify_room_entry_state()
+            if state == 'battle':
+                logger.info('Room challenge: entered battle')
+                return 'battle'
+            if state == 'room_failed':
+                logger.warning('Room challenge: room disbanded / left before click')
+                return 'room_failed'
+            if state == 'unknown':
+                # 过渡 / 未知帧 → 有界等一个决定性状态，不点任何坐标
+                state = self._wait_room_entry_state()
+                if state == 'battle':
+                    logger.info('Room challenge: entered battle')
+                    return 'battle'
+                if state == 'room_failed':
+                    logger.warning('Room challenge: room disbanded during transition')
+                    return 'room_failed'
+                # 'retryable' / 'timeout' → 下一 attempt（transition-unknown 不当 immediate failure）
                 continue
-            if self.appear_then_click(self.I_FIRE_SEA, interval=1, threshold=0.7):
+            # state == 'retryable' —— 明确仍在可操作组队房间
+            target = None
+            if self.appear(self.I_FIRE, threshold=0.7):
+                target = self.I_FIRE
+            elif self.appear(self.I_FIRE_SEA, threshold=0.7):
+                target = self.I_FIRE_SEA
+            if target is None:
+                # 在房间但挑战按钮还没出现（`room_check_can_fire` 边界 / 加载）→ 有界等，不点
+                state = self._wait_room_entry_state()
+                if state == 'battle':
+                    return 'battle'
+                if state == 'room_failed':
+                    return 'room_failed'
                 continue
+            fire_delay = random_delay(*REACTION_FIRE)
+            logger.info(f'Room challenge: attempt {attempt}, reaction {fire_delay:.2f}s before click {target.name}')
+            sleep(fire_delay)
+            self.screenshot()
+            state = self._classify_room_entry_state()
+            if state == 'battle':
+                return 'battle'
+            if state == 'room_failed':
+                logger.warning('Room challenge: room disbanded during reaction')
+                return 'room_failed'
+            if state != 'retryable':
+                # reaction 期间离开 retryable（transition / unknown）→ 不点旧坐标
+                logger.info('Room challenge: left retryable during reaction, re-evaluate')
+                continue
+            if not self.appear(target, threshold=0.7):
+                # 挑战按钮在 reaction 期间消失但仍在房间 → 不点旧坐标
+                logger.info('Room challenge: button gone during reaction, re-evaluate')
+                continue
+            self.appear_then_click(target, interval=1, threshold=0.7)
+            state = self._wait_room_entry_state()
+            if state == 'battle':
+                logger.info('Room challenge: entered battle after click')
+                return 'battle'
+            if state == 'room_failed':
+                logger.warning('Room challenge: room disbanded after click')
+                return 'room_failed'
+            # 'retryable' / 'timeout' → 下一 attempt
+        logger.warning('Room challenge: bounded attempts / timeout without entering battle')
+        return 'timeout'
 
     @cached_property
     def room_type(self) -> RoomType:
@@ -385,13 +545,6 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             return area
         return None
 
-    @staticmethod
-    def _random_point_in_area(area: tuple[int, int, int, int]) -> tuple[int, int]:
-        x, y, w, h = area
-        w = max(1, int(w))
-        h = max(1, int(h))
-        return random_point_in_roi((x, y, w, h))
-
     def _wait_selected_appear(self, pre_cnt: int, timeout: float = 2) -> bool:
         """
         点击后等待选中动画结束。要求连续两帧都识别到选中，避免单帧滞后误判。
@@ -430,7 +583,9 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             if select_area is None:
                 logger.info('Current page no exact friend')
                 return False
-            click_x, click_y = self._random_point_in_area(select_area)
+            # T7-5 Stage 2：匹配到的好友名 OCR bbox 是安全点击 ROI，从任务私有整框均匀
+            # `_random_point_in_area` 迁到统一 preferred 模型（未登记 → RULE_FALLBACK）。
+            click_x, click_y = ClickSampler.sample_target(select_area, rule.name)
             self.device.click(x=click_x, y=click_y, control_name=rule.name)
             if self._wait_selected_appear(pre_cnt):
                 return True

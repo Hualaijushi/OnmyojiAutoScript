@@ -8,15 +8,16 @@ import random
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from tasks.GameUi.default_pages import random_click
 from typing import Callable, Union
 
+from module.atom.click import RuleClick
 from module.atom.gif import RuleGif
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
 from module.base.utils import color_similar, get_color
-from module.base.utils.random import random_delay
+from module.base.utils.random import random_delay, random_int
+from module.click_sampler import ClickSampler
 from module.exception import GameStuckError
 from module.logger import logger
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
@@ -35,6 +36,44 @@ ExitMatcher = Union[Matcher | RecognizerLike | Page]
 BattleInspectionAction = Callable[["BattleContext"], None]
 PREPARE_CLICK_DELAY = 3.0
 QUICK_EXIT_WAIT_TIMEOUT = 5.0
+
+# --- 通用结算推进（GENERALBATTLE SETTLEMENT CONTRACT V3，2026-09-03）---
+# 三个大安全点击区（assets，均为 Large Safe Region，不是 Point Target）：
+#   C_RANDOM_DEFAULT     (742,430,362,230) 普通 Result / Reward 布局的默认安全推进区
+#   C_RANDOM_SAVE_RIGHT  (1185,209,87,441) Reward 未命中奖励宝袋布局标志时的右侧 fallback
+#   C_RANDOM_SAVE_BOTTOM (819,639,425,69)  同上，底部 fallback
+# 选定 region 内的采样：T7-5 Stage 2（2026-09-06）起走 `ClickSampler.sample_region`
+# —— Region preferred 偏置（`default_region` profile，比 Point 宽、仍中心集中、不是整 region
+# 均匀），落点必在该 region 的 Safe ROI 内。缺人工 Region 热点数据 → preferred=(0.5,0.5)
+# （RULE_FALLBACK，见 `module/click_preference.py` 的 random_default/right/bottom 条目）。
+# region 的**选择**（marker → DEFAULT，否则 80/20）不变；不走 appear_then_click / confirm_delay。
+#
+# 旧 C_RANDOM_RD / C_RANDOM_RD2 区域、_SETTLEMENT_*_PROFILE、one-primary / 2 秒观察 /
+# same-page 超时 / sticky RD2 已全部移除（见 docs/DECISIONS.md D014 Superseded、D016）。
+#
+# --- SETTLEMENT MICRO-BURST V1（2026-09-12，`docs/DECISIONS.md` D025）---
+# 通用结果页（`I_WIN`/`I_DE_WIN`/`I_FALSE` 命中）与普通奖励页统一收进同一个
+# **Settlement Click Session**（状态存在 `BattleContext.settlement_*` 字段，随每轮战斗
+# `_build_context`/`_reset_round_context` 重建，不跨轮持久化）：
+# - **总点击预算是上限，不是必须点满**：进入本轮结算时抽一次 `total_budget ∈ [2,4]`
+#   （`_sample_settlement_budget`，2 最常见/3 其次/4 较少，单次 `random_int(1,10)` 分桶，
+#   不引入加权采样库）；真实页面提前进入 terminal 就立即停手，budget 剩余作废，不为了
+#   「点满」继续点新页面。
+# - **一次 micro-burst 最多 2 次盲点**：`_sample_settlement_burst_size` 从 {1,2} 均匀二选一，
+#   夹到剩余预算；同一 burst 内用**完全相同的 anchor**连续点击，第二下不重新采样，中间只隔
+#   `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE`（结算 burst 专属小间隔，独立于跨 burst 的
+#   `SETTLEMENT_CLICK_INTERVAL_RANGE` 节流、不接 reaction timing / Fatigue）。
+# - **burst 后必须 fresh screenshot + 重新 classify**：micro-burst 本身不做任何页面探测，
+#   页面是否推进仍由外层 `run_general_battle()` 主循环下一帧 `detect_page_in` 决定——这就是
+#   本模型的「重新分类」，不是新起一套探测逻辑。
+# - **anchor persistence + 安全区域交集**：同一 settlement 页面（`context.last_page` 与本帧
+#   相同）默认复用原 anchor；结果页 → 奖励页这类前向状态变化时，只有旧 anchor 落在新状态安全
+#   区域 ROI 内才允许「保留 / 主动换点」二选一（全 session 最多 1 次主动换点）；旧 anchor 不在
+#   新安全区域内则**强制**重新采样（安全 fallback，不计入主动换点次数）。
+# - **budget 耗尽仍未到 terminal**：本帧不再点击，交回既有 FSM（`_handle_missing_battle_page`
+#   的 2.5s 兜底 / 外部设备级卡死保护），不新增第二套无界等待。
+# - 旧「通用结果页首帧强制两次点击」`_advance_generic_result` 已被本 session 模型吸收替代
+#   （不再存在，避免旧固定两次 + 新 session 双 owner 叠加）。
 
 
 @dataclass
@@ -127,6 +166,21 @@ class BattleContext:
     quick_exit_timer: Timer | None = None
     # 最近一次结算页解析出的胜负结果；用于退出时返回最终布尔值。
     is_win: bool = False
+    # --- Settlement Micro-Burst Session（v1，随本轮战斗重建，不跨轮持久化）---
+    # 本轮结算 session 是否已经初始化（采样过 total_budget + 首个 anchor）。
+    settlement_session_active: bool = False
+    # 本轮结算 session 的总点击预算上限（并非必须点满，见模块顶注释）。
+    settlement_click_budget: int = 0
+    # 本轮结算 session 已经实际点击的次数。
+    settlement_clicks_used: int = 0
+    # 当前复用中的结算 anchor 坐标；同一 burst / 同状态延续 burst 都点它，不重新采样。
+    settlement_anchor: tuple[int, int] | None = None
+    # 当前 anchor 所属安全区域的 `RuleClick.name`（用于安全区域交集校验 + BehaviorTrace 落名）。
+    settlement_region_name: str | None = None
+    # 当前所处结算阶段的可读标识（仅用于日志，如 'generic_result' / 'reward'）。
+    settlement_stage_name: str | None = None
+    # 本 session 内已发生的「主动换点」次数；上限 1 次，安全 fallback 强制换点不计入。
+    settlement_anchor_switches: int = 0
 
 
 class BattleBehaviorScope(str, Enum):
@@ -154,7 +208,19 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
     # 子任务可按需要覆写；默认值保持原有通用战斗节奏。
     PREPARE_CLICK_DELAY_RANGE: tuple[float, float] = (PREPARE_CLICK_DELAY, PREPARE_CLICK_DELAY)
-    SETTLEMENT_CLICK_INTERVAL_RANGE: tuple[float, float] = (0.8, 0.8)
+    # 每次成功 settlement 点击后独立重新采样（`_next_settlement_click_interval`），不是任务
+    # 开始时随机一次后固定复用。Contract v2 把旧固定 0.8s 改为 0.7~1.0s 随机。
+    # 这是「burst 与 burst 之间」的节流间隔（跨帧），不是同一 burst 内两次盲点的间隔。
+    SETTLEMENT_CLICK_INTERVAL_RANGE: tuple[float, float] = (0.7, 1.0)
+    # Settlement Micro-Burst v1（2026-09-12，`docs/DECISIONS.md` D025）新增：同一 burst 内
+    # 连续两次盲点之间的间隔——语义是「同一个点快速连点」，与上面跨 burst 的节流间隔是不同
+    # 的 timing owner，因此单独开一个 settlement 专属小常量，不复用 `SETTLEMENT_CLICK_INTERVAL_RANGE`、
+    # 不接 reaction timing（`module/reaction_profile.py`）/ Fatigue。PROVISIONAL，Level C 待标定。
+    SETTLEMENT_BURST_CLICK_INTERVAL_RANGE: tuple[float, float] = (0.10, 0.30)
+    # 结算状态前向变化（结果页 → 奖励页）且旧 anchor 落在新安全区域内时，保留原 anchor 的
+    # 概率（百分比，`random_int(1,100) <= 此值` 判保留，否则主动换点）。50 = 对半开，
+    # PROVISIONAL，无实测依据，Level C 待标定。
+    SETTLEMENT_ANCHOR_KEEP_PROBABILITY: int = 50
 
     def __init__(self, config, device) -> None:
         """初始化通用战斗运行时缓存。
@@ -506,6 +572,14 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.round_behavior_state = BattleBehaviorState()
         context.prepare_click_timer = Timer(self._next_prepare_click_delay())
         context.settlement_click_timer = Timer(0)
+        # 新一轮战斗重开一个全新 Settlement Click Session，不跨轮持有预算 / anchor。
+        context.settlement_session_active = False
+        context.settlement_click_budget = 0
+        context.settlement_clicks_used = 0
+        context.settlement_anchor = None
+        context.settlement_region_name = None
+        context.settlement_stage_name = None
+        context.settlement_anchor_switches = 0
 
     def _reset_timed_battle_inspection_timers(self, context: BattleContext) -> None:
         """统一重置当前 battle 生效巡检项的 timer。"""
@@ -544,15 +618,268 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             return False
         return context.prepare_click_timer.reached()
 
-    def _settlement_click(self, context: BattleContext) -> bool:
-        """按当前任务声明的浮动间隔点击一次战斗结算页。"""
+    def _sample_settlement_click(self, rule: RuleClick) -> None:
+        """在**业务已选定的** ``rule`` region 内取一次点并点击，保留 rule 身份供 BehaviorTrace 区分。
+
+        T7-5 Stage 2（2026-09-06）：从整 ROI ``LEGACY_UNIFORM`` 改为 ``ClickSampler.sample_region``
+        —— 按该 region 的 ``TargetPreference``（``random_default`` / ``random_save_right`` /
+        ``random_save_bottom``，当前均 RULE_FALLBACK 基础锚点 + preferred-only 尺寸适配 +
+        ``default_region`` profile：
+        比 Point 宽、仍中心集中、**不是整 region 均匀**、每次坐标不同）取点，落点必在该 region
+        的 Safe ROI 内。**region 的选择**（``_select_reward_region`` 的 marker → DEFAULT、否则
+        80/20）与本方法无关。**仅供非通用结果标志的单次节流点击（``_settlement_click``）/
+        `_drain_activity_settlement`` 等旧调用点使用**——Settlement Micro-Burst Session
+        （v1）需要「采样一次、复用多次点击」，走的是独立的 ``_sample_settlement_point`` /
+        ``_click_settlement_point`` 两个原语，不调本方法。
+        """
+        x, y = ClickSampler.sample_region(rule.roi_front, rule.name)
+        self.device.click(x=x, y=y, control_name=rule.name)
+
+    def _settlement_click(self, context: BattleContext, region: RuleClick | None = None) -> bool:
+        """受 ``settlement_click_timer`` 随机间隔节流地点击一次结算推进区域。
+
+        每帧被 handler 调，节流未到点就跳过；到点就点一次 ``region``（默认 ``C_RANDOM_DEFAULT``）、
+        重采下一次 0.7~1.0s 随机间隔、``reset()``。页面是否推进由外层 FSM 下一帧
+        ``detect_page_in`` 判断——本函数不做任何 observe / same-page 超时 / fallback 判断。
+
+        Returns:
+            bool: ``True`` 表示本轮实际点了一次；``False`` 表示节流未到点、跳过。
+        """
         timer = context.settlement_click_timer
         if timer.started() and not timer.reached():
             return False
-        self.click(random_click())
+        self._sample_settlement_click(region if region is not None else self.C_RANDOM_DEFAULT)
         timer.limit = self._next_settlement_click_interval()
         timer.reset()
         return True
+
+    def _is_generic_result_context(self) -> bool:
+        """当前结果页是否是通用胜负结果页（而非某任务追加识别标志命中的特殊结算态）。
+
+        只认基础通用胜负横幅 ``I_WIN`` / ``I_DE_WIN`` / ``I_FALSE``——出现即「这一帧确实是
+        标准战斗结果结算页」。基础识别里更宽的 ``I_BATTLE_STATE_INFO`` 不纳入判定（静态无法
+        证明它出现的所有场景都适合强制双击），这类帧退回旧的单次节流点击、保持现状。
+        """
+        return (self.appear(self.I_WIN)
+                or self.appear(self.I_DE_WIN)
+                or self.appear(self.I_FALSE))
+
+    # ------------------------------------------------------------------------------------
+    # Settlement Micro-Burst Session v1（2026-09-12，`docs/DECISIONS.md` D025）
+    # ------------------------------------------------------------------------------------
+
+    def _sample_settlement_budget(self) -> int:
+        """采样本轮结算 session 的总点击预算上限：2~4，不强制均匀。
+
+        单次 ``random_int(1, 10)`` 分桶（1~5 → 2、6~8 → 3、9~10 → 4，权重 50%/30%/20%），
+        不引入加权采样库。这是**上限**，不是必须点满——真实页面提前到 terminal 就立即停手。
+        """
+        roll = random_int(1, 10)
+        if roll <= 5:
+            return 2
+        if roll <= 8:
+            return 3
+        return 4
+
+    def _sample_settlement_burst_size(self) -> int:
+        """采样一次 micro-burst 的盲点次数：1 或 2，均匀二选一（外层再夹到剩余预算）。"""
+        return random_int(1, 2)
+
+    def _sample_settlement_point(self, region: RuleClick) -> tuple[int, int]:
+        """在给定安全区域内采样一次落点，不点击——供 anchor 需要重新采样时单独调用。
+
+        与 ``_sample_settlement_click``（采样并立即点击）是两个独立的原语；burst 内多次
+        点击必须复用同一个已采样的 anchor，不能每次都调这个方法。
+        """
+        return ClickSampler.sample_region(region.roi_front, region.name)
+
+    def _click_settlement_point(self, point: tuple[int, int], control_name: str) -> None:
+        """点击一个已经采样好的结算落点，不重新采样。"""
+        x, y = point
+        self.device.click(x=x, y=y, control_name=control_name)
+
+    @staticmethod
+    def _point_in_roi(point: tuple[int, int], roi: tuple[int, int, int, int]) -> bool:
+        """判断一个坐标是否落在给定 ROI（半开区间）内，用于 anchor 跨状态安全区域交集校验。"""
+        x, y = point
+        rx, ry, rw, rh = roi
+        return rx <= x < rx + rw and ry <= y < ry + rh
+
+    def _teardown_settlement_session(self, context: BattleContext) -> None:
+        """确认已离开结算页面（page_battle_result / page_reward）后立即销毁本轮 Settlement
+        Click Session，防止残留 anchor / budget 在后续 Challenge / FIRE 页面上继续触发点击。
+
+        由 ``run_general_battle()`` 主循环在每帧 fresh classify 之后、分发给具体 handler 之前
+        调用——一旦当前页确认不是结算页就立即销毁，不等到下一轮战斗 / 下一次 `run_general_battle()`
+        调用才清理。之后若该任务自己的流程重新出现 Challenge/FIRE 页面，必须走它自己完整的
+        FIRE contract（重新识别 / reaction / 二次确认），不会复用本 session 的任何残留状态。
+        """
+        if not context.settlement_session_active:
+            return
+        logger.info(
+            f'Settlement session destroyed: used={context.settlement_clicks_used}'
+            f'/{context.settlement_click_budget}, left settlement stage'
+        )
+        context.settlement_session_active = False
+        context.settlement_click_budget = 0
+        context.settlement_clicks_used = 0
+        context.settlement_anchor = None
+        context.settlement_region_name = None
+        context.settlement_stage_name = None
+        context.settlement_anchor_switches = 0
+
+    def _start_settlement_session(self, context: BattleContext, region: RuleClick, stage_name: str) -> None:
+        """初始化本轮结算 Click Session：采样一次 total_budget + 首个 anchor。"""
+        context.settlement_click_budget = self._sample_settlement_budget()
+        context.settlement_clicks_used = 0
+        context.settlement_anchor_switches = 0
+        context.settlement_anchor = self._sample_settlement_point(region)
+        context.settlement_region_name = region.name
+        context.settlement_stage_name = stage_name
+        context.settlement_session_active = True
+        logger.info(f'Settlement session: budget={context.settlement_click_budget}')
+
+    def _advance_settlement_anchor(self, context: BattleContext, region: RuleClick, stage_name: str) -> None:
+        """结算状态发生前向变化（如结果页 → 奖励页）时的 anchor 决策。
+
+        旧 anchor 若不落在新状态的安全区域 ROI 内——强制重新采样（安全 fallback，不计入
+        「主动换点」次数）。落在安全区域内——按概率决定保留还是主动换点（全 session 最多
+        允许 1 次主动换点，用尽后只能保留）。
+        """
+        previous_stage = context.settlement_stage_name
+        old_anchor = context.settlement_anchor
+        compatible = old_anchor is not None and self._point_in_roi(old_anchor, region.roi_front)
+        if not compatible:
+            context.settlement_anchor = self._sample_settlement_point(region)
+            context.settlement_region_name = region.name
+            context.settlement_stage_name = stage_name
+            logger.info(f'Settlement state advanced: {previous_stage} -> {stage_name}, anchor=resample(unsafe)')
+            return
+        can_switch = context.settlement_anchor_switches < 1
+        keep = not can_switch or random_int(1, 100) <= self.SETTLEMENT_ANCHOR_KEEP_PROBABILITY
+        if keep:
+            context.settlement_region_name = region.name
+            context.settlement_stage_name = stage_name
+            logger.info(f'Settlement state advanced: {previous_stage} -> {stage_name}, anchor=keep')
+            return
+        context.settlement_anchor_switches += 1
+        context.settlement_anchor = self._sample_settlement_point(region)
+        context.settlement_region_name = region.name
+        context.settlement_stage_name = stage_name
+        logger.info(f'Settlement state advanced: {previous_stage} -> {stage_name}, anchor=resample')
+
+    def _classify_general_battle_page(self) -> Page | None:
+        """在结算相关的 4 个已知战斗页面范围内做一次识别，供 Micro-Burst 的「点击后先
+        观察再决定」步骤复用——与 ``run_general_battle()`` 主循环用的是**同一个**
+        matcher/classifier（``GameUi.detect_page_in``），不新造第二套页面分类逻辑、
+        不接 FrameWait 的 changed/stable（那是像素级判定，这里要的是页面语义）。
+        """
+        return GameUi.detect_page_in(self, page_battle_prepare, page_battle, page_battle_result,
+                                     page_reward, include_global=False)
+
+    def _fire_settlement_burst(self, context: BattleContext, current_page: Page) -> None:
+        """Observed Micro-Burst v1.1：点击 → 短间隔 → fresh 语义观察 → 决定是否补第二下。
+
+        第一次点击**一定执行**（调用方已确认 ``remaining >= 1``）。是否补第二下必须由
+        「第一下没有使页面推进」这一真实观察结果触发，不是「burst_size 提前抽到 2 就无条件
+        点第二下」：
+
+        - 观察后仍是同一个 ``current_page`` → 允许用同一个 anchor 补第二下。
+        - 观察到已经推进到另一个结算页（result↔reward）→ 当前 burst 立即结束，不在旧
+          state 上补点；新 state 由下一次 ``_settlement_burst_step`` 调用重新决定 anchor。
+        - 观察到已经明确离开 settlement（prepare/battle 等 Challenge/FIRE 相关页面）→
+          立即销毁 session，绝不让剩余 budget 穿透过去。
+        - 观察不到任何已知页面（Unknown）→ 不补点，交回既有 ``_handle_missing_battle_page``
+          / bounded wait / recovery，不猜测。
+
+        任何情况下，一次调用最多点 2 次；第二下之后无论如何都直接交回主循环的下一次
+        fresh classify，不会有第三下。
+        """
+        timer = context.settlement_click_timer
+        if timer.started() and not timer.reached():
+            return
+        remaining = context.settlement_click_budget - context.settlement_clicks_used
+        if remaining <= 0:
+            return
+
+        anchor = context.settlement_anchor
+        control_name = context.settlement_region_name
+        stage_name = context.settlement_stage_name
+        desired_burst_size = min(self._sample_settlement_burst_size(), remaining)
+
+        self._click_settlement_point(anchor, control_name)
+        context.settlement_clicks_used += 1
+        logger.info(
+            f'Settlement first click: state={stage_name}, anchor={anchor}, '
+            f'used={context.settlement_clicks_used}/{context.settlement_click_budget}'
+        )
+
+        if desired_burst_size >= 2 and context.settlement_clicks_used < context.settlement_click_budget:
+            time.sleep(self._sample_interval(self.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE))
+            self.screenshot()
+            observed_page = self._classify_general_battle_page()
+            if observed_page == current_page:
+                self._click_settlement_point(anchor, control_name)
+                context.settlement_clicks_used += 1
+                logger.info(
+                    f'Settlement observe: {stage_name} -> {stage_name}, second_click=allowed, '
+                    f'used={context.settlement_clicks_used}/{context.settlement_click_budget}'
+                )
+            elif observed_page in (page_battle_result, page_reward):
+                logger.info(f'Settlement observe: {stage_name} -> advanced, second_click=cancelled')
+            elif observed_page is None:
+                logger.info(f'Settlement observe: {stage_name} -> unknown, second_click=cancelled')
+            else:
+                logger.info(
+                    f'Settlement observe: {stage_name} -> left settlement, '
+                    f'second_click=cancelled, session=destroyed'
+                )
+                self._teardown_settlement_session(context)
+                return   # session 已销毁，不再武装 timer / 打印 terminal 日志
+
+        timer.limit = self._next_settlement_click_interval()
+        timer.reset()
+        if context.settlement_clicks_used >= context.settlement_click_budget:
+            logger.info(
+                f'Settlement terminal budget exhausted: '
+                f'used={context.settlement_clicks_used}/{context.settlement_click_budget}, stop early'
+            )
+
+    def _settlement_burst_step(self, context: BattleContext, *, current_page: Page,
+                               stage_name: str, region_provider: Callable[[], RuleClick]) -> None:
+        """结算 Micro-Burst Session 单步推进——由 ``_handle_result`` / ``_handle_reward`` 每帧调用。
+
+        ``region_provider`` 惰性获取「本帧适用的安全区域」，只在 session 初始化或页面刚从
+        另一个结算页切过来时才调用一次——同一结算页持续多帧时不重复调用，避免
+        ``_select_reward_region`` 的 80/20 随机分支被每帧重新掷骰子、打散 anchor 一致性。
+
+        Args:
+            context: 当前战斗上下文对象。
+            current_page: 本次调用对应的结算页（``page_battle_result`` / ``page_reward``）。
+            stage_name: 当前阶段的可读标识，仅用于日志。
+            region_provider: 惰性返回当前帧适用安全区域的可调用对象。
+        """
+        if not context.settlement_session_active:
+            self._start_settlement_session(context, region_provider(), stage_name)
+        elif context.last_page != current_page:
+            self._advance_settlement_anchor(context, region_provider(), stage_name)
+
+        if context.settlement_clicks_used >= context.settlement_click_budget:
+            return
+        self._fire_settlement_burst(context, current_page)
+
+    def _select_reward_region(self) -> RuleClick:
+        """普通奖励页按「奖励宝袋」布局判别标志选结算推进安全区域。
+
+        ``I_GET_BATTLE_REWARD`` / ``I_GET_BATTLE_REWARD_2`` 只用于「已确认 page_reward 之后
+        判断当前奖励布局应点哪个安全区」——不是 page recognizer、不是点击目标。命中任一 →
+        默认区 ``C_RANDOM_DEFAULT``；都没命中说明是别的布局 → 80% 右侧安全区、20% 底部安全区。
+        """
+        if self.appear(self.I_GET_BATTLE_REWARD) or self.appear(self.I_GET_BATTLE_REWARD_2):
+            return self.C_RANDOM_DEFAULT
+        if random_int(1, 100) <= 80:
+            return self.C_RANDOM_SAVE_RIGHT
+        return self.C_RANDOM_SAVE_BOTTOM
 
     def _inspection_recover_auto_mode(self, context: BattleContext) -> None:
         """默认 battle 巡检项：检测手动并恢复自动。"""
@@ -707,7 +1034,16 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.is_win = not self.appear(self.I_FALSE, threshold=0.8)
         if context.last_page != page_battle_result:
             self.device.click_record_clear()
-        self._settlement_click(context)
+        if self._is_generic_result_context():
+            # 通用结果页：纳入 Settlement Micro-Burst Session（v1）。
+            self._settlement_burst_step(
+                context, current_page=page_battle_result, stage_name='generic_result',
+                region_provider=lambda: self.C_RANDOM_DEFAULT,
+            )
+        else:
+            # 非通用结果标志（更宽的 I_BATTLE_STATE_INFO）：不纳入 burst session，
+            # 保持旧的单次节流点击（现状未改）。
+            self._settlement_click(context)
         return BattleAction.CONTINUE
 
     def _handle_reward(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
@@ -723,11 +1059,21 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.reward_no_battle_ts = None
         # TODO: 部分副本奖励界面不一定是战斗成功, 需要重写
         context.is_win = True
-        self.appear_then_click(self.I_OVER_GHOST, interval=0.8)
-        self.appear_then_click(self.I_GB_SKIN_CONFIRM, interval=0.8)
         if context.last_page != page_reward:
             self.device.click_record_clear()
-        self._settlement_click(context)
+        # 特殊弹窗：本轮确实点中任意一个就立即 CONTINUE，下一轮 fresh screenshot 再判
+        # （Action → Fresh State 边界，不在同帧继续 region click）。
+        if self.appear_then_click(self.I_OVER_GHOST, interval=0.8):
+            return BattleAction.CONTINUE
+        if self.appear_then_click(self.I_GB_SKIN_CONFIRM, interval=0.8):
+            return BattleAction.CONTINUE
+        # 普通奖励布局：纳入同一个 Settlement Micro-Burst Session；region_provider
+        # 只在 session 初始化 / 刚从结果页切过来时才调用一次 `_select_reward_region`
+        # （见 `_settlement_burst_step` 说明，避免 80/20 随机分支被每帧重新掷骰子）。
+        self._settlement_burst_step(
+            context, current_page=page_reward, stage_name='reward',
+            region_provider=self._select_reward_region,
+        )
         return BattleAction.CONTINUE
 
     def _handle_missing_battle_page(self, context: BattleContext, config: GeneralBattleConfig,
@@ -868,6 +1214,13 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 context.reward_no_battle_ts = None if page else context.reward_no_battle_ts
                 self._sync_prepare_click_timer(context, page)
                 self._ensure_battle_stuck_guard(context, page)
+                # fresh classify 一旦确认当前页不是结算页（page_battle_result/page_reward），
+                # 立即销毁 Settlement Click Session——防止残留 anchor/budget 在后续
+                # Challenge / FIRE 页面（page_battle_prepare / page_battle，或任务自己的
+                # 目标选择 / 再次挑战页）上继续触发点击。`page is None`（本帧暂时没识别到任何
+                # 战斗页）不触发销毁，避免把结算页内部一次过渡性丢帧误判为「已离开结算」。
+                if page is not None and page not in (page_battle_result, page_reward):
+                    self._teardown_settlement_session(context)
                 if context.quick_exit and not self._in_settlement_stage(context, page):
                     action = BattleAction.QUICK_EXIT
                 else:
@@ -1121,7 +1474,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             return None
         return self.run_general_battle(config=config, battle_key="__legacy_takeover__")
 
-    def check_lock(self, enable: bool, lock_image, unlock_image):
+    def check_lock(self, enable: bool, lock_image, unlock_image, confirm_delay: tuple[float, float] | None = None):
         """
         检测是否锁定队伍。
 
@@ -1129,6 +1482,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             enable: 目标是否应为锁队状态。
             lock_image: 已锁定状态的识别图像。
             unlock_image: 未锁定状态的识别图像。
+            confirm_delay: 可选的点击前 reaction 区间；调用方按业务显式传入（默认 None = 原行为）。
 
         Returns:
             None: 直接执行锁定状态切换。
@@ -1139,7 +1493,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 self.screenshot()
                 if self.appear(lock_image):
                     break
-                if self.appear_then_click(unlock_image, interval=1):
+                if self.appear_then_click(unlock_image, interval=1, confirm_delay=confirm_delay):
                     continue
         else:
             logger.info("Unlock team")
@@ -1147,7 +1501,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 self.screenshot()
                 if self.appear(unlock_image):
                     break
-                if self.appear_then_click(lock_image, interval=1):
+                if self.appear_then_click(lock_image, interval=1, confirm_delay=confirm_delay):
                     continue
 
     def check_and_open_buff(self, buff: Union[BuffClass | list[BuffClass]] = None):

@@ -123,13 +123,15 @@ class ScriptTask(GameUi, GeneralBattle, GeneralInvite, SwitchSoul, HuntAssets):
 
     def netherworld(self):
         logger.hr('netherworld', 2)
+        battle_entered = False
         while 1:
             self.screenshot()
             if self.is_in_room(False):
                 self.screenshot()
                 if not self.appear(self.I_FIRE):
                     continue
-                self.click_fire()
+                # click_fire 现返回 battle-entry 结果：只有正向战斗确认才交接 run_general_battle
+                battle_entered = self.click_fire() == 'battle'
                 break
 
             if self.appear_then_click(self.I_NW, interval=0.9):
@@ -143,6 +145,9 @@ class ScriptTask(GameUi, GeneralBattle, GeneralInvite, SwitchSoul, HuntAssets):
                 logger.warning('Today have already challenged the Netherworld')
                 self.ui_click_until_disappear(self.I_UI_BACK_RED)
                 return
+        if not battle_entered:
+            logger.warning('Netherworld room challenge did not confirm battle, skip')
+            return
         logger.info('Start battle')
         self.run_general_battle(
             self.config.hunt.netherworld_battle_config,

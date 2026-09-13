@@ -42,6 +42,27 @@ def random_triangular(min_value: Real, max_value: Real, mode: Real) -> float:
     return _rng.triangular(min_value, max_value, mode)
 
 
+def random_normal(mu: Real, sigma: Real) -> float:
+    """
+    生成正态分布随机值，复用模块级 SystemRandom（不新建 random.Random）。
+
+    sigma 必须 >= 0；sigma == 0 时直接返回 mu（退化为确定值）。
+    """
+    if isinstance(mu, bool) or not isinstance(mu, Real):
+        raise TypeError(f'均值必须是数值：{mu}')
+    if isinstance(sigma, bool) or not isinstance(sigma, Real):
+        raise TypeError(f'标准差必须是数值：{sigma}')
+    mu = float(mu)
+    sigma = float(sigma)
+    if not isfinite(mu) or not isfinite(sigma):
+        raise ValueError('正态分布参数必须是有限数值')
+    if sigma < 0:
+        raise ValueError(f'标准差不能为负：{sigma}')
+    if sigma == 0.0:
+        return mu
+    return _rng.gauss(mu, sigma)
+
+
 def _center_biased_int(start: int, stop: int) -> int:
     """
     在半开区间内生成中心偏置整数

@@ -20,8 +20,8 @@
   {
     "itemName": "check_battle_main",
     "imageName": "as_check_battle_main.png",
-    "roiFront": "151,18,164,40",
-    "roiBack": "141,0,192,69",
+    "roiFront": "153,18,134,39",
+    "roiBack": "141,0,161,68",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动主界面标志"
@@ -52,5 +52,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动签到附属页面关闭按钮"
+  },
+  {
+    "itemName": "main_goto_act_2",
+    "imageName": "page_main_goto_act_2.png",
+    "roiFront": "726,280,38,35",
+    "roiBack": "694,256,99,94",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "庭院直接进入活动页面"
   }
 ]

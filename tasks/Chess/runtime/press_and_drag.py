@@ -1,6 +1,5 @@
 """百鬼棋局运行时专用的按住并拖动操作。"""
 
-import random
 import time
 
 import numpy as np
@@ -12,6 +11,7 @@ from module.base.utils import (
     point2str,
     random_rectangle_point,
 )
+from module.base.utils.random import random_delay, random_int
 from module.device.method.minitouch import insert_swipe
 from module.logger import logger
 
@@ -105,8 +105,10 @@ def _press_and_drag_minitouch(
         builder.move(
             *point,
             pressure=pressure,
-        ).commit().wait(random.randint(6, 15))
+        ).commit().wait(random_int(6, 15))
     device.minitouch_send()
+    # 终点两次固定 140ms 是拖拽落点的 settle 等待，游戏需要稳定停留才会确认放置，
+    # 属于可靠性时序而非拟人化延迟，不做随机化。
     builder.move(*p2).commit().wait(140)
     builder.move(*p2).commit().wait(140)
     device.minitouch_send()
@@ -148,7 +150,7 @@ def _press_and_drag_scrcpy(
         device.sleep(hold_duration)
         for point in points[1:-1]:
             device._scrcpy_control.touch(*point, scrcpy_const.ACTION_MOVE)
-            device.sleep(random.uniform(0.001, 0.004))
+            device.sleep(random_delay(0.001, 0.004))
         device._scrcpy_control.touch(*p2, scrcpy_const.ACTION_MOVE)
         device.sleep(0.14)
         device._scrcpy_control.touch(*p2, scrcpy_const.ACTION_UP)

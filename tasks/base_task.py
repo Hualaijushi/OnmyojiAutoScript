@@ -4,7 +4,7 @@
 
 from time import sleep, time
 
-import random
+import math
 from datetime import datetime, timedelta
 from module.atom.animate import RuleAnimate
 from module.atom.click import RuleClick
@@ -14,11 +14,14 @@ from module.atom.list import RuleList
 from module.atom.long_click import RuleLongClick
 from module.atom.ocr import RuleOcr
 from module.atom.swipe import RuleSwipe
+from module.base.frame_wait import wait_for_changed_and_stable
 from module.base.timer import Timer
 from module.base.utils.random import random_delay
 from module.config.config import Config
 from module.device.device import Device
+from module.device.touch_swipe_model import TouchSwipeModel
 from module.exception import ScriptError
+from module.fatigue import get_fatigue_manager
 from module.image.rpc import get_image_client
 from module.logger import logger
 from module.ocr.base_ocr import OcrMode
@@ -27,6 +30,29 @@ from tasks.Component.config_base import Time
 from tasks.GlobalGame.assets import GlobalGameAssets
 from tasks.GlobalGame.config_emergency import FriendInvitation
 from typing import Union
+
+
+# ---------------------------------------------------------------------------
+# list_find 翻页后「等列表滚动停稳」的 FrameWait 参数（W1 结构性 settle）。
+#
+# 取代旧的固定 `sleep(random.uniform(0.8, 1.3))`。语义只是「等这次翻页真正滚动完再重新识别」：
+#   - ROI 直接复用当前 RuleList 的 `roi_back`（列表内容区），不设全局 ROI；
+#   - FrameWait 的结果**不参与控制流**——settle 成功或 timeout 都一样回到循环顶重新截图 + 重新
+#     `image_appear` / `ocr_appear`，`max_swipe` 仍是唯一收敛边界，不新增 BOTTOM / ABORT 语义；
+#   - 因此阈值取错最多影响「多等 / 少等一会儿」，不会造成漏找 / 误判。
+# 这几个值是 provisional，Level C 待用真实列表翻页的 `changed` / `stable` / `elapsed` 分布标定
+# （不得当成全项目通用参数；KekkaiUtilize K3 的 SWIPE_WAIT_* 是卡列表专用，不照搬到这里）。
+_LIST_FIND_SETTLE_CHANGED_THRESHOLD = 0.02
+_LIST_FIND_SETTLE_STABLE_THRESHOLD = 0.01
+_LIST_FIND_SETTLE_STABLE_FRAMES = 2
+_LIST_FIND_SETTLE_TIMEOUT = 1.5
+_LIST_FIND_SETTLE_POLL_INTERVAL = 0.12
+
+
+def _list_roi_back_to_box(roi_back) -> tuple:
+    """RuleList.roi_back 是 `(x, y, w, h)`；FrameWait 的 roi 要 `(x1, y1, x2, y2)`。"""
+    x, y, w, h = roi_back
+    return int(x), int(y), int(x + w), int(y + h)
 
 
 class BaseTask(GlobalGameAssets, CostumeBase):
@@ -61,6 +87,94 @@ class BaseTask(GlobalGameAssets, CostumeBase):
 
         # 战斗次数相关
         self.current_count = 0  # 战斗次数
+        fatigue_identity = getattr(self.config, 'config_name', None)
+        if fatigue_identity is None:
+            fatigue_identity = getattr(self.config.model, 'config_name', 'oas')
+        self.fatigue_manager = get_fatigue_manager(
+            str(fatigue_identity), self.config.global_game.fatigue
+        )
+
+    def begin_fatigue_task(self, task_identity: str, load_factor: float | None = None) -> None:
+        if load_factor is None:
+            load_factor = self.fatigue_manager.load_factor
+        previous_task = self.fatigue_manager.task_identity
+        switched = self.fatigue_manager.begin_task(task_identity, load_factor)
+        if switched and self.fatigue_manager.enabled:
+            snapshot = self.fatigue_manager.snapshot()
+            logger.info(
+                f'疲劳任务切换：{previous_task or "无"} -> {task_identity}，'
+                f'当前任务疲劳：{snapshot.task:.1f}，总疲劳：{snapshot.global_:.1f}'
+            )
+
+    @staticmethod
+    def _format_fatigue_duration(duration: float) -> str:
+        seconds = max(0, round(duration))
+        minutes, seconds = divmod(seconds, 60)
+        if minutes:
+            return f'{minutes}分{seconds}秒'
+        return f'{seconds}秒'
+
+    def try_fatigue_break(
+        self,
+        *,
+        safe: bool,
+        repeat_completed: bool = False,
+        deadline: datetime = None,
+    ):
+        if not self.fatigue_manager.enabled or not safe:
+            return None
+        max_break_seconds = None
+        if deadline is not None:
+            max_break_seconds = max(0.0, (deadline - datetime.now()).total_seconds())
+
+        def should_resume() -> bool:
+            return deadline is None or datetime.now() < deadline
+
+        def log_check(snapshot):
+            logger.info(
+                f'疲劳安全节点，当前任务疲劳：{snapshot.task:.1f}，'
+                f'总疲劳：{snapshot.global_:.1f}'
+            )
+
+        def log_break(kind, duration, snapshot):
+            duration_text = self._format_fatigue_duration(duration)
+            task_active = self._format_fatigue_duration(snapshot.task_active_seconds)
+            global_active = self._format_fatigue_duration(snapshot.global_active_seconds)
+            if kind == 'rest':
+                logger.info(
+                    f'当前任务疲劳：{snapshot.task:.1f}，总疲劳：{snapshot.global_:.1f}，'
+                    f'任务有效运行：{task_active}，全局有效运行：{global_active}，'
+                    f'触发任务休息：{duration_text}'
+                )
+            else:
+                logger.info(
+                    f'当前任务疲劳：{snapshot.task:.1f}，总疲劳：{snapshot.global_:.1f}，'
+                    f'任务有效运行：{task_active}，全局有效运行：{global_active}，'
+                    f'触发短暂发呆：{duration_text}'
+                )
+
+        result = self.fatigue_manager.try_break(
+            safe=True,
+            repeat_completed=repeat_completed,
+            max_break_seconds=max_break_seconds,
+            should_resume=should_resume,
+            on_check=log_check,
+            on_break=log_break,
+        )
+        if result is None:
+            return None
+        state_name = '休息' if result.kind == 'rest' else '发呆'
+        task_recovery = max(0.0, result.before.task - result.after.task)
+        global_recovery = max(0.0, result.before.global_ - result.after.global_)
+        task_active = self._format_fatigue_duration(result.after.task_active_seconds)
+        global_active = self._format_fatigue_duration(result.after.global_active_seconds)
+        logger.info(
+            f'{state_name}结束，任务恢复：{task_recovery:.1f}，'
+            f'全局恢复：{global_recovery:.1f}，当前任务疲劳：{result.after.task:.1f}，'
+            f'总疲劳：{result.after.global_:.1f}，任务有效运行：{task_active}，'
+            f'全局有效运行：{global_active}'
+        )
+        return result
 
     def _burst(self) -> bool:
         """
@@ -337,7 +451,9 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         :param target:
         :return:
         """
-        if not self.wait_until_appear(target, wait_time):
+        # 必须用关键字传参：wait_until_appear 的第二个位置参数是 skip_first_screenshot，
+        # 按位置传会把等待时长绑成“跳过首次截图”，并让超时计时器失效。
+        if not self.wait_until_appear(target, wait_time=wait_time):
             return False
         click_x, click_y = target.coord()
         if action is None:
@@ -488,14 +604,47 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             if not self.interval_timer[swipe.name].reached():
                 return False
 
-        x1, y1, x2, y2 = swipe.coord()
-        self.device.swipe(p1=(x1, y1), p2=(x2, y2), control_name=swipe.name)
+        x1, y1, x2, y2 = swipe.sample_endpoints()
+        # 普通页面滑动 / 列表滚动统一走 swipe_trajectory：minitouch 下用 TouchSwipeModel
+        # 生成 minimum-jerk 轨迹，其它控制后端回退旧端点滑动。起终点由 v2 端点采样器
+        # （`module/atom/swipe_endpoint.py`，见 D022）给出——起终点各自独立、主集中 + 少量
+        # 更宽尾部、夹到安全范围，方向 / 有效距离 / interval 语义不变。
+        self.swipe_trajectory((x1, y1), (x2, y2), control_name=swipe.name)
 
         # 执行后，如果有限制时间，则重置限制时间
         if interval:
             # logger.info(f'Swipe {swipe.name}')
             self.interval_timer[swipe.name].reset()
         return True
+
+    def swipe_trajectory(self, start: tuple, end: tuple, *,
+                         control_name: str = 'SWIPE', fallback: bool = True) -> None:
+        """普通页面滑动 / 列表滚动的统一入口。
+
+        职责只有「把 start → end 变成一次滑动」：不截图、不等页面稳定、不 sleep、不重试、
+        不加随机延迟。滑多远、滑完等什么、失败怎么办仍由业务层负责（与 KekkaiUtilize
+        `_perform_search_swipe` 的分工一致，但本方法**不含 K3 FrameWait**）。
+
+        - minitouch：`TouchSwipeModel().generate(start, end)` → `Control.swipe_trajectory`
+          （一次 swipe = 一个 BehaviorTrace ACTION，完整 commanded 轨迹进 extra）。
+        - 非 minitouch：`fallback=True` 时回退 `Control.swipe`（端点滑动，保留 distance_check /
+          各后端 duration 语义）；`fallback=False` 时抛 `NotImplementedError`。
+        - 位移 < 10px（`Control.swipe` 自身「太短当点击」的阈值）：一律走端点滑动，交给旧
+          逻辑照旧 +1 / 丢弃，不进轨迹模型（避免 < 2px 触发 `TouchSwipeModel` 的 ValueError）。
+
+        本方法不改变滑动方向 / 距离 / 起终点，只改变两点之间的运动方式。
+        """
+        sx, sy = int(start[0]), int(start[1])
+        ex, ey = int(end[0]), int(end[1])
+        method = self.config.script.device.control_method
+        if method == 'minitouch' and math.hypot(ex - sx, ey - sy) >= 10:
+            trajectory = TouchSwipeModel().generate((sx, sy), (ex, ey))
+            self.device.swipe_trajectory(trajectory, control_name=control_name)
+            return
+        if not fallback:
+            raise NotImplementedError(
+                f'swipe_trajectory 非 minitouch 且 fallback=False，当前控制后端：{method}')
+        self.device.swipe(p1=(sx, sy), p2=(ex, ey), control_name=control_name)
 
     def click(self, click: Union[RuleClick, RuleLongClick, RuleImage, RuleOcr] = None, interval: float = None) -> bool:
         """
@@ -635,8 +784,22 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                 x1, y1, x2, y2 = target.swipe_pos(number=swipe_distance_ratio, after=swipe_down)
             else:
                 x1, y1, x2, y2 = target.swipe_pos(after=swipe_down)
+            # baseline = 翻页前用于识别的这一帧（此处未再截图，self.device.image 仍是它、未被污染）
+            settle_baseline = self.device.image
             self.device.swipe(p1=(x1, y1), p2=(x2, y2))
-            sleep(random.uniform(0.8, 1.3))  # 等待滑动完成, 待优化
+            # 取代旧的固定 sleep(0.8~1.3)：等列表相对 baseline 发生变化并停稳再重新识别。
+            # 结果不参与控制流——settle / timeout 都照旧回循环顶重新截图 + 重新识别，max_swipe
+            # 仍是唯一收敛边界（见模块顶注释）。
+            wait_for_changed_and_stable(
+                settle_baseline,
+                self.device.screenshot,
+                roi=_list_roi_back_to_box(target.roi_back),
+                changed_threshold=_LIST_FIND_SETTLE_CHANGED_THRESHOLD,
+                stable_threshold=_LIST_FIND_SETTLE_STABLE_THRESHOLD,
+                stable_frames=_LIST_FIND_SETTLE_STABLE_FRAMES,
+                timeout=_LIST_FIND_SETTLE_TIMEOUT,
+                poll_interval=_LIST_FIND_SETTLE_POLL_INTERVAL,
+            )
         if appear:
             return result
         return False

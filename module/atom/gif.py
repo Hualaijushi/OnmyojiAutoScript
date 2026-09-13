@@ -2,7 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 from module.atom.image import RuleImage
-from module.base.utils.random import random_point_in_roi
+from module.click_sampler import ClickSampler
 from module.image.rpc import get_image_client
 
 
@@ -59,7 +59,8 @@ class RuleGif:
 
 
     def coord(self) -> tuple:
-        return random_point_in_roi(self.roi_front)
+        # T7-5：按目标 preferred 热点 + 偏移模型取点（name 取自首个 RuleImage target）。
+        return ClickSampler.sample_target(self.roi_front, self.name)
 
     def front_center(self) -> tuple:
         x, y, w, h = self.roi_front

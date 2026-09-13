@@ -1,50 +1,50 @@
 [
   {
     "itemName": "area_1",
-    "roiFront": "533,162,177,74",
-    "roiBack": "533,162,177,74",
+    "roiFront": "514,141,223,116",
+    "roiBack": "514,141,223,116",
     "description": "area1"
   },
   {
     "itemName": "area_2",
-    "roiFront": "863,164,181,71",
-    "roiBack": "863,164,181,71",
+    "roiFront": "851,143,223,114",
+    "roiBack": "851,143,223,114",
     "description": "area2"
   },
   {
     "itemName": "area_3",
-    "roiFront": "532,292,181,87",
-    "roiBack": "532,292,181,87",
+    "roiFront": "512,280,224,113",
+    "roiBack": "512,280,224,113",
     "description": "area3"
   },
   {
     "itemName": "area_4",
-    "roiFront": "863,301,171,62",
-    "roiBack": "863,301,171,62",
+    "roiFront": "846,279,227,112",
+    "roiBack": "846,279,227,112",
     "description": "area4"
   },
   {
     "itemName": "area_5",
-    "roiFront": "540,432,169,68",
-    "roiBack": "540,432,169,68",
+    "roiFront": "509,414,228,111",
+    "roiBack": "509,414,228,111",
     "description": "area5"
   },
   {
     "itemName": "area_6",
-    "roiFront": "876,432,165,74",
-    "roiBack": "876,432,165,74",
+    "roiFront": "850,413,226,112",
+    "roiBack": "850,413,226,112",
     "description": "area6"
   },
   {
     "itemName": "area_7",
-    "roiFront": "538,557,149,71",
-    "roiBack": "538,557,149,71",
+    "roiFront": "515,550,220,98",
+    "roiBack": "515,550,220,98",
     "description": "area7"
   },
   {
     "itemName": "area_8",
-    "roiFront": "876,562,150,67",
-    "roiBack": "876,562,150,67",
+    "roiFront": "847,550,226,97",
+    "roiBack": "847,550,226,97",
     "description": "area8"
   },
   {

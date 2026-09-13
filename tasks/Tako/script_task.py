@@ -70,8 +70,9 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul):
             if not self.appear(self.I_ADD_1):
                 # 有人进来了，可以进行挑战
                 logger.info('There is someone in the room and start the challenge')
-                self.click_fire()
-                self.run_general_battle()
+                # click_fire 现返回 battle-entry 结果：只有正向战斗确认才交接 run_general_battle
+                if self.click_fire() == 'battle':
+                    self.run_general_battle()
                 break
         self.exit_task()
 
