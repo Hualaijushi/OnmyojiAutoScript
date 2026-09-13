@@ -8,7 +8,7 @@ from numpy import float32, int32, uint8, fromfile
 from pathlib import Path
 
 from module.base.decorator import cached_property
-from module.base.utils.random import random_point_in_roi
+from module.click_sampler import ClickSampler
 from module.image.rpc import get_image_client
 from module.logger import logger
 from module.base.utils import is_approx_rectangle
@@ -311,17 +311,20 @@ class RuleImage:
 
     def coord(self) -> tuple:
         """
-        获取roi_front的随机的点击的坐标
+        获取roi_front的点击坐标：按该目标 preferred 热点 + 偏移模型取点（T7-5）。
+        roi_front 是 match() 后动态更新的「模板尺寸框@匹配位置」，preferred 是 ROI 相对，
+        所以匹配位置每次不同也能得到一致的相对热点。未登记目标 = RULE_FALLBACK。
+        见 docs/DECISIONS.md D014。
         :return:
         """
-        return random_point_in_roi(self.roi_front)
+        return ClickSampler.sample_target(self.roi_front, self.name)
 
     def coord_more(self) -> tuple:
         """
-         获取roi_back的随机的点击的坐标
+         获取roi_back的点击坐标（按同一目标身份路由）。
         :return:
         """
-        return random_point_in_roi(self.roi_back)
+        return ClickSampler.sample_target(self.roi_back, self.name)
 
     def front_center(self) -> tuple:
         """

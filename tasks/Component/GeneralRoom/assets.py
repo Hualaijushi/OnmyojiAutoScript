@@ -52,3 +52,18 @@ class GeneralRoomAssets:
 	I_ENSURE_PUBLIC_FALSE_2 = RuleImage(roi_front=(307,491,38,37), roi_back=(307,491,38,37), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/gr/gr_ensure_public_false_2.png")
 
 
+	# Image Rule Assets
+	# 副本选择-探索
+	I_LAYER_EXP = RuleImage(roi_front=(158,198,185,63), roi_back=(142,109,228,558), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/layer/layer_layer_exp.png")
+	# 组队副本_觉醒火
+	I_EVO_FIRE = RuleImage(roi_front=(158,343,185,63), roi_back=(142,109,228,558), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/layer/layer_evo_fire.png")
+	# 组队副本_觉醒风
+	I_EVO_WIND = RuleImage(roi_front=(158,416,185,63), roi_back=(142,109,228,558), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/layer/layer_evo_wind.png")
+	# 组队副本_觉醒水
+	I_ECO_WATER = RuleImage(roi_front=(158,490,185,63), roi_back=(142,109,228,558), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/layer/layer_eco_water.png")
+	# 组队副本_觉醒雷
+	I_EVO_THUNDER = RuleImage(roi_front=(159,561,185,63), roi_back=(142,109,228,558), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/layer/layer_evo_thunder.png")
+	# 组队副本_御魂
+	I_OROCHI_ROOM = RuleImage(roi_front=(159,561,185,63), roi_back=(142,109,228,558), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralRoom/layer/layer_orochi_room.png")
+
+

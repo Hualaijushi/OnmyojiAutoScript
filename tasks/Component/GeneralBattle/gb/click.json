@@ -115,14 +115,14 @@
   },
   {
     "itemName": "random_left",
-    "roiFront": "17,104,55,370",
-    "roiBack": "17,104,55,370",
+    "roiFront": "17,104,192,506",
+    "roiBack": "17,104,192,506",
     "description": "左边随机点击"
   },
   {
     "itemName": "random_right",
-    "roiFront": "1185,115,79,388",
-    "roiBack": "1185,115,79,388",
+    "roiFront": "1185,209,87,441",
+    "roiBack": "1185,209,87,441",
     "description": "右边随机点击"
   },
   {
@@ -133,8 +133,8 @@
   },
   {
     "itemName": "random_bottom",
-    "roiFront": "462,599,492,78",
-    "roiBack": "462,599,492,78",
+    "roiFront": "819,639,425,69",
+    "roiBack": "819,639,425,69",
     "description": "下边随机点击"
   },
   {
@@ -142,5 +142,23 @@
     "roiFront": "42,94,1207,543",
     "roiBack": "42,94,1207,543",
     "description": "整体随机点击"
+  },
+  {
+    "itemName": "random_default",
+    "roiFront": "742,430,362,230",
+    "roiBack": "742,430,362,230",
+    "description": "战斗结算/奖励默认点击范围"
+  },
+  {
+    "itemName": "random_save_bottom",
+    "roiFront": "819,639,425,69",
+    "roiBack": "819,639,425,69",
+    "description": "结算安全点击区域底部"
+  },
+  {
+    "itemName": "random_save_right",
+    "roiFront": "1185,209,87,441",
+    "roiBack": "1185,209,87,441",
+    "description": "结算安全点击"
   }
 ]

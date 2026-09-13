@@ -20,7 +20,6 @@ class RaidConfig(BaseModel):
     ryou_access: bool = Field(default=False, description='ryou_access_help')
     # 正式进攻前增加1至3秒随机等待，页面推进仍以状态识别为准
     random_delay: bool = Field(default=False, description='寮突破正式进攻前增加1至3秒随机等待')
-
     # 打完没票了 0/6 => 失败
     # 突破压根没开  +> 失败
     # 时间打满了  成功

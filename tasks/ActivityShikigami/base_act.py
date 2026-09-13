@@ -39,6 +39,15 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
         self.switched_soul = {name: False for name in BATTLE_TYPES}
         self.current_action_type = ''
         self.activity_time_reached = False
+        # 某个玩法把「宏观空闲（macro idle）」交给 Fatigue 安全节点接管后置 True，
+        # 此时 `prepare_next_action` 不再叠加旧的 `random_sleep`（避免两个 macro-idle owner）。
+        # 当前仅爬塔线（`NormalClimbAct.run_climb`）启用；大富翁 / 伪神降临线保持 random_sleep。
+        #
+        # ownership 契约：同一个 `ScriptTask` 实例会按 `task_sequence_v` 顺序连跑多条玩法线，
+        # 因此**每条线都必须在自己的 `run_*` 入口显式声明** owner，不能沿用上一条线的残留值
+        # （否则「爬塔 → 伪神降临」会让伪神线既没有 Fatigue 安全节点、也跳过 random_sleep，
+        # 出现零 macro-idle owner）。这里的值只是实例初始默认，不承担线间切换职责。
+        self._fatigue_owns_macro_idle = False
 
     @cached_property
     def conf(self) -> ActivityShikigami:
@@ -64,6 +73,23 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
             return self.I_ACT_FIRE
         return None
 
+    def _is_active_battle_entry(self) -> bool:
+        """当前 fresh frame 是否**确实已进入一场新战斗**（准备页 / 战斗进行页）。
+
+        **不是** `GeneralBattle.is_in_battle()`：后者是「准备 + 战斗 + 结果 + 奖励」整个战斗
+        生命周期 detector，OR 里含失败横幅 `I_FALSE`、胜负横幅 `I_WIN` / `I_DE_WIN`、奖励页
+        `I_REWARD` / `I_REWARD_GOLD`。本期活动战斗结束后是一个「活动专用结算弹窗」，若用宽
+        detector 判「新战斗已开始」，结算弹窗 / 上一场结果残留会被误判成已进入下一场战斗
+        （与 `docs/DECISIONS.md` D001 补记「Battle Lifecycle Detector ≠ New Battle Entry
+        Detector」一致，RealmRaid `_is_active_battle_entry()` 同款）。
+
+        这里只取窄 active-battle-entry positive：`is_in_prepare()`（`I_BUFF` /
+        `I_PREPARE_HIGHLIGHT` / `I_PREPARE_DARK` / `I_PRESET` / `I_PRESET_WIT_NUMBER`）或
+        `is_in_real_battle()`（`I_BATTLE_INFO`）——都是 GeneralBattle 已有的窄 detector、不含
+        result / reward marker。只读当前帧：不截图 / 不点击 / 不 sleep。
+        """
+        return self.is_in_prepare(False) or self.is_in_real_battle(False)
+
     def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         if self.current_action_type == 'boss':
             self.appear_then_click(self.I_UI_BACK_RED, interval=1.5)
@@ -83,7 +109,13 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
         return self.activity_time_reached
 
     def prepare_next_action(self, action_type: str) -> bool:
-        """下一次骰子/战斗/行动的唯一软停止与随机休眠节点。"""
+        """下一次骰子/战斗/行动的软停止节点：次数上限 / 墙钟时限 / 行动计数 / current_action_type。
+
+        宏观空闲（macro idle）的处理分两种：`_fatigue_owns_macro_idle` 为真的玩法（爬塔线）
+        已把它交给 Fatigue 安全节点（`NormalClimbAct._activity_challenge_safe_break` 里的
+        `try_fatigue_break`），此处**不再**叠加旧的 `random_sleep`（否则同一 cycle 出现两个
+        macro-idle owner）；大富翁 / 伪神降临线不启用 Fatigue，仍走 `random_sleep`。
+        """
         limit = self.action_limit(action_type)
         if limit <= 0 or self.action_count[action_type] >= limit:
             logger.info(
@@ -94,7 +126,7 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
         if self.time_limit_reached():
             return False
 
-        if self.conf.general_config.random_sleep:
+        if self.conf.general_config.random_sleep and not self._fatigue_owns_macro_idle:
             random_sleep(probability=0.2)
             if self.time_limit_reached():
                 return False

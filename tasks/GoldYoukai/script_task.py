@@ -65,16 +65,17 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 if wait_timer.reached():
                     # 超过时间依然挑战
                     logger.warning('Wait for too long and start the challenge')
-                    self.click_fire()
-                    count += 1
-                    self.run_general_battle()
+                    # click_fire 现返回 battle-entry 结果：只有正向战斗确认才交接 run_general_battle
+                    if self.click_fire() == 'battle':
+                        count += 1
+                        self.run_general_battle()
                     break
                 if not self.appear(self.I_ADD_5_1):
                     # 有人进来了，可以进行挑战
                     logger.info('There is someone in the room and start the challenge')
-                    self.click_fire()
-                    count += 1
-                    self.run_general_battle()
+                    if self.click_fire() == 'battle':
+                        count += 1
+                        self.run_general_battle()
                     break
         # 退出 (要么是在组队界面要么是在庭院)
         self.gold_exit(con)

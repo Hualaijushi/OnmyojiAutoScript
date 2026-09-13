@@ -37,6 +37,10 @@ class FakeGodAct:
 
     def run_fakegod(self):
         logger.hr('Start activity: Fakegod', 1)
+        # Macro idle ownership 由本条玩法线自己声明，绝不继承上一条线的残留值（同一个
+        # `ScriptTask` 实例会按 `task_sequence_v` 顺序连跑多条线）。伪神降临线没有 Fatigue
+        # 安全节点，宏观空闲仍由 `prepare_next_action` 里的 `random_sleep` 负责。
+        self._fatigue_owns_macro_idle = False
         self.setup_fakegod_pages()
         destination = pages.page_fakegod_action
         self.goto_page(destination)

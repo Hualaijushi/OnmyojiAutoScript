@@ -38,7 +38,7 @@ from tasks.RyouToppa.assets import RyouToppaAssets
 def random_click(
     low: int | None = None,
     high: int | None = None,
-    ltrb: tuple = (True, False, True, False),
+    ltrb: tuple = (False, False, True, False),
 ) -> Union[RuleClick | list[RuleClick]]:
     """从常用结算点击区域中随机选择安全点击点。
 

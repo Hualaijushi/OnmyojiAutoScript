@@ -1,7 +1,7 @@
 [
   {
     "itemName": "remain_ap",
-    "roiFront": "1123,24,95,34",
+    "roiFront": "551,14,119,33",
     "roiBack": "1123,24,95,34",
     "mode": "Quantity",
     "method": "Default",
@@ -10,7 +10,7 @@
   },
   {
     "itemName": "remain_pass",
-    "roiFront": "539,23,88,31",
+    "roiFront": "752,16,97,31",
     "roiBack": "539,23,88,31",
     "mode": "Digit",
     "method": "Default",
@@ -37,8 +37,8 @@
   },
   {
     "itemName": "remain_penta_pass",
-    "roiFront": "707,21,113,40",
-    "roiBack": "698,9,129,61",
+    "roiFront": "931,10,113,40",
+    "roiBack": "924,0,129,61",
     "mode": "Digit",
     "method": "Default",
     "keyword": "",

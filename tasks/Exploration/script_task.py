@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timedelta
 
 from module.logger import logger
+from module.reaction_profile import REACTION_FAST, REACTION_CONFIRM, REACTION_NAVIGATION
 from tasks.Exploration.base import BaseExploration
 from tasks.Exploration.config import AutoRotate, UserStatus, ExplorationLevel
 import tasks.Exploration.page as pages
@@ -13,6 +14,7 @@ from typing import Callable
 
 class InviteFailedException(Exception):
     pass
+
 
 class ScriptTask(BaseExploration):
     """探索"""
@@ -46,8 +48,39 @@ class ScriptTask(BaseExploration):
     def run(self):
         logger.hr('exploration')
         self.pre_process()
+        if self.user_status == UserStatus.ALONE:
+            self.begin_fatigue_task('Exploration')
         self.exec_exp_page()
         self.post_process()
+
+    def _maybe_boss_cycle_fatigue(self) -> bool:
+        """一个完整探索业务循环（进图 → 打怪 / Boss → 地图宝箱 → 小纸人 policy → 原生退出）
+        结束、已回到探索外层稳定页面后的疲劳安全节点。
+
+        调用点在 `run_on_exp_entrance` / `run_on_exp` 顶部——这两个 handler 只在
+        `exec_exp_page` 的 `get_current_page()` 正向命中 `page_exp_entrance` /
+        `page_exploration` 时才分发，所以进来即代表「已在合法外层稳定页」。仅 solo；仅当刚
+        完成的是一个已打过 Boss 的循环（`fire_monster_type == 'boss'`，外层 handler 稍后才把
+        它重置）。触发后消费掉 Boss 标记避免重复，并让调用方 `return`，交 `exec_exp_page`
+        下一轮 fresh screenshot + 重新分发 = fatigue 后的 fresh revalidate。
+
+        **不在 `page_exp_main` 触发**（地图宝箱 / 小纸人 policy / 退出都还没处理完）——
+        `run_on_exp_main` 不调用本方法。
+
+        :return: 本轮是否命中安全节点（命中则调用方应 return，交下一轮 fresh dispatch）
+        """
+        if self.user_status != UserStatus.ALONE:
+            return False
+        if self.fire_monster_type != 'boss':
+            return False
+        # 消费本轮 Boss 标记，避免下一轮外层 dispatch 重复进入安全节点
+        self.fire_monster_type = ''
+        self.try_fatigue_break(
+            safe=True,
+            repeat_completed=True,
+            deadline=self.start_time + self.limit_time,
+        )
+        return True
 
     def exec_exp_page(self):
         pages.page_battle_team_exit = self.navigator.resolve_page(pages.page_battle_team_exit)
@@ -76,6 +109,8 @@ class ScriptTask(BaseExploration):
         if self.pre_page and self.pre_page != pages.page_exp_main:
             # 防止因延迟过大, 一直在主界面和奖励页面切换导致too many click
             self.device.click_record_clear()
+        # 原生 reward 链：先查地图宝箱（有则领取），无宝箱再走小纸人 policy
+        # （collect_paper_man_reward 在「Boss 且不领小纸人」时会执行原生 quit_exp_main）。
         if self.collect_reward():
             return
         if self.user_status != UserStatus.ALONE:
@@ -94,6 +129,9 @@ class ScriptTask(BaseExploration):
             self.quit_exp_main()
 
     def run_on_exp_entrance(self):
+        # 回到外层稳定页：完整业务循环结束，先走 solo Boss 疲劳安全节点（命中则交下一轮 fresh dispatch）
+        if self._maybe_boss_cycle_fatigue():
+            return
         self.collect_treasure_box()
         self.fire_monster_type = ''  # 入口处重置怪物类型
         self.need_exit = False
@@ -110,6 +148,9 @@ class ScriptTask(BaseExploration):
                 self.device.stuck_record_clear()
 
     def run_on_exp(self):
+        # 同 run_on_exp_entrance：外层稳定页，先走 solo Boss 疲劳安全节点
+        if self._maybe_boss_cycle_fatigue():
+            return
         self.fire_monster_type = ''  # 入口处重置怪物类型
         self.need_exit = False
         match self.user_status:
@@ -147,13 +188,17 @@ class ScriptTask(BaseExploration):
             self.goto_page(pages.page_exp_main)
             return
         self.fill_shikigami()
-        self.appear_then_click(self.I_E_AUTO_ROTATE_OFF, interval=0.8)
+        # 设置页开关：含义明确的稳定按钮，FAST reaction
+        self.appear_then_click(self.I_E_AUTO_ROTATE_OFF, interval=0.8, confirm_delay=REACTION_FAST)
 
     def run_on_exp_exit(self):
         if not self.need_exit: # 不需要退出则点取消, 通常是直接在探索界面启动脚本(或退出期间在主界面再次识别到需要攻击的怪物)
-            self.appear_then_click(self.I_E_EXIT_CANCEL, interval=0.8)
+            # 取消退出：NAVIGATION reaction
+            self.appear_then_click(self.I_E_EXIT_CANCEL, interval=0.8, confirm_delay=REACTION_NAVIGATION)
             return
-        self.appear_then_click(self.I_E_EXIT_CONFIRM, interval=0.8)
+        # 退出确认：CONFIRM reaction（confirm_delay 会在 delay 后重新截图二次确认，
+        # 若此时游戏已自动离开退出弹窗则不点，天然避免 stale click）
+        self.appear_then_click(self.I_E_EXIT_CONFIRM, interval=0.8, confirm_delay=REACTION_CONFIRM)
         self.wait_start_time = datetime.now()  # 队友等待时间重置
 
 

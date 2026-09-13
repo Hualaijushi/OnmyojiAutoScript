@@ -12,21 +12,21 @@ class RyouToppaAssets:
 
 	# Click Rule Assets
 	# area1 
-	C_AREA_1 = RuleClick(roi_front=(533,162,177,74), roi_back=(533,162,177,74), name="area_1")
+	C_AREA_1 = RuleClick(roi_front=(514,141,223,116), roi_back=(514,141,223,116), name="area_1")
 	# area2 
-	C_AREA_2 = RuleClick(roi_front=(863,164,181,71), roi_back=(863,164,181,71), name="area_2")
+	C_AREA_2 = RuleClick(roi_front=(851,143,223,114), roi_back=(851,143,223,114), name="area_2")
 	# area3 
-	C_AREA_3 = RuleClick(roi_front=(532,292,181,87), roi_back=(532,292,181,87), name="area_3")
+	C_AREA_3 = RuleClick(roi_front=(512,280,224,113), roi_back=(512,280,224,113), name="area_3")
 	# area4 
-	C_AREA_4 = RuleClick(roi_front=(863,301,171,62), roi_back=(863,301,171,62), name="area_4")
+	C_AREA_4 = RuleClick(roi_front=(846,279,227,112), roi_back=(846,279,227,112), name="area_4")
 	# area5 
-	C_AREA_5 = RuleClick(roi_front=(540,432,169,68), roi_back=(540,432,169,68), name="area_5")
+	C_AREA_5 = RuleClick(roi_front=(509,414,228,111), roi_back=(509,414,228,111), name="area_5")
 	# area6 
-	C_AREA_6 = RuleClick(roi_front=(876,432,165,74), roi_back=(876,432,165,74), name="area_6")
+	C_AREA_6 = RuleClick(roi_front=(850,413,226,112), roi_back=(850,413,226,112), name="area_6")
 	# area7 
-	C_AREA_7 = RuleClick(roi_front=(538,557,149,71), roi_back=(538,557,149,71), name="area_7")
+	C_AREA_7 = RuleClick(roi_front=(515,550,220,98), roi_back=(515,550,220,98), name="area_7")
 	# area8 
-	C_AREA_8 = RuleClick(roi_front=(876,562,150,67), roi_back=(876,562,150,67), name="area_8")
+	C_AREA_8 = RuleClick(roi_front=(847,550,226,97), roi_back=(847,550,226,97), name="area_8")
 	# 在点击进攻后如果未进入战斗画面则点击的安全区域 
 	C_SAFE_AREA = RuleClick(roi_front=(182,213,160,229), roi_back=(182,213,160,229), name="safe_area")
 

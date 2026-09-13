@@ -31,8 +31,38 @@ class ScriptProcess(ScriptWSManager):
         self.config_name = config_name  # config_name
         self.log_pipe_out, self.log_pipe_in = _SCRIPT_PROCESS_CONTEXT.Pipe(False)
         self.state_queue = _SCRIPT_PROCESS_CONTEXT.Queue()
+        self.command_queue = _SCRIPT_PROCESS_CONTEXT.Queue()
         self.state: ScriptState = ScriptState.INACTIVE
+        self.fatigue_state = self._default_fatigue_state()
         self._process = None
+
+    def _default_fatigue_state(self) -> dict:
+        from module.config.config import Config
+        from module.fatigue import FatigueManager
+
+        fatigue = Config(self.config_name).global_game.fatigue
+        return {
+            'fatigue_enabled': bool(fatigue.enable),
+            'task_fatigue': 0.0,
+            'global_fatigue': 0.0,
+            'fatigue_load_factor': float(fatigue.load_factor),
+            'fatigue_state': 'normal' if fatigue.enable else 'disabled',
+            'fatigue_cooldown_remaining': 0.0,
+            'fatigue_load_factor_preview': FatigueManager(fatigue).load_factor_preview(),
+        }
+
+    async def set_fatigue_load_factor(self, value: float) -> None:
+        self.fatigue_state['fatigue_load_factor'] = float(value)
+        if self._process is not None and self._process.is_alive():
+            self.command_queue.put({
+                'command': 'set_fatigue_load_factor',
+                'value': float(value),
+            })
+        await self.broadcast_state({'fatigue': dict(self.fatigue_state)})
+
+    async def refresh_fatigue_state(self) -> None:
+        self.fatigue_state = self._default_fatigue_state()
+        await self.broadcast_state({'fatigue': dict(self.fatigue_state)})
 
     @staticmethod
     def _extract_log_dedup_key(log: str) -> str | None:
@@ -57,7 +87,7 @@ class ScriptProcess(ScriptWSManager):
             self.stop()
         self._process = _SCRIPT_PROCESS_CONTEXT.Process(
             target=func,
-            args=(self.config_name, self.state_queue, self.log_pipe_in,),
+            args=(self.config_name, self.state_queue, self.command_queue, self.log_pipe_in,),
             name=self.config_name,
             daemon=True,
         )
@@ -67,6 +97,8 @@ class ScriptProcess(ScriptWSManager):
     async def stop(self):
         self.state = ScriptState.INACTIVE
         await self.broadcast_state({"state": self.state})
+        self.fatigue_state = self._default_fatigue_state()
+        await self.broadcast_state({'fatigue': dict(self.fatigue_state)})
         if self._process is None:
             logger.warning(f'Script {self.config_name} process is removed')
             return
@@ -93,6 +125,8 @@ class ScriptProcess(ScriptWSManager):
                         continue
                     if 'state' in data and data['state'] == ScriptState.WARNING:
                         self.state = ScriptState.WARNING
+                    if 'fatigue' in data:
+                        self.fatigue_state = data['fatigue']
                     await self.broadcast_state(data)
                 except QueueEmpty as e:
                     logger.warning(f'QueueEmpty: {e}')
@@ -140,7 +174,12 @@ class ScriptProcess(ScriptWSManager):
             return
 
 
-def func(config: str, state_queue: multiprocessing.Queue, log_pipe_in) -> None:
+def func(
+    config: str,
+    state_queue: multiprocessing.Queue,
+    command_queue: multiprocessing.Queue,
+    log_pipe_in,
+) -> None:
 
     def start_log() -> None:
         try:
@@ -160,7 +199,7 @@ def func(config: str, state_queue: multiprocessing.Queue, log_pipe_in) -> None:
         #     state_queue.put({"state": ScriptState.RUNNING})
         from script import Script
         script = Script(config_name=config)
-        script.state_queue = state_queue
+        script.attach_runtime_channels(state_queue, command_queue)
         script.loop()
     except SystemExit as e:
         logger.info(f'Script {config} process exit')

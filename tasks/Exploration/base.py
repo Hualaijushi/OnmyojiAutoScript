@@ -7,6 +7,7 @@ from datetime import timedelta, datetime
 from module.atom.gif import RuleGif
 from module.atom.image import RuleImage
 from module.base.timer import Timer
+from module.base.frame_wait import wait_for_changed_and_stable
 
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
@@ -22,7 +23,19 @@ import tasks.Exploration.page as pages
 from module.logger import logger
 from module.exception import TaskEnd, GameStuckError
 from module.atom.animate import RuleAnimate
+from module.reaction_profile import REACTION_NORMAL, REACTION_NAVIGATION
 from typing import Optional
+
+
+# 章节列表的结构等待只观察现有 OCR 列表区域。ROI 由
+# O_E_EXPLORATION_LEVEL_NUMBER.roi=(x, y, w, h) 直接换算为 ltrb。
+# 以下阈值均为 Level A/B provisional 参数，需用真机滚动帧差分布校准。
+EXPLORATION_LEVEL_SETTLE_ROI = (1065, 203, 1189, 555)
+EXPLORATION_LEVEL_CHANGED_THRESHOLD = 0.02
+EXPLORATION_LEVEL_STABLE_THRESHOLD = 0.01
+EXPLORATION_LEVEL_STABLE_FRAMES = 2
+EXPLORATION_LEVEL_SETTLE_TIMEOUT = 1.5
+EXPLORATION_LEVEL_POLL_INTERVAL = 0.12
 
 
 class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, ReplaceShikigami, SwitchSoul, ExplorationAssets):
@@ -90,6 +103,25 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.set_next_run(task='Exploration', success=True, finish=False)
         raise TaskEnd
 
+    def _wait_chapter_list_settle(self, baseline) -> bool:
+        """等待章节列表发生结构变化并停稳；结果不代表目标章节已找到。"""
+        wait = wait_for_changed_and_stable(
+            baseline,
+            self.device.screenshot,
+            roi=EXPLORATION_LEVEL_SETTLE_ROI,
+            changed_threshold=EXPLORATION_LEVEL_CHANGED_THRESHOLD,
+            stable_threshold=EXPLORATION_LEVEL_STABLE_THRESHOLD,
+            stable_frames=EXPLORATION_LEVEL_STABLE_FRAMES,
+            timeout=EXPLORATION_LEVEL_SETTLE_TIMEOUT,
+            poll_interval=EXPLORATION_LEVEL_POLL_INTERVAL,
+        )
+        logger.info(
+            'Exploration chapter swipe wait: changed=%s, stable=%s, timeout=%s, '
+            'elapsed=%.3f, diff=%.3f'
+            % (wait.changed, wait.stable, wait.timed_out, wait.elapsed, wait.last_difference)
+        )
+        return wait.success
+
     # 打开指定的章节：
     def open_expect_level(self):
         swipeCount = 0
@@ -112,18 +144,22 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             # 有则跳出检测
             if self.appear(self.I_E_EXPLORATION_CLICK) or result and len(result) > 0:
                 break
-            if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
+            # 章节页确认弹窗：普通稳定选择，NORMAL reaction
+            if self.appear_then_click(self.I_UI_CONFIRM, interval=1, confirm_delay=REACTION_NORMAL):
                 continue
-            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
+            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1, confirm_delay=REACTION_NORMAL):
                 continue
             self.device.click_record_clear()
+            swiped = False
             if len(exp_level_enum_list) > 0:
                 min_level = exp_level_enum_list[0]
                 max_level = exp_level_enum_list[-1]
                 if config_exploration_level.get_index() < min_level.get_index():
-                    self.swipe(self.S_SWIPE_LEVEL_UP)
+                    settle_baseline = self.device.image
+                    swiped = self.swipe(self.S_SWIPE_LEVEL_UP)
                 elif config_exploration_level.get_index() > max_level.get_index():
-                    self.swipe(self.S_SWIPE_LEVEL_DOWN)
+                    settle_baseline = self.device.image
+                    swiped = self.swipe(self.S_SWIPE_LEVEL_DOWN)
             swipeCount += 1
             debug_info = f"Swiped {swipeCount} times, current exploration level: {text1}"
             logger.info(debug_info)
@@ -131,14 +167,20 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                 raise GameStuckError(
                     f"Swiped too many times ({swipeCount}), seems stuck in exploration level selection"
                 )
-            time.sleep(1)
+            if swiped:
+                # 这里只等待滑动后的结构变化与停稳；下一轮 OCR 仍负责业务收敛。
+                self._wait_chapter_list_settle(settle_baseline)
+            else:
+                # 没有发出滑动时保留旧 1 秒作为 OCR / 动作未就绪的 retry throttle。
+                time.sleep(1)
 
         # 选中对应章节
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
+            # 章节页确认弹窗：普通稳定选择，NORMAL reaction
+            if self.appear_then_click(self.I_UI_CONFIRM, interval=1, confirm_delay=REACTION_NORMAL):
                 continue
-            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
+            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1, confirm_delay=REACTION_NORMAL):
                 continue
             self.O_E_EXPLORATION_LEVEL_NUMBER.keyword = config_exploration_level
             if self.ocr_appear_click(self.O_E_EXPLORATION_LEVEL_NUMBER):
@@ -320,15 +362,23 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         return False
 
     def switch_rotate(self) -> bool:
-        """切换轮换类型并添加式神 True(执行了切换)/False"""
+        """按配置管理「自动添加候补式神」。返回是否执行了切换动作。
+
+        轮换模式的开 / 关归**用户**所有：`auto_rotate=no`（默认）时脚本只观察，
+        **绝不**点 `I_E_AUTO_ROTATE_ON` / `I_E_AUTO_ROTATE_OFF` 去取消用户手工开启的轮换
+        （2026-09-08 Level C 实测：旧代码会把用户开着的轮换点关掉）。要脚本主动开轮换 +
+        填充候补时，用户显式设 `auto_rotate=yes`。`page_exp_main` 的识别本就用
+        `any_of(I_E_SETTINGS_BUTTON, I_E_AUTO_ROTATE_ON, I_E_AUTO_ROTATE_OFF)` 同时覆盖轮换
+        开 / 关两种布局，不依赖脚本把轮换恢复成关闭态。
+        """
         match self._config.exploration_config.auto_rotate:
             case AutoRotate.yes:
                 if self.appear(self.I_E_AUTO_ROTATE_OFF):  # 轮换关闭/式神不够了则需要打开并添加式神
                     self.click(self.C_CLICK_SETTINGS, interval=2)
                     return True
-            case AutoRotate.no:  # 不是自动添加候补式神则关闭轮换
-                if self.appear_then_click(self.I_E_AUTO_ROTATE_ON, interval=0.8):
-                    return True
+            case AutoRotate.no:
+                # observe only —— 不碰用户的轮换开关。
+                pass
         return False
 
     def arrive_end(self) -> bool:
@@ -376,8 +426,10 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     def quit_exp_main(self):
         """退出探索主界面(要求当前必须处于探索主界面, 不保证任何后续结果)"""
         self.need_exit = True
-        self.appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8)
+        # 导航返回：NAVIGATION reaction
+        clicked = self.appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8, confirm_delay=REACTION_NAVIGATION)
         self.wait_start_time = datetime.now()  # 队友等待时间重置
+        return clicked
 
     def collect_reward(self) -> bool:
         """处理掉落奖励(True表示进行了操作, False表示没有操作)"""
