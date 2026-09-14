@@ -9287,3 +9287,45 @@ KekkaiUtilize 内部，未扩散到 DailyTrifles/rotation；无对已删除 API�
 （parents `45385eac` + `7f244a8c`）。未 force / rebase / squash / reset / clean / stash，
 未删除 `integration/custom-oas`。`master`、`origin/master`、`origin/oas_xy`、`upstream/*`
 本轮均未修改。未启动 MuMu / 游戏 / OCR / 设备。
+
+## 2026-09-14 - 选择性同步 GeneralBattle Settlement Micro-Burst v1.2 到 synevo
+
+### 范围与移植方式
+
+目标分支 `zoombies-account-rotation-dailytask/synevo` 以 `4c6c2a2e` 为精确起点。master 保持在
+`a5e2d7e6` 且原有 v1.2 未提交工作区完整保留；没有 merge master。仅从 master working tree 生成
+`general_battle.py`、`test_general_battle_settlement.py`、`test_general_battle_timing.py` 三文件
+patch，在隔离 worktree 无冲突应用；三文件应用后 SHA-256 与 master v1.2 逐字节一致。六份文档在
+synevo 当前内容上分别语义更新，没有覆盖账号轮换分支文档。
+
+### v1.2 修复
+
+master 真机失败链为 `budget=2` → Result 1 click → Reward 1 click → 错误 terminal budget
+exhausted → fresh `page_reward` 仍存在并卡住。v1.2 将随机 2/3/4（50%/30%/20%）从 lifecycle
+hard cap 改为 semantic state 内局部 Click Segment pacing budget；采用方案 B，Result → Reward
+建立独立 segment。segment exhaustion 不等于 terminal，fresh known settlement state 可续段；
+Unknown 不续段、不盲补，known non-settlement 立即 teardown。
+
+保留 Click → Observe → Decide、0.10~0.30s fresh semantic gate、same-anchor second-click guard、
+anchor 安全交集/最多一次主动换点、Reward layout-aware region 与 FIRE isolation。新增
+`settlement_total_clicks` + `SETTLEMENT_MAX_TOTAL_CLICKS=9`，9 只作 PROVISIONAL lifecycle safety
+cap，达到后停止主动 Settlement 点击并交由外层 recovery/stuck protection，不称 semantic terminal。
+
+### 多击作用域与 synevo 保留
+
+Micro-Burst 多击只存在于 GeneralBattle `page_battle_result/page_reward` 结算。没有新增公共
+multi-click API，没有修改 `appear_then_click` / `device.click`；普通按钮仍为 single click + state
+verification + bounded retry。AccountRotation、DailyTrifles、MultiAccountEvo、`module/multi_account/*`、
+`active_evo_zone`、leader/member ownership、GeneralInvite team/FIRE、OAS3/OAS4/OAS5 协作、
+alias/platform、Android/iOS 主键、task persistence、daily report、AntiBan、OCR heartbeat、image frame
+fallback/TTL 与多实例 RPC 可靠性文件均无本轮 diff。
+
+### 测试与状态
+
+`tests/test_general_battle_settlement.py` 新增 10 项指定 CASE + 1 项 Result → Reward → Reward →
+terminal 端到端返回测试；完整回归从 1494 增至 **1505/1505 OK**，0 failures / 0 errors。
+Settlement、GeneralBattle/timing/reaction、账号轮换/DailyTrifles/MultiAccountEvo/EvoZone/GeneralInvite、
+RealmRaid/ActivityShikigami/RyouToppa/click/swipe/FrameWait 分域回归及 compileall 均通过；
+`git diff --check` 干净。未启动 MuMu / 游戏 / OCR / 设备。
+
+状态：v1.1 Level C = **FAIL**；v1.2 = **Level A/B PASS / Level C RE-TEST PENDING**。

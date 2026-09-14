@@ -51,27 +51,29 @@ QUICK_EXIT_WAIT_TIMEOUT = 5.0
 # 旧 C_RANDOM_RD / C_RANDOM_RD2 区域、_SETTLEMENT_*_PROFILE、one-primary / 2 秒观察 /
 # same-page 超时 / sticky RD2 已全部移除（见 docs/DECISIONS.md D014 Superseded、D016）。
 #
-# --- SETTLEMENT MICRO-BURST V1（2026-09-12，`docs/DECISIONS.md` D025）---
+# --- SETTLEMENT MICRO-BURST V1.2（2026-09-14，`docs/DECISIONS.md` D025）---
 # 通用结果页（`I_WIN`/`I_DE_WIN`/`I_FALSE` 命中）与普通奖励页统一收进同一个
 # **Settlement Click Session**（状态存在 `BattleContext.settlement_*` 字段，随每轮战斗
 # `_build_context`/`_reset_round_context` 重建，不跨轮持久化）：
-# - **总点击预算是上限，不是必须点满**：进入本轮结算时抽一次 `total_budget ∈ [2,4]`
-#   （`_sample_settlement_budget`，2 最常见/3 其次/4 较少，单次 `random_int(1,10)` 分桶，
-#   不引入加权采样库）；真实页面提前进入 terminal 就立即停手，budget 剩余作废，不为了
-#   「点满」继续点新页面。
-# - **一次 micro-burst 最多 2 次盲点**：`_sample_settlement_burst_size` 从 {1,2} 均匀二选一，
-#   夹到剩余预算；同一 burst 内用**完全相同的 anchor**连续点击，第二下不重新采样，中间只隔
+# - **2~4 是当前语义 state 的 click segment 节奏预算**：每次进入新的 settlement state，或
+#   fresh classify 确认同一 state 的当前 segment 已耗尽时，才由
+#   `_sample_settlement_segment_budget` 抽一次 2/3/4（50%/30%/20%）。segment 耗尽不等于
+#   Settlement terminal；只要 fresh state 仍是 result/reward，就允许创建下一段。
+# - **一次 micro-burst 最多 2 次点击**：`_sample_settlement_burst_size` 从 {1,2} 均匀二选一，
+#   夹到 segment 剩余量与 lifecycle 总安全余量；同一 burst 内用**完全相同的 anchor**连续点击，
+#   第二下不重新采样，中间只隔
 #   `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE`（结算 burst 专属小间隔，独立于跨 burst 的
 #   `SETTLEMENT_CLICK_INTERVAL_RANGE` 节流、不接 reaction timing / Fatigue）。
-# - **burst 后必须 fresh screenshot + 重新 classify**：micro-burst 本身不做任何页面探测，
-#   页面是否推进仍由外层 `run_general_battle()` 主循环下一帧 `detect_page_in` 决定——这就是
-#   本模型的「重新分类」，不是新起一套探测逻辑。
+# - **Click → Observe → Decide**：第一下后仅在计划补第二下时等待 0.10~0.30s、fresh screenshot
+#   并用同一 classifier 观察；只有 same state 才允许同 anchor 第二下。state advance / Unknown /
+#   terminal 分别停止当前 burst、禁止盲补、立即 teardown。第二下后交回外层主循环 fresh classify。
 # - **anchor persistence + 安全区域交集**：同一 settlement 页面（`context.last_page` 与本帧
 #   相同）默认复用原 anchor；结果页 → 奖励页这类前向状态变化时，只有旧 anchor 落在新状态安全
 #   区域 ROI 内才允许「保留 / 主动换点」二选一（全 session 最多 1 次主动换点）；旧 anchor 不在
 #   新安全区域内则**强制**重新采样（安全 fallback，不计入主动换点次数）。
-# - **budget 耗尽仍未到 terminal**：本帧不再点击，交回既有 FSM（`_handle_missing_battle_page`
-#   的 2.5s 兜底 / 外部设备级卡死保护），不新增第二套无界等待。
+# - **整体仍有硬上界**：`settlement_total_clicks` 只做可观测性与安全帽计数，达到
+#   `SETTLEMENT_MAX_TOTAL_CLICKS` 后不再生成 segment / 点击；它不是随机 2~4 节奏预算，也不把
+#   safety exhaustion 伪称为 terminal。底层 Device stuck/click guard 仍是第二层保护。
 # - 旧「通用结果页首帧强制两次点击」`_advance_generic_result` 已被本 session 模型吸收替代
 #   （不再存在，避免旧固定两次 + 新 session 双 owner 叠加）。
 
@@ -166,13 +168,15 @@ class BattleContext:
     quick_exit_timer: Timer | None = None
     # 最近一次结算页解析出的胜负结果；用于退出时返回最终布尔值。
     is_win: bool = False
-    # --- Settlement Micro-Burst Session（v1，随本轮战斗重建，不跨轮持久化）---
-    # 本轮结算 session 是否已经初始化（采样过 total_budget + 首个 anchor）。
+    # --- Settlement Micro-Burst Session（v1.2，随本轮战斗重建，不跨轮持久化）---
+    # 本轮结算 lifecycle 是否已经初始化（采样过首个 segment budget + anchor）。
     settlement_session_active: bool = False
-    # 本轮结算 session 的总点击预算上限（并非必须点满，见模块顶注释）。
+    # 当前 semantic state 所属 click segment 的 2~4 节奏预算（保留旧字段名兼容现有测试/调用方）。
     settlement_click_budget: int = 0
-    # 本轮结算 session 已经实际点击的次数。
+    # 当前 click segment 已实际点击的次数。
     settlement_clicks_used: int = 0
+    # 整个 settlement lifecycle 已实际点击次数；仅供日志与固定安全帽使用。
+    settlement_total_clicks: int = 0
     # 当前复用中的结算 anchor 坐标；同一 burst / 同状态延续 burst 都点它，不重新采样。
     settlement_anchor: tuple[int, int] | None = None
     # 当前 anchor 所属安全区域的 `RuleClick.name`（用于安全区域交集校验 + BehaviorTrace 落名）。
@@ -210,10 +214,11 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
     PREPARE_CLICK_DELAY_RANGE: tuple[float, float] = (PREPARE_CLICK_DELAY, PREPARE_CLICK_DELAY)
     # 每次成功 settlement 点击后独立重新采样（`_next_settlement_click_interval`），不是任务
     # 开始时随机一次后固定复用。Contract v2 把旧固定 0.8s 改为 0.7~1.0s 随机。
-    # 这是「burst 与 burst 之间」的节流间隔（跨帧），不是同一 burst 内两次盲点的间隔。
+    # 这是「burst 与 burst 之间」的节流间隔（跨帧），不是同一 burst 内两次点击的观察间隔。
     SETTLEMENT_CLICK_INTERVAL_RANGE: tuple[float, float] = (0.7, 1.0)
-    # Settlement Micro-Burst v1（2026-09-12，`docs/DECISIONS.md` D025）新增：同一 burst 内
-    # 连续两次盲点之间的间隔——语义是「同一个点快速连点」，与上面跨 burst 的节流间隔是不同
+    # Settlement Micro-Burst v1.2（2026-09-14，`docs/DECISIONS.md` D025）：同一 burst 内
+    # 第一下点击与 fresh 观察之间的间隔——若观察仍是同一 state，才允许同 anchor 第二下；它与
+    # 上面跨 burst 的节流间隔是不同
     # 的 timing owner，因此单独开一个 settlement 专属小常量，不复用 `SETTLEMENT_CLICK_INTERVAL_RANGE`、
     # 不接 reaction timing（`module/reaction_profile.py`）/ Fatigue。PROVISIONAL，Level C 待标定。
     SETTLEMENT_BURST_CLICK_INTERVAL_RANGE: tuple[float, float] = (0.10, 0.30)
@@ -221,6 +226,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
     # 概率（百分比，`random_int(1,100) <= 此值` 判保留，否则主动换点）。50 = 对半开，
     # PROVISIONAL，无实测依据，Level C 待标定。
     SETTLEMENT_ANCHOR_KEEP_PROBABILITY: int = 50
+    # Settlement lifecycle 的固定故障安全帽。9 与 Device.click_record 对同一 target 第 10 次
+    # 调用前抛错的现有有效上限对齐，让本层先停止续段；不是正常节奏目标，PROVISIONAL，Level C 待验。
+    SETTLEMENT_MAX_TOTAL_CLICKS: int = 9
 
     def __init__(self, config, device) -> None:
         """初始化通用战斗运行时缓存。
@@ -572,10 +580,11 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.round_behavior_state = BattleBehaviorState()
         context.prepare_click_timer = Timer(self._next_prepare_click_delay())
         context.settlement_click_timer = Timer(0)
-        # 新一轮战斗重开一个全新 Settlement Click Session，不跨轮持有预算 / anchor。
+        # 新一轮战斗重开一个全新 Settlement Click Session，不跨轮持有 segment / anchor。
         context.settlement_session_active = False
         context.settlement_click_budget = 0
         context.settlement_clicks_used = 0
+        context.settlement_total_clicks = 0
         context.settlement_anchor = None
         context.settlement_region_name = None
         context.settlement_stage_name = None
@@ -629,7 +638,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         的 Safe ROI 内。**region 的选择**（``_select_reward_region`` 的 marker → DEFAULT、否则
         80/20）与本方法无关。**仅供非通用结果标志的单次节流点击（``_settlement_click``）/
         `_drain_activity_settlement`` 等旧调用点使用**——Settlement Micro-Burst Session
-        （v1）需要「采样一次、复用多次点击」，走的是独立的 ``_sample_settlement_point`` /
+        （v1.2）需要「采样一次、复用多次点击」，走的是独立的 ``_sample_settlement_point`` /
         ``_click_settlement_point`` 两个原语，不调本方法。
         """
         x, y = ClickSampler.sample_region(rule.roi_front, rule.name)
@@ -658,21 +667,21 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
         只认基础通用胜负横幅 ``I_WIN`` / ``I_DE_WIN`` / ``I_FALSE``——出现即「这一帧确实是
         标准战斗结果结算页」。基础识别里更宽的 ``I_BATTLE_STATE_INFO`` 不纳入判定（静态无法
-        证明它出现的所有场景都适合强制双击），这类帧退回旧的单次节流点击、保持现状。
+        证明它出现的所有场景都适合通用 micro-burst），这类帧退回旧的单次节流点击、保持现状。
         """
         return (self.appear(self.I_WIN)
                 or self.appear(self.I_DE_WIN)
                 or self.appear(self.I_FALSE))
 
     # ------------------------------------------------------------------------------------
-    # Settlement Micro-Burst Session v1（2026-09-12，`docs/DECISIONS.md` D025）
+    # Settlement Micro-Burst Session v1.2（2026-09-14，`docs/DECISIONS.md` D025）
     # ------------------------------------------------------------------------------------
 
-    def _sample_settlement_budget(self) -> int:
-        """采样本轮结算 session 的总点击预算上限：2~4，不强制均匀。
+    def _sample_settlement_segment_budget(self) -> int:
+        """采样当前 Settlement Click Segment 的节奏预算：2~4，不强制均匀。
 
         单次 ``random_int(1, 10)`` 分桶（1~5 → 2、6~8 → 3、9~10 → 4，权重 50%/30%/20%），
-        不引入加权采样库。这是**上限**，不是必须点满——真实页面提前到 terminal 就立即停手。
+        不引入加权采样库。它只限制一个局部 segment，不能决定整个 Settlement lifecycle 结束。
         """
         roll = random_int(1, 10)
         if roll <= 5:
@@ -682,7 +691,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         return 4
 
     def _sample_settlement_burst_size(self) -> int:
-        """采样一次 micro-burst 的盲点次数：1 或 2，均匀二选一（外层再夹到剩余预算）。"""
+        """采样一次 micro-burst 的目标次数：1 或 2；第二下仍须通过 fresh semantic gate。"""
         return random_int(1, 2)
 
     def _sample_settlement_point(self, region: RuleClick) -> tuple[int, int]:
@@ -707,7 +716,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
     def _teardown_settlement_session(self, context: BattleContext) -> None:
         """确认已离开结算页面（page_battle_result / page_reward）后立即销毁本轮 Settlement
-        Click Session，防止残留 anchor / budget 在后续 Challenge / FIRE 页面上继续触发点击。
+        Click Session，防止残留 anchor / segment 在后续 Challenge / FIRE 页面上继续触发点击。
 
         由 ``run_general_battle()`` 主循环在每帧 fresh classify 之后、分发给具体 handler 之前
         调用——一旦当前页确认不是结算页就立即销毁，不等到下一轮战斗 / 下一次 `run_general_battle()`
@@ -717,27 +726,38 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         if not context.settlement_session_active:
             return
         logger.info(
-            f'Settlement session destroyed: used={context.settlement_clicks_used}'
-            f'/{context.settlement_click_budget}, left settlement stage'
+            f'Settlement terminal reached: state={context.settlement_stage_name}, '
+            f'total_clicks={context.settlement_total_clicks}'
         )
         context.settlement_session_active = False
         context.settlement_click_budget = 0
         context.settlement_clicks_used = 0
+        context.settlement_total_clicks = 0
         context.settlement_anchor = None
         context.settlement_region_name = None
         context.settlement_stage_name = None
         context.settlement_anchor_switches = 0
 
-    def _start_settlement_session(self, context: BattleContext, region: RuleClick, stage_name: str) -> None:
-        """初始化本轮结算 Click Session：采样一次 total_budget + 首个 anchor。"""
-        context.settlement_click_budget = self._sample_settlement_budget()
+    def _start_settlement_segment(self, context: BattleContext, stage_name: str, *, renewed: bool) -> None:
+        """为已确认的 settlement semantic state 建立一个新的 2~4 点击节奏 segment。"""
+        context.settlement_click_budget = self._sample_settlement_segment_budget()
         context.settlement_clicks_used = 0
+        context.settlement_stage_name = stage_name
+        label = 'renewed' if renewed else 'started'
+        logger.info(
+            f'Settlement segment {label}: state={stage_name}, '
+            f'budget={context.settlement_click_budget}'
+        )
+
+    def _start_settlement_session(self, context: BattleContext, region: RuleClick, stage_name: str) -> None:
+        """初始化本轮 Settlement Lifecycle：首个 state segment + anchor。"""
+        context.settlement_total_clicks = 0
         context.settlement_anchor_switches = 0
         context.settlement_anchor = self._sample_settlement_point(region)
         context.settlement_region_name = region.name
-        context.settlement_stage_name = stage_name
         context.settlement_session_active = True
-        logger.info(f'Settlement session: budget={context.settlement_click_budget}')
+        logger.info('Settlement lifecycle started')
+        self._start_settlement_segment(context, stage_name, renewed=False)
 
     def _advance_settlement_anchor(self, context: BattleContext, region: RuleClick, stage_name: str) -> None:
         """结算状态发生前向变化（如结果页 → 奖励页）时的 anchor 决策。
@@ -778,9 +798,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                                      page_reward, include_global=False)
 
     def _fire_settlement_burst(self, context: BattleContext, current_page: Page) -> None:
-        """Observed Micro-Burst v1.1：点击 → 短间隔 → fresh 语义观察 → 决定是否补第二下。
+        """Observed Micro-Burst v1.2：点击 → 短间隔 → fresh 语义观察 → 决定是否补第二下。
 
-        第一次点击**一定执行**（调用方已确认 ``remaining >= 1``）。是否补第二下必须由
+        第一次点击**一定执行**（调用方已确认 segment 与总安全帽都至少剩 1）。是否补第二下必须由
         「第一下没有使页面推进」这一真实观察结果触发，不是「burst_size 提前抽到 2 就无条件
         点第二下」：
 
@@ -798,7 +818,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         timer = context.settlement_click_timer
         if timer.started() and not timer.reached():
             return
-        remaining = context.settlement_click_budget - context.settlement_clicks_used
+        segment_remaining = context.settlement_click_budget - context.settlement_clicks_used
+        safety_remaining = self.SETTLEMENT_MAX_TOTAL_CLICKS - context.settlement_total_clicks
+        remaining = min(segment_remaining, safety_remaining)
         if remaining <= 0:
             return
 
@@ -809,21 +831,25 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
         self._click_settlement_point(anchor, control_name)
         context.settlement_clicks_used += 1
+        context.settlement_total_clicks += 1
         logger.info(
             f'Settlement first click: state={stage_name}, anchor={anchor}, '
-            f'used={context.settlement_clicks_used}/{context.settlement_click_budget}'
+            f'segment_used={context.settlement_clicks_used}/{context.settlement_click_budget}, '
+            f'total_clicks={context.settlement_total_clicks}/{self.SETTLEMENT_MAX_TOTAL_CLICKS}'
         )
 
-        if desired_burst_size >= 2 and context.settlement_clicks_used < context.settlement_click_budget:
+        if desired_burst_size >= 2:
             time.sleep(self._sample_interval(self.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE))
             self.screenshot()
             observed_page = self._classify_general_battle_page()
             if observed_page == current_page:
                 self._click_settlement_point(anchor, control_name)
                 context.settlement_clicks_used += 1
+                context.settlement_total_clicks += 1
                 logger.info(
                     f'Settlement observe: {stage_name} -> {stage_name}, second_click=allowed, '
-                    f'used={context.settlement_clicks_used}/{context.settlement_click_budget}'
+                    f'segment_used={context.settlement_clicks_used}/{context.settlement_click_budget}, '
+                    f'total_clicks={context.settlement_total_clicks}/{self.SETTLEMENT_MAX_TOTAL_CLICKS}'
                 )
             elif observed_page in (page_battle_result, page_reward):
                 logger.info(f'Settlement observe: {stage_name} -> advanced, second_click=cancelled')
@@ -839,10 +865,10 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
         timer.limit = self._next_settlement_click_interval()
         timer.reset()
-        if context.settlement_clicks_used >= context.settlement_click_budget:
+        if context.settlement_total_clicks >= self.SETTLEMENT_MAX_TOTAL_CLICKS:
             logger.info(
-                f'Settlement terminal budget exhausted: '
-                f'used={context.settlement_clicks_used}/{context.settlement_click_budget}, stop early'
+                f'Settlement safety bound reached: total_clicks={context.settlement_total_clicks}'
+                f'/{self.SETTLEMENT_MAX_TOTAL_CLICKS}, renew=false'
             )
 
     def _settlement_burst_step(self, context: BattleContext, *, current_page: Page,
@@ -862,10 +888,21 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         if not context.settlement_session_active:
             self._start_settlement_session(context, region_provider(), stage_name)
         elif context.last_page != current_page:
+            if context.settlement_total_clicks >= self.SETTLEMENT_MAX_TOTAL_CLICKS:
+                context.settlement_stage_name = stage_name
+                return
             self._advance_settlement_anchor(context, region_provider(), stage_name)
+            # 方案 B：semantic state advance 结束旧 segment；新 state 获得独立 2~4 预算。
+            self._start_settlement_segment(context, stage_name, renewed=False)
 
-        if context.settlement_clicks_used >= context.settlement_click_budget:
+        if context.settlement_total_clicks >= self.SETTLEMENT_MAX_TOTAL_CLICKS:
             return
+        if context.settlement_clicks_used >= context.settlement_click_budget:
+            logger.info(
+                f'Settlement segment exhausted: state={stage_name}, '
+                f'used={context.settlement_clicks_used}/{context.settlement_click_budget}, renew=true'
+            )
+            self._start_settlement_segment(context, stage_name, renewed=True)
         self._fire_settlement_burst(context, current_page)
 
     def _select_reward_region(self) -> RuleClick:
@@ -1035,7 +1072,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         if context.last_page != page_battle_result:
             self.device.click_record_clear()
         if self._is_generic_result_context():
-            # 通用结果页：纳入 Settlement Micro-Burst Session（v1）。
+            # 通用结果页：纳入 Settlement Micro-Burst Session（v1.2）。
             self._settlement_burst_step(
                 context, current_page=page_battle_result, stage_name='generic_result',
                 region_provider=lambda: self.C_RANDOM_DEFAULT,
@@ -1215,7 +1252,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 self._sync_prepare_click_timer(context, page)
                 self._ensure_battle_stuck_guard(context, page)
                 # fresh classify 一旦确认当前页不是结算页（page_battle_result/page_reward），
-                # 立即销毁 Settlement Click Session——防止残留 anchor/budget 在后续
+                # 立即销毁 Settlement Click Session——防止残留 anchor/segment 在后续
                 # Challenge / FIRE 页面（page_battle_prepare / page_battle，或任务自己的
                 # 目标选择 / 再次挑战页）上继续触发点击。`page is None`（本帧暂时没识别到任何
                 # 战斗页）不触发销毁，避免把结算页内部一次过渡性丢帧误判为「已离开结算」。

@@ -135,12 +135,13 @@ class GeneralBattleTimingTest(TestCase):
         self.assertFalse(context.prepare_click_timer.started())
 
     def _settlement_ns(self, **overrides):
-        """构造带结算节流计时器 + Settlement Micro-Burst v1 字段的最小 context。"""
+        """构造带结算节流计时器 + Settlement Micro-Burst v1.2 字段的最小 context。"""
         base = dict(
             settlement_click_timer=_TimerStub(),
             settlement_session_active=False,
             settlement_click_budget=0,
             settlement_clicks_used=0,
+            settlement_total_clicks=0,
             settlement_anchor=None,
             settlement_region_name=None,
             settlement_stage_name=None,

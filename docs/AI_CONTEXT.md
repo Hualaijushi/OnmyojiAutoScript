@@ -34,12 +34,17 @@
 
 ## 2. 当前 Git 状态
 
-以下状态核对时间为 2026-09-02。后续维护本文档时必须用实际 Git 状态替换，不要永久保留过时分支或提交信息。
+以下状态核对时间为 2026-09-14。
 
-- 当前分支：`master`
-- 当前 HEAD：`2cdf3a0571b0449748aabef259da5cbd2378536c`
-- 当前 `origin/master`：`2cdf3a0571b0449748aabef259da5cbd2378536c`
-- 工作区当前非干净：疲劳 / 发呆 / 休息系统、KekkaiUtilize 阈值、随机源一致性修复、机械性审查文档与 AI 交接文档体系均在工作区，未 commit、未 push。`M` = 已修改（对 HEAD），`??` = 未跟踪新文件。
+- 当前分支：`zoombies-account-rotation-dailytask/synevo`。
+- 本轮选择性同步前 HEAD / `origin/zoombies-account-rotation-dailytask/synevo`：
+  `4c6c2a2e36f4d32b1a3c72c80ff2db3770fc6024`；本轮只在其上新增 GeneralBattle Settlement
+  Micro-Burst v1.2 提交，不合并 master。
+- `master` 仍独立位于 `a5e2d7e6b84f3545994d9bd15ca6d0ff0bcb755b`，其未提交 v1.2 工作区不由本分支处理。
+
+### 2.1 已失效的 2026-09-02 工作区清单（历史记录）
+
+以下清单中的“当前”均指 2026-09-02 当时状态，只保留用于追溯，不覆盖上方 2026-09-14 当前事实。
   - 当前**无任何 staged 文件**（用户已把此前 staged 的 `docs/AI_CONTEXT.md` / `docs/DEVELOP_LOG.md` 取消暂存；两者现与其余 `docs/*.md` 一样是未跟踪新文件，见下方「未跟踪」）。
   - 未 staged：`script.py`、`tasks/base_task.py`、`tasks/GlobalGame/config.py`、`tasks/RyouToppa/config.py`、`tasks/RyouToppa/script_task.py`、`tasks/KekkaiUtilize/config.py`、`tasks/KekkaiUtilize/script_task.py`、`tasks/Chess/runtime/press_and_drag.py`、`tasks/Script/config_optimization.py`、`module/atom/swipe.py`、`module/atom/click.py`、`module/atom/image.py`、`module/atom/ocr.py`、`module/atom/gif.py`、`module/base/protect.py`、`module/base/utils/random.py`、`module/device/control.py`、`module/server/script_process.py`、`module/server/script_router.py`、`module/server/stats_router.py`、`tasks/Component/GeneralBattle/general_battle.py`、`tasks/Component/GeneralBattle/assets.py`（+ `gb/click.json`、`gb/gb_reward.png`、`gb/image.json`）、`tasks/RyouToppa/assets.py`（+ `dev/click.json`）、`tests/test_general_battle_timing.py`、`tasks/RealmRaid/script_task.py`、`tasks/KekkaiActivation/script_task.py`（后两个 2026-09-02 cleanup 批次 1 起，纯死代码删除，见 §4.36）。（`assets.py` / `gb/*` / `RyouToppa/*` 是**用户 2026-09-02 手动重新框选**：`C_RANDOM_LEFT` 55×370→192×506、`C_RANDOM_RIGHT` 79×388→191×518，新增 `C_RANDOM_RD` 574×314 与 `C_RANDOM_RD2` 198×425，`I_REWARD` 重新框 `(558,508,166,106)` + 重截 `gb_reward.png`，另加两条 `S_BATTLE_RANDOM_*` swipe。**2026-09-03 用户又把 `assets.py` 里的 RD/RD2 换成三个新安全区 `C_RANDOM_DEFAULT` / `C_RANDOM_SAVE_RIGHT` / `C_RANDOM_SAVE_BOTTOM` + 两个奖励布局判别标志 `I_GET_BATTLE_REWARD` / `_2`（+ 两个新 PNG），`C_RANDOM_RIGHT`/`C_RANDOM_BOTTOM` 也重框**。`general_battle.py` / `test_general_battle_timing.py` 当前状态是 **SETTLEMENT CONTRACT V3（§4.3.1 / §4.39，2026-09-03）**——强制两次推进点击 + 奖励布局感知区域策略，RD/RD2 与 HABIT profile 已从生产移除（V2 §4.28 已 Superseded）。`module/atom/{click,image,ocr,gif}.py` 的 `coord()` / `coord_more()` 现在走 `ClickSampler.sample_target(roi, name)`（T7-5，§4.44：按目标 preferred 热点 + 偏移模型，未标定 → CENTER_FALLBACK；`ocr.py` 仍先经 `_normalize_ocr_click_area()` 把 FULL 模式浮点 bbox 整数化，见 §4.43）；新增 `module/click_preference.py`（`??`）；`module/base/utils/random.py` 2026-09-02 只新增了一个 `random_normal(mu, sigma)` helper——见 §4.25。）
   - 未跟踪（`git status` 的 `??`，即新增、尚未 `git add` 的文件）：`module/fatigue.py`、`module/behavior_trace.py`、`module/atom/frame_state.py`、`module/base/frame_wait.py`、`module/server/behavior_stats.py`、`tests/test_fatigue.py`、`tests/test_kekkai_utilize_threshold.py`、`tests/test_base_task_wait_until_appear.py`、`tests/test_behavior_trace.py`、`tests/test_swipe_duration_cleanup.py`、`tests/test_rule_swipe_trace_removed.py`、`tests/test_frame_state.py`、`tests/test_frame_wait.py`、`tests/test_list_find.py`、`tests/test_manual_click_recorder.py`、`tests/test_manual_click_analyze.py`、`tests/test_runtime_roi_probe.py`、`tests/test_click_sampler.py`、`tests/test_click_profile.py`、`tests/test_click_roi_inventory.py`、`tests/test_large_click_roi_review.py`、`tests/test_general_battle_settlement.py`、`tests/test_settlement_trace_check.py`、`tests/test_ryoutoppa_c_area_1_point_opt_in.py`、`tests/test_kekkai_activation_state.py`、`tests/test_kekkai_utilize_state.py`、`tests/test_realm_raid_state.py`、`tests/test_exploration_state.py`、`tests/test_behavior_click_stats.py`、`module/click_sampler.py`、`module/click_profile.py`、`dev_tools/manual_click_recorder.py`、`dev_tools/manual_click_analyze.py`、`dev_tools/runtime_roi_probe.py`、`dev_tools/click_roi_inventory.py`、`dev_tools/large_click_roi_review.py`、`dev_tools/settlement_trace_check.py`、`docs/AI_CONTEXT.md`、`docs/DEVELOP_LOG.md`、`docs/机械性审查报告.md`、`docs/机械性修改清单.md`、`docs/Kekkai状态机静态收口.md`、`docs/RealmRaid状态机静态收口.md`、`docs/Exploration状态机静态收口.md`、`docs/状态验证与重试模式归纳.md`、`docs/ROADMAP.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/TESTING.md`、`CLAUDE.md`、`AGENTS.md`。以上均为**未跟踪的新文件**，不是「已跟踪」。
@@ -100,7 +105,7 @@ appear_then_click(..., confirm_delay=None)
 - **fresh frame 状态**：`confirm_delay` 路径满足 Fresh Frame Contract（模式 A）；默认路径（`confirm_delay is None`）不涉及非零等待、命中即点当帧，也无 stale。
 - **是否新增 `reaction_delay` API？→ 否。** `confirm_delay` 就是该 primitive；再起同义名字正是 D008 禁止的（`reaction_delay` / `CLICK_REACTION_DELAY` 已有前科被删）。
 - **timing 分层**：`confirm_delay`（micro，单 Action 内）/ `interval`（throttle，跨轮次）/ `wait_until_*` · `frame_wait`（state wait）/ `FatigueManager` idle·rest（macro，仅 task-cycle 安全节点、RyouToppa + Orochi/EvoZone 单人 + RealmRaid + Exploration solo + ActivityShikigami 爬塔线）—— owner 不同，不互相替代、不在同一 Action 上叠加。FatigueManager `try_break` 不进入 Action transaction（当前由构造保证）。**ActivityShikigami 爬塔线接入后，`prepare_next_action` 的旧 `random_sleep` 由 `_fatigue_owns_macro_idle` gate 关掉——同一 cycle 只有 Fatigue 一个 macro-idle owner（§4.62）。**
-- **不适合 `confirm_delay` 的 Action**：Static Region（`C_AREA_*` / 九宫格 `C_PARTITION_*`）、Settlement Region（`C_RANDOM_DEFAULT` / `C_RANDOM_SAVE_RIGHT` / `C_RANDOM_SAVE_BOTTOM`，GeneralBattle 自有 `SETTLEMENT_CLICK_INTERVAL_RANGE` + 强制双击序列）、Dynamic Search Result（`find_anyone` / `search_up_fight` `match_all`）、短生命周期按钮、poll 循环、Navigation / FSM handler、Swipe / Drag。
+- **不适合 `confirm_delay` 的 Action**：Static Region（`C_AREA_*` / 九宫格 `C_PARTITION_*`）、Settlement Region（`C_RANDOM_DEFAULT` / `C_RANDOM_SAVE_RIGHT` / `C_RANDOM_SAVE_BOTTOM`，GeneralBattle 自有跨 burst 节流 + Micro-Burst fresh semantic gate）、Dynamic Search Result（`find_anyone` / `search_up_fight` `match_all`）、短生命周期按钮、poll 循环、Navigation / FSM handler、Swipe / Drag。
 - **下一步**：只固化职责文档（D001 扩写 + ARCHITECTURE timing 分层，已完成），**不加任何 opt-in**；首个真实 opt-in 待 Level C，随 RealmRaid `fire()` 的 bounded 改造（R-R1）一起，`I_FIRE` 的 `confirm_delay` 参数用 manual click / BehaviorTrace 数据标定。
 - **生产影响 0**，未新增测试（`tests/test_base_task_confirm_click.py` 5 用例已充分），完整回归 741/741 未变。
 
@@ -163,6 +168,10 @@ else:
 不要重新加入 `reaction_delay`、`CLICK_REACTION_DELAY` 或 BaseTask 全局自动等待。
 
 #### 4.3.1 通用结算点击 SETTLEMENT CONTRACT V3（2026-09-03，正式生产迁移）
+
+> **历史基线**：本节记录 V3 初始迁移；其中 Generic Result 固定双击实现已先后被 §4.66 v1、
+> §4.67 v1.1 与 §4.71 v1.2 取代。当前有效结算控制流以 §4.71 / D025 v1.2 修订为准；三区域与
+> Reward layout-aware policy 继续有效。
 
 旧 `C_RANDOM_RD` / `C_RANDOM_RD2` 区域、`_SETTLEMENT_PRIMARY_PROFILE` /
 `_SETTLEMENT_FALLBACK_PROFILE`（HABIT profile）**已彻底移除，不再恢复、不做兼容 alias**。
@@ -3063,6 +3072,40 @@ Kekkai quiet window 未泄漏到 DailyTrifles/rotation、无对已删除 API 的
 战斗 / 结算 / 回房 / battle count）、觉醒队员（接邀请 / ready / 不越权 FIRE / 战斗 / 回房）、
 组队 20 次与账号组切换、三实例状态同步与 OCR 顺序。
 
+### 4.71 GeneralBattle Settlement Micro-Burst v1.2 选择性同步到 synevo
+
+2026-09-14，以 synevo `4c6c2a2e` 为精确起点，从 master `a5e2d7e6` 的未提交工作区只提取
+`general_battle.py` 与两份直接测试 patch；**没有 merge master**，六份文档均在 synevo 现有内容
+上语义更新。三个代码/测试文件应用后与 master v1.2 SHA-256 逐字节一致。
+
+**Level C 失败证据与根因**：master 普通副本第三场出现 `budget=2` → Generic Result 1 click →
+Reward 1 click → 旧逻辑输出 `Settlement terminal budget exhausted`，但下一帧仍为 `page_reward` 并
+停在“点击屏幕继续”。v1.1 错把随机 2~4 当整个 Settlement lifecycle 的点击硬上限，导致合法结算
+在 semantic terminal 前永久失去 click owner。
+
+**v1.2 契约**：Settlement 拆为 lifecycle + click segment；兼容保留的
+`settlement_click_budget/clicks_used` 表示当前 segment，2/3/4 仍按 50%/30%/20% 分桶。采用方案 B：
+Generic Result → Reward 时 Reward 建独立 segment，Result 点击不侵占 Reward；同 state segment 耗尽
+且 fresh classify 仍为 result/reward 才可续段。Unknown 不续段、不盲补、不假装 terminal；known
+non-settlement 立即 teardown。Click → Observe → Decide、0.10~0.30s fresh semantic gate、anchor
+安全交集/最多一次主动换点、Reward layout-aware policy 与 FIRE isolation 全部保留。
+
+**有界性与业务边界**：新增 `settlement_total_clicks` 与固定
+`SETTLEMENT_MAX_TOTAL_CLICKS=9`；9 只是 PROVISIONAL lifecycle safety cap，不是 success 或正常点击
+目标，达到后停止续段/主动点击并交给外层 recovery/stuck protection。Micro-Burst 多次点击只属于
+GeneralBattle `page_battle_result/page_reward` 结算；没有新增 `multi_click`/`burst_click`/
+`repeat_click` 公共 API，没有修改 `appear_then_click` 或 `device.click`，普通业务按钮继续 single click
++ state verification + bounded retry。
+
+**synevo 专属业务保留**：AccountRotation、DailyTrifles、MultiAccountEvo、`active_evo_zone`、
+leader/member ownership、GeneralInvite team/FIRE、OAS3/OAS4/OAS5 协作、alias/platform、Android/iOS
+主键、task state persistence、daily report、AntiBan、OCR heartbeat、image frame fallback/TTL 与多实例
+RPC 可靠性文件均无本轮 diff。
+
+**状态**：v1.1 Level C = **FAIL**；v1.2 = **Level A/B PASS / Level C RE-TEST PENDING**。本分支
+下一轮真机在既有账号轮换/觉醒计划之外，增加 budget=2、Reward 跨 segment、terminal 无残留点击、
+永久 Reward 有界、普通按钮单击、FIRE/Challenge/Loss 与 MultiAccountEvo/EvoZone 组队不回归。
+
 ## 5. 已确认保留的 upstream 修改
 
 ### 5.1 NemuIPC 与 scrcpy
@@ -3133,9 +3176,11 @@ Easy Install 当前主要预置 medium OCR 模型；small 模型可能首次自�
 公共能力。下一步是**账号轮换与觉醒的 Level C 真机测试**（见 §4.70）。`master`（a5e2d7e6）与
 `integration/custom-oas` 保持不动，作为集成基线与远程备份点。
 
-**当前基线（2026-09-14，§4.70 synevo 分支整合；此前 §4.69 Pre-Push Blocker Fix）**：
+**当前基线（2026-09-14，§4.71 GeneralBattle Settlement v1.2 选择性同步）**：
 `toolkit/python.exe -m compileall module tasks tests dev_tools` 通过；
-`toolkit/python.exe -m unittest discover -s tests` = **1494/1494 OK**（`1489 → 1494` = §4.69
+`toolkit/python.exe -m unittest discover -s tests` = **1505/1505 OK**（`1494 → 1505` = §4.71
+新增 10 项指定 CASE + 1 项第二 Reward segment 端到端返回测试，0 regression）。历史增量：
+`1489 → 1494` = §4.69
 2026-09-14 推送前审查发现并修复唯一 BLOCKER：`_fatigue_owns_macro_idle` 在同一个 `ScriptTask`
 实例连跑多条活动线时不会恢复，导致「爬塔 → 伪神降临 / 大富翁」出现零 macro-idle owner；修法是
 让每条玩法线在自己的 `run_*` 入口显式声明 owner；新增 `MacroIdleOwnershipLifecycleTest`（5，

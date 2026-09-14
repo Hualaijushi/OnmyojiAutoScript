@@ -34,7 +34,7 @@
 - **语义 profile 收敛到 `module/reaction_profile.py`**（新公共模块，与 `click_profile.py` 同层）：只含具名 `(min,max)` 秒区间常量，无函数 / 无 `sleep` / 无 `random_delay` / 不 import task·device·config；由业务 consumer 在调用点**显式**传 `confirm_delay=`；**不在 asset / `RuleImage` 层设默认**（reaction 归业务 consumer）。这不是「新增 `reaction_delay` API」——没有函数、不自动应用、不改 `appear_then_click` 默认；只是把「本来要在 RealmRaid / Orochi / … 各写一遍的 tuple」提到一处具名。当前 6 组值 —— `FAST=(0.18,0.35)` / `NORMAL=(0.45,0.85)` / `NORMAL_HIGH=(0.60,1.00)` / `CONFIRM=(0.55,1.20)` / `NAVIGATION=(0.55,1.10)` / `DELIBERATE=(0.90,1.60)` —— **全部 PROVISIONAL / engineering baseline**（来自旧 C++ 延迟分析的业务抽象，非 Level C 人工标定），`REACTION_PROFILES_PROVISIONAL = True`。它们是「当前工程默认」，**不是本 ADR 固化的长期契约数值**；Level C 后可整组或按任务微调，改动连带更新本补记 + §4.51。
 - **按 profile 分配（27）**：FAST 14（锁定 / 解锁 toggle、低频管理按钮）/ NORMAL 8（组队、刷新动作本体、章节确认）/ CONFIRM 2（刷新确认弹窗、退出确认）/ NAVIGATION 2（取消退出、返回）/ DELIBERATE 1（EvoZone 麒麟 / 材料类型选择）/ **NORMAL_HIGH 0**（本轮无高频稳定 Point Action，允许 0 consumer）。
 - **`GeneralBattle.check_lock(enable, lock_image, unlock_image, confirm_delay=None)`** 加可选参数并透传给两分支的 `appear_then_click`；**默认 `None` = 原行为**，非 batch 调用方（EternitySea / FallenSun / GoryouRealm / OtherWorldTwilight / Sougenbi）不传、逐字不变。这是本 ADR「参数由调用方给」的直接体现——`check_lock` 是业务 consumer 方法（非 asset 层），Orochi / EvoZone 在各自调用点传 `REACTION_FAST`。
-- **排除项（本轮 0 新 reaction）与本 ADR 一致**：`*_FIRE` 系列（RealmRaid `I_FIRE` / `fire_again`、Orochi `I_OROCHI_FIRE` / `I_OROCHI_WILD_FIRE`、EvoZone `I_EVOZONE_FIRE`）属「成功判据仅『旧标识消失』、缺正向战斗页确认」，先做 R-R1（正向 `page_battle_prepare/page_battle` 确认 + `max_tries` + `Timer`）再接 reaction；RyouToppa `I_FIRE` 已手搓等价 `random_delay(0.2,0.6)` + fresh frame + 二次 appear（**不叠**）；`C_AREA_1~8` / `C_PARTITION_n`（静态 / Region + T7 采样 + 区域 pacing）；GeneralBattle `I_PREPARE_HIGHLIGHT`（`prepare_click_timer`）/ Settlement V3（`settlement_click_timer` + 强制双击间隔，D016）/ 瞬态战斗按钮 / 动态 / OCR / polling。上一轮 Batch A #24/#25/#26 本轮不实施。
+- **排除项（本轮 0 新 reaction）与本 ADR 一致**：`*_FIRE` 系列（RealmRaid `I_FIRE` / `fire_again`、Orochi `I_OROCHI_FIRE` / `I_OROCHI_WILD_FIRE`、EvoZone `I_EVOZONE_FIRE`）属「成功判据仅『旧标识消失』、缺正向战斗页确认」，先做 R-R1（正向 `page_battle_prepare/page_battle` 确认 + `max_tries` + `Timer`）再接 reaction；RyouToppa `I_FIRE` 已手搓等价 `random_delay(0.2,0.6)` + fresh frame + 二次 appear（**不叠**）；`C_AREA_1~8` / `C_PARTITION_n`（静态 / Region + T7 采样 + 区域 pacing）；GeneralBattle `I_PREPARE_HIGHLIGHT`（`prepare_click_timer`）/ Settlement Micro-Burst v1.2（自有跨 burst 节流 + fresh semantic gate，D025）/ 瞬态战斗按钮 / 动态 / OCR / polling。上一轮 Batch A #24/#25/#26 本轮不实施。
 - **测试**：`tests/test_reaction_timing_batch1.py`（34，源码扫描 + `check_lock` mock 行为 + 排除项断言 + profile 常量）。`appear_then_click` primitive 未改，`tests/test_base_task_confirm_click.py`（5）继续锁其行为。回归 `1092 → 1126`。**非新 ADR**——本 ADR 预留的「首个真实 opt-in」落地。
 
 **补记（2026-09-08，FIRE 分节 —— `I_FIRE` 的 reaction + 状态机收口）**：`docs/常用业务点击链与Reaction审查.md` 里 `*_FIRE` 明确排除、留待 R-R1。本轮把 **RyouToppa + RealmRaid 的 `I_FIRE`** 做成标准模板（Orochi / EvoZone 的 `I_*_FIRE` 第二批已迁，见下方「FIRE 分节 增补」）。本 ADR 的所有决定条目**不变**（primitive 未改、逐点显式、不与 fatigue 叠、不给 Settlement / `I_PREPARE_HIGHLIGHT` / poll / Static Region 加）。
@@ -1618,10 +1618,13 @@ ConfigModel.script_task() → ApiClient().getScriptTask() → ArgumentModel → 
 自行核实，而不是默认需要改 OASX；只有确认字段被 `dynamic_hide` 或确实需要新的字段类型（现有
 `type` 分支之外的形态，例如列表编辑器、富文本、专属可视化控件）时才需要碰前端代码。
 
-## D025 GeneralBattle Settlement Micro-Burst v1：candidate budget 是上限、blind burst 有界、状态可合法跳级、anchor persistence 服从安全区域交集（v1.1 修订：blind 第二下 → Observed 第二下）
+## D025 GeneralBattle Settlement Micro-Burst：segment budget 有界、semantic state 决定 lifecycle 完成、anchor persistence 服从安全区域交集（当前 v1.2）
 
-状态：Accepted（v1.1 修订，同日）
-日期：2026-09-12（v1 落地）；2026-09-12（v1.1 修订，同日）
+状态：Accepted（v1.2 Level C 修订，2026-09-14）
+日期：2026-09-12（v1 落地）；2026-09-12（v1.1 修订）；2026-09-14（v1.2 Level C 修订）
+
+> 当前有效契约以本条末尾的 **v1.2 Level C 修订**为准。下方 v1/v1.1 的 `total_budget=2~4`
+> lifecycle hard cap 只保留为历史，已被真机失败证据推翻。
 
 背景：Settlement Contract V3（D014/D016）已把结算点击收敛成「三个 Large Safe Region + 节流
 间隔」，但通用结果页首帧仍是写死的「强制两次点击，各自独立采样」（`_advance_generic_result`），
@@ -1742,3 +1745,56 @@ Level C 待验（v1.1 重新定义，取代 v1 版本的列表）：①Result �
 `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE` /
 `SETTLEMENT_ANCHOR_KEEP_PROBABILITY` / budget 权重分布均 PROVISIONAL，据真机数据调整时连带
 更新本条 ADR 与 `docs/AI_CONTEXT.md` §4.67。
+
+### v1.2 Level C 修订：2~4 是 Click Segment 节奏预算，不是 Settlement Lifecycle 终止条件
+
+2026-09-14，master 真机普通副本第三场明确复现 v1.1 失败：session 抽到 `budget=2`，Generic
+Result 点击 1 次推进到 Reward，Reward 再点击 1 次后日志输出 `Settlement terminal budget
+exhausted: used=2/2, stop early`；下一帧 fresh classify 仍明确是 `page_reward`，真实画面停留在
+“点击屏幕继续”。因此识别、Reward asset、anchor、FIRE 与账号轮换均不是根因；根因是把随机
+2~4 错当成整个 lifecycle 的点击硬上限，导致合法结算尚未完成时永久失去 click owner。
+
+v1.2 修订决定（取代上方 v1/v1.1 的 lifecycle budget 语义，但保留其余能力）：
+
+- **两层模型**：Settlement Lifecycle 持有 semantic state、anchor、状态迁移、总安全帽与当前
+  Click Segment；`settlement_click_budget` / `settlement_clicks_used` 为兼容现有字段名而保留，
+  但正式语义改为**当前 segment**的 budget/used。新增 `settlement_total_clicks` 只用于日志与固定
+  safety cap，不重新承担随机 2~4 hard cap。
+- **segment budget**：`_sample_settlement_segment_budget()` 继续用单次 `random_int(1,10)` 分桶
+  2/3/4，权重仍为 50%/30%/20%。只在 session 首个已知 settlement state、semantic state
+  advance，或 fresh outer classify 确认同一 state 且当前 segment 已耗尽时生成；不按帧、不按
+  点击重抽，Unknown / terminal 不续段。
+- **选择方案 B**：Generic Result → Reward 属 semantic state advance，旧 Result segment 立即结束，
+  Reward 获得独立 2~4 segment；这样 Result 已用点击不会侵占 Reward 的节奏预算。segment 生命周期
+  与 anchor 生命周期解耦：状态变化仍先走既有安全区域交集与 keep/resample 策略，安全时可继续
+  使用同一 anchor；同 state 的 segment renewal 从不强制换点。
+- **semantic state 优先于 segment budget**：同 state segment 耗尽只记录
+  `Settlement segment exhausted ... renew=true` 并在 fresh known settlement state 上续段；它
+  不是 terminal。只有 fresh classify 明确离开 `page_battle_result/page_reward` 才记录
+  `Settlement terminal reached` 并 `_teardown_settlement_session()`。Unknown 不补第二下、不续段、
+  不擅自 teardown，继续交给既有 missing-page recovery。
+- **Click → Observe → Decide 不变**：first click 后只有 desired burst 仍允许第二下时，才等待
+  `0.10~0.30s`、fresh screenshot、复用同一个 classifier；same state 才用同一 anchor 补第二下，
+  state advance 取消第二下，known non-settlement 立即 teardown。第二下之后仍交回主循环，不产生
+  第三下。
+- **固定 safety cap**：现有 `battle_timer` 只在 prepare/battle 阶段判定，点击又会重置底层 stuck
+  timer，不能单独证明 Reward 续段有界；通用 `Device.click_record` 会在同 target 第 10 次调用前
+  抛错，但它是异常兜底。因此 v1.2 新增 `SETTLEMENT_MAX_TOTAL_CLICKS=9`，与该现有有效上限对齐，
+  在 Settlement 层先停止生成 segment/点击；它是 PROVISIONAL 故障安全帽，不是正常节奏目标，也
+  不把 safety exhaustion 称作 terminal。Device click/stuck guard 继续作为第二层保护。
+- **专用业务范围**：Micro-Burst 多次点击只能用于 GeneralBattle 的 `page_battle_result` /
+  `page_reward` semantic settlement state。禁止抽成 `multi_click` / `burst_click` / `repeat_click`
+  公共 API，禁止用于 FIRE、Challenge、GeneralInvite、导航、确认、组队、账号切换或任何普通按钮；
+  它不替代 `appear_then_click`。普通按钮继续 single click + state verification + bounded retry。
+
+保留不变：Reward layout-aware region policy；anchor 安全交集与全 session 最多 1 次主动换点；
+`SETTLEMENT_CLICK_INTERVAL_RANGE` / `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE` 数值与 owner；特殊 Reward
+overlay 的 fresh-state 边界；非通用 result 的单次节流路径；FIRE 独立 owner；ActivityShikigami
+task-local drain；RealmRaid / RyouToppa / GeneralInvite / Exploration / KekkaiUtilize / Navigator /
+FrameWait / TouchSwipeModel / HABIT / BehaviorTrace / OASX。synevo 的 AccountRotation、DailyTrifles、
+MultiAccountEvo、`active_evo_zone`、多实例 RPC / OCR / image 可靠性与 AntiBan 也不受本决定影响。
+
+Level C 状态：v1.1 = **FAIL**；v1.2 = **Level A/B PASS，Level C RE-TEST PENDING**。下一轮真机须
+验证：`budget=2` 不再卡 Reward；Reward 能跨 segment 继续；semantic terminal 后无残留点击；永久
+Reward 不会无限 renew；普通按钮仍单击；FIRE/MultiAccountEvo/EvoZone 组队完全不受影响；并观察
+总安全帽 9 是否过紧或过松。未有新证据前不改 2/3/4 权重、0.10~0.30s 或 anchor keep 概率。

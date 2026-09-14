@@ -1,5 +1,5 @@
 # This Python file uses the following encoding: utf-8
-"""GeneralBattle 通用结算推进（SETTLEMENT CONTRACT V3 + Micro-Burst v1，2026-09-12）纯静态测试。
+"""GeneralBattle 通用结算推进（SETTLEMENT CONTRACT V3 + Micro-Burst v1.2）离线测试。
 
 契约 v3（v1 的 one-primary / 2 秒观察 / same-page 超时 / sticky RD2 / Reward marker 决定
 区域，v2 的 `C_RANDOM_RD` + HABIT profile —— 全部 Superseded）：
@@ -13,11 +13,12 @@
 - 默认间隔 `SETTLEMENT_CLICK_INTERVAL_RANGE = (0.7, 1.0)`，每次成功 burst 后独立重采（未改）。
 - `is_win` / `_exit_matcher` / 2.5s missing fallback 不变。
 
-Micro-Burst v1（`docs/DECISIONS.md` D025，见 `SettlementMicroBurstTest`）：`page_battle_result`
+Micro-Burst v1.2（`docs/DECISIONS.md` D025，见 `SettlementMicroBurstTest`）：`page_battle_result`
 通用胜负上下文（`I_WIN`/`I_DE_WIN`/`I_FALSE` 命中）与 `page_reward` 普通奖励布局统一收进同一个
-Settlement Click Session——总点击预算 2~4（上限不是必须点满）、单次 blind burst 最多 2 次（同一
-anchor，burst 内短间隔）、burst 后必须 fresh screenshot + 重新 classify（外层 FSM 天然提供）、
-状态前向变化时按安全区域交集决定 anchor 保留/换点（全 session 最多 1 次主动换点）。旧
+Settlement Lifecycle——每个 semantic state 拥有独立的 2~4 click segment；segment 耗尽且 fresh
+state 仍是 result/reward 时允许续段，只有 semantic terminal 才 teardown。单次 observed burst 最多
+2 次（同一 anchor，第一下后 fresh classify 决定能否补第二下）；状态前向变化时按安全区域交集决定
+anchor 保留/换点（全 session 最多 1 次主动换点）。固定总安全帽保证续段有界。旧
 `_advance_generic_result`（首帧强制两次、各自独立采样）已被这个 session 模型吸收替代、不再存在。
 """
 
@@ -74,6 +75,7 @@ def _settlement_context(**overrides):
         settlement_session_active=False,
         settlement_click_budget=0,
         settlement_clicks_used=0,
+        settlement_total_clicks=0,
         settlement_anchor=None,
         settlement_region_name=None,
         settlement_stage_name=None,
@@ -155,7 +157,7 @@ class ResourceContractTest(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------------------
-# B. Generic Result —— 强制两次推进点击序列
+# B. Generic Result —— 通用胜负页 positive guard
 # --------------------------------------------------------------------------------------
 
 class GenericResultGuardTest(unittest.TestCase):
@@ -266,8 +268,9 @@ class SettlementMicroBurstTest(unittest.TestCase):
                   region=GeneralBattle.C_RANDOM_DEFAULT)
         self.assertEqual(h.clicks, [((100, 200), "random_default")])   # 只点了 1 次
         self.assertEqual(h.context.settlement_clicks_used, 1)
+        self.assertEqual(h.context.settlement_total_clicks, 1)
         self.assertTrue(h.context.settlement_session_active)   # 仍在 settlement 内，未销毁
-        self.assertEqual(h.context.settlement_click_budget, 2)  # budget 未被 teardown 清零
+        self.assertEqual(h.context.settlement_click_budget, 2)  # Result segment 未被 teardown 清零
 
     def test_case_e_chained_result_burst_stop_then_reward_keeps_anchor(self):
         # CASE E（v1.1，链式，锁定十一的核心要求）：紧接 CASE B 的同一个 session——burst
@@ -285,9 +288,11 @@ class SettlementMicroBurstTest(unittest.TestCase):
         self.assertEqual(h.context.settlement_anchor, (50, 50))
 
         h.context.last_page = gb.page_battle_result   # 模拟主循环把上一帧页面同步进 context
-        with patch.object(gb, "random_int", side_effect=[1]):   # keep(<=50)
+        with patch.object(gb, "random_int", side_effect=[1, 1]):   # keep + Reward segment budget=2
             h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_B_COMPAT)
         self.assertEqual(h.context.settlement_anchor, (50, 50))   # 仍是同一个 A
+        self.assertEqual(h.context.settlement_click_budget, 2)     # Reward 获得独立 segment
+        self.assertEqual(h.context.settlement_clicks_used, 0)
         # session 初始化时采样过 1 次（拿到 A）；Reward 阶段判定安全+keep，没有再重新采样。
         self.assertEqual(h.sample_calls, ["random_default"])
         self.assertEqual(len(h.clicks), 1)   # 第二帧被节流计时器挡下，没有产生新点击
@@ -298,12 +303,13 @@ class SettlementMicroBurstTest(unittest.TestCase):
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 4
         h.context.settlement_clicks_used = 1
+        h.context.settlement_total_clicks = 1
         h.context.settlement_anchor = (50, 50)
         h.context.settlement_region_name = _REGION_A.name
         h.context.settlement_stage_name = "generic_result"
         h.context.last_page = gb.page_battle_result
         h.point_seq = [(999, 999)]   # 如果误触发重新采样会被点到，用于反证
-        with patch.object(gb, "random_int", side_effect=[1, 2]):  # keep(<=50) + burst_size=2
+        with patch.object(gb, "random_int", side_effect=[1, 1, 2]):  # keep + 新 segment=2 + burst=2
             h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_B_COMPAT)
         self.assertEqual(h.context.settlement_anchor, (50, 50))          # anchor 未变
         self.assertEqual(h.sample_calls, [])                              # 完全没有重新采样
@@ -316,12 +322,13 @@ class SettlementMicroBurstTest(unittest.TestCase):
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 4
         h.context.settlement_clicks_used = 1
+        h.context.settlement_total_clicks = 1
         h.context.settlement_anchor = (50, 50)
         h.context.settlement_region_name = _REGION_A.name
         h.context.settlement_stage_name = "generic_result"
         h.context.last_page = gb.page_battle_result
         h.point_seq = [(80, 80)]
-        with patch.object(gb, "random_int", side_effect=[100, 1]):  # switch(>50) + burst_size=1
+        with patch.object(gb, "random_int", side_effect=[100, 1, 1]):  # switch + 新 segment=2 + burst=1
             h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_B_COMPAT)
         self.assertEqual(h.sample_calls, ["region_b"])            # 只重新采样一次
         self.assertEqual(h.context.settlement_anchor, (80, 80))
@@ -335,23 +342,22 @@ class SettlementMicroBurstTest(unittest.TestCase):
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 4
         h.context.settlement_clicks_used = 1
+        h.context.settlement_total_clicks = 1
         h.context.settlement_anchor = (50, 50)
         h.context.settlement_region_name = _REGION_A.name
         h.context.settlement_stage_name = "generic_result"
         h.context.last_page = gb.page_battle_result
         h.point_seq = [(600, 600)]
-        with patch.object(gb, "random_int", side_effect=[1, 1]) as ri:  # 若被咨询 keep 概率会判 keep
+        with patch.object(gb, "random_int", side_effect=[1, 1]) as ri:  # 新 segment=2 + burst=1
             h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_B_INCOMPAT)
         self.assertEqual(h.sample_calls, ["region_b"])
         self.assertEqual(h.context.settlement_anchor, (600, 600))
         self.assertEqual(h.context.settlement_anchor_switches, 0)   # 安全 fallback 不计入主动换点
-        # 不安全分支不咨询 keep/switch 概率：random_int 只被 burst_size 消费了一次
-        self.assertEqual(ri.call_count, 1)
+        # 不安全分支不咨询 keep/switch 概率：只消费新 segment budget + burst size。
+        self.assertEqual(ri.call_count, 2)
 
-    def test_case6_budget_is_ceiling_not_a_fill_requirement(self):
-        # CASE 6：budget 抽到 4，但一次 burst 只用了 2（burst_size 本身上限 1~2，即使
-        # remaining=4 单次 burst 也不会自动"点满"）——不存在任何机制会为了消耗剩余预算
-        # 继续点击；真实页面只需要 2 下就够时，最终确实只点了 2 下。
+    def test_case6_segment_budget_is_not_a_fill_requirement(self):
+        # segment 抽到 4，但一次 burst 只用了 2；semantic terminal 可让剩余节奏预算直接作废。
         h = _BurstHarness()
         h.point_seq = [(10, 10)]
         with patch.object(gb, "random_int", side_effect=[9, 2]):  # budget roll=9 -> 4，burst_size roll=2 -> 2
@@ -359,23 +365,28 @@ class SettlementMicroBurstTest(unittest.TestCase):
                   region=GeneralBattle.C_RANDOM_DEFAULT)
         self.assertEqual(h.context.settlement_click_budget, 4)
         self.assertEqual(h.context.settlement_clicks_used, 2)     # 只用了 2，不是 4
+        self.assertEqual(h.context.settlement_total_clicks, 2)
         self.assertEqual(len(h.clicks), 2)
 
-    def test_case6b_budget_exhausted_exact_boundary_stops_at_used_equals_budget(self):
-        # 补充：used == budget 时立即停手，不会再点第 5 次。
+    def test_case6b_segment_exhausted_renews_on_fresh_same_state(self):
+        # v1.2：fresh classify 仍是同一结算 state 时，used == budget 续一个新 segment。
         h = _BurstHarness()
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 2
         h.context.settlement_clicks_used = 2
+        h.context.settlement_total_clicks = 2
         h.context.settlement_anchor = (10, 10)
         h.context.settlement_region_name = "random_default"
         h.context.settlement_stage_name = "generic_result"
         h.context.last_page = gb.page_battle_result
-        with patch.object(gb, "random_int") as ri:
+        with patch.object(gb, "random_int", side_effect=[1, 1]) as ri:  # 新 segment=2 + burst=1
             h.step(current_page=gb.page_battle_result, stage_name="generic_result",
                   region=GeneralBattle.C_RANDOM_DEFAULT)
-        self.assertEqual(h.clicks, [])
-        ri.assert_not_called()
+        self.assertEqual(h.clicks, [((10, 10), "random_default")])
+        self.assertEqual(h.context.settlement_click_budget, 2)
+        self.assertEqual(h.context.settlement_clicks_used, 1)
+        self.assertEqual(h.context.settlement_total_clicks, 3)
+        self.assertEqual(ri.call_count, 2)
 
     def test_case_c_unit_reward_to_terminal_freezes_after_first_click_and_tears_down(self):
         # CASE C（v1.1，单元级；端到端版本见 SettlementSessionTeardownTest）：Reward 第
@@ -385,6 +396,7 @@ class SettlementMicroBurstTest(unittest.TestCase):
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 4
         h.context.settlement_clicks_used = 1
+        h.context.settlement_total_clicks = 1
         h.context.settlement_anchor = (50, 50)
         h.context.settlement_region_name = "random_default"
         h.context.settlement_stage_name = "reward"
@@ -395,6 +407,7 @@ class SettlementMicroBurstTest(unittest.TestCase):
         self.assertEqual(h.clicks, [((50, 50), "random_default")])   # 只点了 1 次
         self.assertFalse(h.context.settlement_session_active)         # 已 teardown
         self.assertEqual(h.context.settlement_click_budget, 0)
+        self.assertEqual(h.context.settlement_total_clicks, 0)
         self.assertIsNone(h.context.settlement_anchor)
 
     def test_case_d_unknown_observation_cancels_second_click_without_teardown(self):
@@ -406,6 +419,7 @@ class SettlementMicroBurstTest(unittest.TestCase):
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 4
         h.context.settlement_clicks_used = 1
+        h.context.settlement_total_clicks = 1
         h.context.settlement_anchor = (50, 50)
         h.context.settlement_region_name = "random_default"
         h.context.settlement_stage_name = "reward"
@@ -416,6 +430,7 @@ class SettlementMicroBurstTest(unittest.TestCase):
         self.assertEqual(h.clicks, [((50, 50), "random_default")])   # 只点了 1 次，不盲点第二下
         self.assertTrue(h.context.settlement_session_active)          # 未 teardown
         self.assertEqual(h.context.settlement_clicks_used, 2)
+        self.assertEqual(h.context.settlement_total_clicks, 2)
         self.assertEqual(h.context.settlement_anchor, (50, 50))       # anchor 原样保留
 
     def test_case_g_budget_ceiling_not_filled_when_terminal_right_after_first_click(self):
@@ -426,6 +441,7 @@ class SettlementMicroBurstTest(unittest.TestCase):
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 4
         h.context.settlement_clicks_used = 0
+        h.context.settlement_total_clicks = 0
         h.context.settlement_anchor = (70, 70)
         h.context.settlement_region_name = "random_default"
         h.context.settlement_stage_name = "reward"
@@ -437,9 +453,9 @@ class SettlementMicroBurstTest(unittest.TestCase):
         self.assertEqual(len(h.clicks), 1)
         self.assertFalse(h.context.settlement_session_active)
         teardown_msgs = [c.args[0] for c in info.call_args_list
-                         if c.args[0].startswith("Settlement session destroyed:")]
+                         if c.args[0].startswith("Settlement terminal reached:")]
         self.assertEqual(len(teardown_msgs), 1)
-        self.assertIn("used=1/4", teardown_msgs[0])   # teardown 当下真实 used，不是清零后的 0
+        self.assertIn("total_clicks=1", teardown_msgs[0])
 
     def test_case7_direct_reward_entry_skips_result_without_error(self):
         # CASE 7：状态跳级——从未见过 Generic Result，直接在 Reward 首次触发 session，
@@ -453,13 +469,13 @@ class SettlementMicroBurstTest(unittest.TestCase):
         self.assertTrue(h.context.settlement_session_active)
         self.assertEqual(h.clicks, [((300, 300), "random_default"), ((300, 300), "random_default")])
 
-    def test_case9_and_case14_repeated_polling_after_exhaustion_does_not_grow_clicks(self):
-        # CASE 9/14：budget 耗尽后连续多次调用（模拟页面既没推进、也没被识别为 unknown 的
-        # 极端轮询），点击次数必须保持冻结，不会无界增长。
+    def test_case9_repeated_polling_after_safety_cap_does_not_grow_clicks(self):
+        # 固定 lifecycle 安全帽耗尽后，即使页面持续 Reward，也不再续 segment / 点击。
         h = _BurstHarness()
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 2
         h.context.settlement_clicks_used = 2
+        h.context.settlement_total_clicks = GeneralBattle.SETTLEMENT_MAX_TOTAL_CLICKS
         h.context.settlement_anchor = (10, 10)
         h.context.settlement_region_name = "random_default"
         h.context.settlement_stage_name = "generic_result"
@@ -469,6 +485,7 @@ class SettlementMicroBurstTest(unittest.TestCase):
                   region=GeneralBattle.C_RANDOM_DEFAULT)
         self.assertEqual(h.clicks, [])
         self.assertEqual(h.context.settlement_clicks_used, 2)
+        self.assertEqual(h.context.settlement_total_clicks, GeneralBattle.SETTLEMENT_MAX_TOTAL_CLICKS)
 
     def test_case10_blind_burst_never_exceeds_two_even_with_large_budget(self):
         # CASE 10：即使 budget=4，单次 burst（无截图/无重新 classify）永远 <= 2。
@@ -487,6 +504,7 @@ class SettlementMicroBurstTest(unittest.TestCase):
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 4
         h.context.settlement_clicks_used = 0
+        h.context.settlement_total_clicks = 0
         h.context.settlement_anchor = (20, 20)
         h.context.settlement_region_name = "random_default"
         h.context.settlement_stage_name = "generic_result"
@@ -528,17 +546,178 @@ class SettlementMicroBurstTest(unittest.TestCase):
         self.assertEqual(h.context.settlement_region_name, "random_default")
         h.task.device.click.assert_called()                      # 真实产生了点击（未被特殊排除）
 
+    def test_v12_case1_level_c_budget2_result_reward_then_reward_renews(self):
+        # 真机失败链：Result 先用 1 下；Reward 获得独立 budget=2，用完后仍为 Reward 则续段。
+        h = _BurstHarness()
+        h.point_seq = [(50, 50)]
+        with patch.object(gb, "random_int", side_effect=[1, 1]):  # Result segment=2，burst=1
+            h.step(current_page=gb.page_battle_result, stage_name="generic_result",
+                   region=GeneralBattle.C_RANDOM_DEFAULT)
+        h.context.last_page = gb.page_battle_result
+        h.context.settlement_click_timer.expire()
+        with patch.object(gb, "random_int", side_effect=[1, 1, 1]):  # keep，Reward segment=2，burst=1
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_B_COMPAT)
+        self.assertEqual(h.context.settlement_click_budget, 2)
+        self.assertEqual(h.context.settlement_clicks_used, 1)
+        self.assertEqual(h.context.settlement_total_clicks, 2)
+
+        h.context.last_page = gb.page_reward
+        h.context.settlement_click_timer.expire()
+        with patch.object(gb, "random_int", return_value=1):
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_B_COMPAT)
+        self.assertEqual(h.context.settlement_clicks_used, 2)
+
+        h.context.settlement_click_timer.expire()
+        with patch.object(gb, "random_int", side_effect=[1, 1]):  # renew segment=2，burst=1
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_B_COMPAT)
+        self.assertTrue(h.context.settlement_session_active)
+        self.assertEqual(h.context.settlement_clicks_used, 1)
+        self.assertEqual(h.context.settlement_total_clicks, 4)
+        self.assertEqual(len(h.clicks), 4)
+
+    def test_v12_case2_second_segment_reaches_terminal_and_tears_down(self):
+        h = _BurstHarness()
+        h.context = _settlement_context(
+            settlement_session_active=True, settlement_click_budget=2, settlement_clicks_used=2,
+            settlement_total_clicks=2, settlement_anchor=(50, 50),
+            settlement_region_name="region_a", settlement_stage_name="reward",
+            last_page=gb.page_reward,
+        )
+        h.task._classify_general_battle_page = Mock(return_value=gb.page_battle_prepare)
+        with patch.object(gb, "random_int", side_effect=[1, 2]):  # renew segment=2，想补第二下
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_A)
+        self.assertEqual(h.clicks, [((50, 50), "region_a")])
+        self.assertFalse(h.context.settlement_session_active)
+        self.assertEqual(h.context.settlement_total_clicks, 0)
+
+    def test_v12_case3_segment_exhaustion_is_not_terminal(self):
+        h = _BurstHarness()
+        h.context = _settlement_context(
+            settlement_session_active=True, settlement_click_budget=2, settlement_clicks_used=2,
+            settlement_total_clicks=2, settlement_anchor=(50, 50),
+            settlement_region_name="region_a", settlement_stage_name="reward",
+            last_page=gb.page_reward,
+        )
+        with patch.object(gb, "random_int", side_effect=[1, 1]), \
+             patch.object(gb.logger, "info") as info:
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_A)
+        messages = [c.args[0] for c in info.call_args_list]
+        self.assertTrue(any(m.startswith("Settlement segment exhausted:") for m in messages))
+        self.assertFalse(any("terminal" in m.lower() for m in messages))
+        self.assertTrue(h.context.settlement_session_active)
+        self.assertEqual(len(h.clicks), 1)
+
+    def test_v12_case4_semantic_terminal_preempts_remaining_segment_budget(self):
+        h = _BurstHarness()
+        h.context = _settlement_context(
+            settlement_session_active=True, settlement_click_budget=4, settlement_clicks_used=1,
+            settlement_total_clicks=1, settlement_anchor=(50, 50),
+            settlement_region_name="region_a", settlement_stage_name="reward",
+            last_page=gb.page_reward,
+        )
+        h.task._classify_general_battle_page = Mock(return_value=gb.page_battle_prepare)
+        with patch.object(gb, "random_int", return_value=2):
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_A)
+        self.assertEqual(len(h.clicks), 1)
+        self.assertFalse(h.context.settlement_session_active)
+
+    def test_v12_case5_unknown_does_not_renew_or_blind_second_click(self):
+        h = _BurstHarness()
+        h.context = _settlement_context(
+            settlement_session_active=True, settlement_click_budget=2, settlement_clicks_used=1,
+            settlement_total_clicks=1, settlement_anchor=(50, 50),
+            settlement_region_name="region_a", settlement_stage_name="reward",
+            last_page=gb.page_reward,
+        )
+        h.task._classify_general_battle_page = Mock(return_value=None)
+        h.task._sample_settlement_segment_budget = Mock(return_value=2)
+        with patch.object(gb, "random_int", return_value=2):
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_A)
+        self.assertEqual(len(h.clicks), 1)
+        self.assertEqual(h.context.settlement_clicks_used, 2)
+        h.task._sample_settlement_segment_budget.assert_not_called()
+        self.assertTrue(h.context.settlement_session_active)
+
+    def test_v12_case6_state_advance_gets_independent_segment_budget(self):
+        h = _BurstHarness()
+        h.context = _settlement_context(
+            settlement_session_active=True, settlement_click_budget=2, settlement_clicks_used=1,
+            settlement_total_clicks=1, settlement_anchor=(50, 50),
+            settlement_region_name="region_a", settlement_stage_name="generic_result",
+            last_page=gb.page_battle_result,
+        )
+        with patch.object(gb, "random_int", side_effect=[1, 9, 1]):  # keep，Reward budget=4，burst=1
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_B_COMPAT)
+        self.assertEqual(h.context.settlement_click_budget, 4)
+        self.assertEqual(h.context.settlement_clicks_used, 1)
+        self.assertEqual(h.context.settlement_total_clicks, 2)
+
+    def test_v12_case7_segment_renew_keeps_safe_anchor(self):
+        h = _BurstHarness()
+        h.context = _settlement_context(
+            settlement_session_active=True, settlement_click_budget=2, settlement_clicks_used=2,
+            settlement_total_clicks=2, settlement_anchor=(50, 50),
+            settlement_region_name="region_a", settlement_stage_name="reward",
+            last_page=gb.page_reward,
+        )
+        with patch.object(gb, "random_int", side_effect=[1, 1]):
+            h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_A)
+        self.assertEqual(h.context.settlement_anchor, (50, 50))
+        self.assertEqual(h.sample_calls, [])
+        self.assertEqual(h.clicks, [((50, 50), "region_a")])
+
+    def test_v12_case8_safety_cap_blocks_renew_without_claiming_terminal(self):
+        h = _BurstHarness()
+        h.context = _settlement_context(
+            settlement_session_active=True, settlement_click_budget=2, settlement_clicks_used=2,
+            settlement_total_clicks=GeneralBattle.SETTLEMENT_MAX_TOTAL_CLICKS,
+            settlement_anchor=(50, 50), settlement_region_name="region_a",
+            settlement_stage_name="reward", last_page=gb.page_reward,
+        )
+        h.task._sample_settlement_segment_budget = Mock(return_value=2)
+        with patch.object(gb.logger, "info") as info:
+            for _ in range(5):
+                h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_A)
+        self.assertEqual(h.clicks, [])
+        h.task._sample_settlement_segment_budget.assert_not_called()
+        self.assertTrue(h.context.settlement_session_active)
+        self.assertFalse(any("terminal" in c.args[0].lower() for c in info.call_args_list))
+
+    def test_v12_case9_multiple_segments_are_bounded_by_total_click_cap(self):
+        h = _BurstHarness()
+        h.point_seq = [(50, 50)]
+        with patch.object(gb, "random_int", return_value=2):
+            for index in range(10):
+                if index:
+                    h.context.settlement_click_timer.expire()
+                h.step(current_page=gb.page_reward, stage_name="reward", region=_REGION_A)
+                h.context.last_page = gb.page_reward
+        self.assertEqual(len(h.clicks), GeneralBattle.SETTLEMENT_MAX_TOTAL_CLICKS)
+        self.assertEqual(h.context.settlement_total_clicks, GeneralBattle.SETTLEMENT_MAX_TOTAL_CLICKS)
+        self.assertTrue(h.context.settlement_session_active)
+        self.assertEqual(h.sample_calls, ["region_a"])  # 多 segment 不强制换 anchor
+
+    def test_v12_case10_state_advance_still_cancels_blind_second_click(self):
+        h = _BurstHarness()
+        h.point_seq = [(50, 50)]
+        h.task._classify_general_battle_page = Mock(return_value=gb.page_reward)
+        with patch.object(gb, "random_int", side_effect=[1, 2]):
+            h.step(current_page=gb.page_battle_result, stage_name="generic_result",
+                   region=GeneralBattle.C_RANDOM_DEFAULT)
+        self.assertEqual(h.clicks, [((50, 50), "random_default")])
+        self.assertEqual(h.context.settlement_total_clicks, 1)
+
     def test_budget_distribution_weights(self):
         # 权重表本身：1~5 -> 2、6~8 -> 3、9~10 -> 4。
         task = _make_task()
         mapping = {1: 2, 3: 2, 5: 2, 6: 3, 7: 3, 8: 3, 9: 4, 10: 4}
         for roll, expected in mapping.items():
             with patch.object(gb, "random_int", return_value=roll):
-                self.assertEqual(task._sample_settlement_budget(), expected, roll)
+                self.assertEqual(task._sample_settlement_segment_budget(), expected, roll)
 
     def test_budget_range_is_2_to_4_over_many_samples(self):
         task = _make_task()
-        seen = {task._sample_settlement_budget() for _ in range(500)}
+        seen = {task._sample_settlement_segment_budget() for _ in range(500)}
         self.assertTrue(seen.issubset({2, 3, 4}))
         self.assertEqual(seen, {2, 3, 4})   # 500 次抽样应该三个值都出现过
 
@@ -553,6 +732,7 @@ class SettlementSessionTeardownTest(unittest.TestCase):
             settlement_session_active=True,
             settlement_click_budget=4,
             settlement_clicks_used=1,
+            settlement_total_clicks=1,
             settlement_anchor=(100, 200),
             settlement_region_name="random_default",
             settlement_stage_name="generic_result",
@@ -566,6 +746,7 @@ class SettlementSessionTeardownTest(unittest.TestCase):
         self.assertFalse(ctx.settlement_session_active)
         self.assertEqual(ctx.settlement_click_budget, 0)
         self.assertEqual(ctx.settlement_clicks_used, 0)
+        self.assertEqual(ctx.settlement_total_clicks, 0)
         self.assertIsNone(ctx.settlement_anchor)
         self.assertIsNone(ctx.settlement_region_name)
         self.assertIsNone(ctx.settlement_stage_name)
@@ -634,8 +815,65 @@ class SettlementSessionTeardownTest(unittest.TestCase):
         self.assertTrue(fire_calls[0])          # burst 触发时 session 确实是活跃的
         self.assertFalse(context.settlement_session_active)   # mid-burst 观察后必须已销毁
         self.assertEqual(context.settlement_click_budget, 0)
+        self.assertEqual(context.settlement_total_clicks, 0)
         self.assertEqual(context.settlement_anchor, None)
         task.device.click.assert_called_once()   # 只点了 1 次——第二下被 observe 取消，不是 2 次
+
+    def test_v12_second_reward_segment_terminal_returns_battle_result(self):
+        """端到端复现 v1.2：Result 一下、Reward 首段两下、Reward 第二段一下后 terminal。"""
+        task = _make_task()
+        task.current_count = 0
+        task.config = SimpleNamespace(global_game=SimpleNamespace(battle=SimpleNamespace(battle_timeout=420)))
+        task._battle_shared_state = {}
+        task._get_battle_behavior_scopes = Mock(return_value={})
+        task._build_timed_battle_inspections = Mock(return_value={})
+        task._custom_pages_registered = True
+        task.device = SimpleNamespace(
+            click=Mock(), click_record_clear=Mock(),
+            stuck_record_add=Mock(), stuck_record_clear=Mock(), detect_record=set(),
+            screenshot_interval_set=Mock(),
+        )
+        task.screenshot = Mock()
+        task.appear = Mock(side_effect=lambda r, **kw: r is task.I_WIN)
+        task.appear_then_click = Mock(return_value=False)
+        task._select_reward_region = Mock(return_value=task.C_RANDOM_DEFAULT)
+        task._sample_settlement_point = Mock(return_value=(800, 500))
+        task._sample_interval = Mock(return_value=0)
+        task._next_settlement_click_interval = Mock(return_value=0)
+
+        captured_contexts = []
+        original_build_context = task._build_context
+
+        def _capture(*a, **kw):
+            ctx = original_build_context(*a, **kw)
+            # 主循环可能在同一毫秒内推进；用确定性 timer 避免真实时钟让某一帧偶发未到点。
+            ctx.settlement_click_timer = _Timer()
+            ctx.settlement_click_timer.reached = Mock(return_value=True)
+            captured_contexts.append(ctx)
+            return ctx
+
+        task._build_context = _capture
+        pages = [
+            gb.page_battle_result, gb.page_reward,  # outer Result + mid-burst observe advances
+            gb.page_reward, gb.page_reward,         # Reward segment #1: click 1 + click 2
+            gb.page_reward, gb.page_battle_prepare, # Reward segment #2 click 1 + terminal observe
+            gb.page_battle_prepare,                 # outer semantic terminal -> normal result return
+        ]
+        rolls = [
+            1, 2,       # Result segment=2，burst wants 2 but advance cancels second
+            1, 1, 1,   # keep anchor，Reward segment=2，first burst=1
+            1,          # Reward segment #1 second burst=1 -> exhausted
+            1, 2,       # renew segment=2，first click observes terminal
+        ]
+        with patch.object(gb, "random_int", side_effect=rolls), \
+             patch.object(gb.GameUi, "detect_page_in", side_effect=pages):
+            result = task.run_general_battle(config=gb.GeneralBattleConfig())
+
+        self.assertTrue(result)
+        self.assertEqual(task.device.click.call_count, 4)
+        context = captured_contexts[0]
+        self.assertFalse(context.settlement_session_active)
+        self.assertEqual(context.settlement_total_clicks, 0)
 
     def test_case_i_teardown_ordering_click_then_observe_then_teardown(self):
         # CASE I（v1.1）：不仅验证最终字段被清空，还要验证真实调用顺序——click → fresh
@@ -645,6 +883,7 @@ class SettlementSessionTeardownTest(unittest.TestCase):
         h.context.settlement_session_active = True
         h.context.settlement_click_budget = 4
         h.context.settlement_clicks_used = 1
+        h.context.settlement_total_clicks = 1
         h.context.settlement_anchor = (50, 50)
         h.context.settlement_region_name = "random_default"
         h.context.settlement_stage_name = "reward"
@@ -711,7 +950,7 @@ class RewardOverlayTest(unittest.TestCase):
             self.assertEqual(c.kwargs, {"interval": 0.8})
 
     def test_no_overlay_falls_through_to_region_click(self):
-        # Micro-Burst v1：普通奖励布局现在走 `_settlement_burst_step`（`_sample_settlement_point`
+        # Micro-Burst v1.2：普通奖励布局走 `_settlement_burst_step`（`_sample_settlement_point`
         # + `_click_settlement_point`），不再是旧的 `_sample_settlement_click` 单步——
         # 这里改断言真实 `device.click` 收到的 `control_name`，语义不变：仍是
         # `_select_reward_region()` 选中的那个安全区域。
@@ -944,7 +1183,7 @@ class TaskCompatibilityTest(unittest.TestCase):
 
     def test_realm_raid_non_quick_exit_reaches_settlement_burst_session(self):
         # RealmRaid 非 quick_exit 路径 `super()._handle_result()` 落到公共
-        # GeneralBattle，因此自然继承 Settlement Micro-Burst v1（budget=2~4、
+        # GeneralBattle，因此自然继承 Settlement Micro-Burst v1.2（segment budget=2~4、
         # 同一 anchor burst）——不再是旧的「固定两次、各自独立采样」。
         from tasks.RealmRaid.script_task import ScriptTask
         task = ScriptTask.__new__(ScriptTask)
