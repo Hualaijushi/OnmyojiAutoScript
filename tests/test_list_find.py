@@ -299,7 +299,9 @@ class ListAppearClickCharacterizationTest(TestCase):
         ret = self.task.list_appear_click(self.target, interval=1, max_swipe=3)
         self.assertIs(ret, True)
         self.task.list_find.assert_called_once_with(self.target, name='first', max_swipe=3)
-        self.task.device.click.assert_called_once_with(5, 6)
+        # L1：list_find 的返回值已是最终落点，原样执行一次、不再采样；同时带上列表名供
+        # BehaviorTrace 区分（旧实现是无名的 `device.click(5, 6)`，坐标本身不变）。
+        self.task.device.click.assert_called_once_with(x=5, y=6, control_name='L_X')
 
     def test_hit_without_interval_returns_false_and_does_not_click(self):
         # 已知瑕疵（本轮不修）：`isinstance(appear, tuple) and interval` —— interval 为空时

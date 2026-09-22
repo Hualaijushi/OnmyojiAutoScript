@@ -9329,3 +9329,45 @@ RealmRaid/ActivityShikigami/RyouToppa/click/swipe/FrameWait 分域回归及 comp
 `git diff --check` 干净。未启动 MuMu / 游戏 / OCR / 设备。
 
 状态：v1.1 Level C = **FAIL**；v1.2 = **Level A/B PASS / Level C RE-TEST PENDING**。
+
+## 2026-09-22 - master L1/L2 交互改造整合进 synevo（集成分支 `zoombies-account-rotation-dailytask/synevo-l1l2-integration`）
+
+按《OAS 点击模型整合至 synevo 分支：迁移前审查》的方案实施。新建独立 worktree `D:\oas_xy\wt-synevo-l1l2-integration` + 新分支（基于 synevo tip `e9c8123c`），
+**未 commit / push / merge**；`master` 与正式 `synevo` 工作区均未改动（master 98 项未提交改动的 98 个源文件 SHA256 提取前后一致）。
+
+- 提取：master 已提交内容与共同祖先 `7f244a8c` 无差异，迁移对象即 master 工作区 98 项未提交改动（72 modified + 26 untracked）。
+- 分类与应用：54 个基线一致文件中 50 个补丁直接应用成功、0 失败；18 个双方都改过的文件走三方合并，其中 16 个零冲突（含 GeneralBattle / GeneralInvite / GeneralRoom / Navigator / DailyTrifles / config_model / 两个 GeneralBattle 测试），
+  `Login/service.py`（2 处）与 `EvoZone/script_task.py`（4 处）手工解决；`config/template.json` 与 `assets/i18n/zh-CN.json` 按 JSON 键结构化合并，同键不同值冲突 0。
+- 新增公共能力：`module/click_pipeline.py`、`module/interaction_policy.py`、`tasks/Component/config_fire_reaction.py`、`tasks/Component/fire_battle_entry.py`、`dev_tools/click_entry_guard.py`、`dev_tools/click_callsite_register.py` + 16 个测试文件。
+- synevo 独有业务全部保留：AccountRotation / MultiAccountEvo / SwitchAccount / DailyTrifles adapter / Login 换号 / EvoZone `run_embedded` / GeneralBattle Settlement v1.2 / GeneralInvite 可配置重试 / GeneralRoom 10 秒等待 / Navigator 狩猎 8 秒超时。
+- 按用户排除范围保留不迁移：KekkaiUtilize 蹭卡业务（只迁 L1 点击入口）、ReplaceShikigami 分类切换有界化、这两块的 5 个测试文件、`test_l1_l2_integration.py` 的调度一节、Chess 拖拽 / 摇杆 / 滑动 / TouchSwipeModel 参数、L2 暂缓的 13 个调用点。
+- 登记册在本分支重新生成：全仓 1127 点（master 为 1092），basis human 180 / c0 17 / rule 930，policy 36、L1 执行器 45、长按执行器 6。
+- 验证：`compileall` 通过；全量 `unittest discover -s tests` = 1887 项，1883 通过 / **4 失败** / 1 跳过；`git diff --check` 干净。4 个失败是静态守卫在本分支发现的同一个缺口：
+  SwitchAccount `_click_bounds`、MultiAccountEvo `_detect_select` / `check_then_accept` 三处 synevo 独有直接点击未纳入 L1。按要求未扩大白名单、未批量改业务，保留失败以暴露问题，等用户决策。
+- 未启动 MuMu / 游戏 / 真实 OCR；未修改任何真实账号配置（`config/oas1.json` / `oas2.json` 未触碰，集成 worktree 内也没有这两个文件）。
+
+## 2026-09-22　synevo 集成分支：L1/L2 最小收尾、全量验收与提交
+
+集成分支 `zoombies-account-rotation-dailytask/synevo-l1l2-integration`（worktree `D:\oas_xy\wt-synevo-l1l2-integration`，基于 synevo tip `e9c8123c`）。
+延续当日上午的整合（见本文件同日前一条与 `docs/AI_CONTEXT.md` §4.72），本轮只做点击执行模型与延迟策略的收尾，**不新增业务功能**，完成后提交到集成分支；
+未 push、未合并回正式 synevo。`master`（98 项未提交）与正式 `synevo`（干净）全程未被改动。
+
+1. **三个直接点击入口按用户决策处理**
+   - `SwitchAccount/netease_account_ui.py::NeteaseAccountUi._click_bounds` **保留原实现**（原生控件 bounds 取中心直点），业务代码一行未动；
+     静态守卫的白名单拆为 `_INTERNAL_EXITS`（架构内部出口）与新的 `BUSINESS_EXEMPTIONS`（业务豁免，层名 `exempt`），只为它登记 1 条精确豁免（文件 + 函数 + `self.device.click` + 次数 1）。
+   - `MultiAccountEvo/script_task.py::ScriptTask._detect_select` 与 `::ScriptTask.check_then_accept` 迁入 `execute_single_click(FinalPoint(...))`：
+     坐标来源 / 坐标系 / 随机落点语义 / 等待 / 重试 / 返回值全部不变，**不加 `policy=`、不加独立 reaction**（与 GeneralInvite 五个接受事务点位的暂缓决定一致）。
+2. **GeneralRoom 恢复 synevo 原有落点语义**：`check_zones` 的点击回到「`list_find` 命中点 + `randint(±5)`」，抖动每轮现取，结果包成 `FinalPoint` 交 L1；
+   10 秒等待循环与组队列表判断逻辑未动。`tests/test_l1_click_pipeline.py` 的 CASE 33/37 改为钉住本分支语义，并为该函数登记了精确的「点击旁随机偏移」例外。
+3. **EvoZone 只核对不改生产代码**：新增 `tests/test_synevo_evozone_embedded_fire.py`（6 例），证明 `run_embedded` 深拷贝不覆写 `fire_reaction`、普通与嵌入运行读到同一 FIRE 区间、
+   一次 attempt 只有一次 reaction 采样与一次 sleep、FIRE 点击不叠加 policy，并锁住 `_run_core` / `run_embedded` / `active_evo_zone` 结构与嵌套运行拒绝行为。
+4. **Kekkai / GeneralInvite / GeneralBattle 仅兼容性验证**：Kekkai 本分支 diff 只有 `switch_friend_list` 的一处 L1 执行入口；GeneralInvite 可配置重试与 GeneralBattle Settlement v1.2 / Contract V3 / Micro-Burst 原样保留；
+   相关既有测试（Kekkai 5 个文件 + GeneralBattle / GeneralInvite / Settlement 共 368 例）全绿。
+5. **守卫与登记册**：`check_repo().ok = True`，unallowed / 过期 / 缺失必需出口 / 无法静态确定均为 0，合法出口 executor 3 / control 13 / backend 3 / demo 2 / dead 1 / exempt 1；
+   登记册在本分支重新生成：总数 1127 不变，L1 单击执行器调用点 45 → **47**，生产侧裸点击 3 → **1**（即唯一豁免），policy 仍 36（暂缓的 13 点未加 policy），C0 24 点归档不变。
+6. **验收**：`compileall`（module / tasks / tests / dev_tools）通过；`unittest discover -s tests` = **Ran 1901，failures 0 / errors 0 / skipped 1，退出码 0**（跳过项因集成 worktree 无真实账号配置）；`git diff --check` 干净。
+   提交前逐项审查全部累计改动（70 modified + 23 untracked，共 93 项），确认无真实账号配置 / 日志 / 密钥 / 临时文件混入、无冲突标记、无意外删除。
+7. **本轮明确排除**：Chess 拖拽、AbyssShadows 摇杆、list_find 与 RyouToppa 滑动、TouchSwipeModel 参数、结界蹭卡业务重构、ReplaceShikigami 业务改造、疲劳 / 发呆新功能、账号轮换业务重构、
+   L2 暂缓的 13 个调用点；不做全局 GesturePipeline 改造，不调整点击空间模型 / Minitouch dwell / L2 reaction 区间。
+8. **仍未完成**：Level C 真机（未启动 MuMu / 游戏 / 真实 OCR），reaction 区间仍 PROVISIONAL；`INVENTORY` 里 synevo 独有的 EvoZone `_return_to_main_after_run` 增补行是否纳入正式人工审计口径待确认；
+   Kekkai / ReplaceShikigami 业务改造是否单独排期待确认。

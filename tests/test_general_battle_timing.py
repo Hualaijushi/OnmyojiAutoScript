@@ -266,7 +266,7 @@ class GeneralBattleTimingTest(TestCase):
         # 但仍不是 confirm_delay，也不是被删过的 reaction_delay / CLICK_REACTION_DELAY。
         source = inspect.getsource(RealmRaidScriptTask.fire)
 
-        self.assertIn('random_delay(*REACTION_FIRE)', source)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))', source)
         self.assertIn('self.appear_then_click(self.I_FIRE, interval=0, threshold=0.8)', source)
         self.assertIn('self.click(click, interval=2)', source)   # partition 打开详情不变
         self.assertNotIn('confirm_delay', source)

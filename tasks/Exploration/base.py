@@ -23,7 +23,7 @@ import tasks.Exploration.page as pages
 from module.logger import logger
 from module.exception import TaskEnd, GameStuckError
 from module.atom.animate import RuleAnimate
-from module.reaction_profile import REACTION_NORMAL, REACTION_NAVIGATION
+from module.interaction_policy import InteractionPolicy
 from typing import Optional
 
 
@@ -145,9 +145,9 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             if self.appear(self.I_E_EXPLORATION_CLICK) or result and len(result) > 0:
                 break
             # 章节页确认弹窗：普通稳定选择，NORMAL reaction
-            if self.appear_then_click(self.I_UI_CONFIRM, interval=1, confirm_delay=REACTION_NORMAL):
+            if self.appear_then_click(self.I_UI_CONFIRM, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
-            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1, confirm_delay=REACTION_NORMAL):
+            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
             self.device.click_record_clear()
             swiped = False
@@ -178,9 +178,9 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         while 1:
             self.screenshot()
             # 章节页确认弹窗：普通稳定选择，NORMAL reaction
-            if self.appear_then_click(self.I_UI_CONFIRM, interval=1, confirm_delay=REACTION_NORMAL):
+            if self.appear_then_click(self.I_UI_CONFIRM, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
-            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1, confirm_delay=REACTION_NORMAL):
+            if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
             self.O_E_EXPLORATION_LEVEL_NUMBER.keyword = config_exploration_level
             if self.ocr_appear_click(self.O_E_EXPLORATION_LEVEL_NUMBER):
@@ -427,7 +427,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         """退出探索主界面(要求当前必须处于探索主界面, 不保证任何后续结果)"""
         self.need_exit = True
         # 导航返回：NAVIGATION reaction
-        clicked = self.appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8, confirm_delay=REACTION_NAVIGATION)
+        clicked = self.appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8, policy=InteractionPolicy.NAVIGATION)
         self.wait_start_time = datetime.now()  # 队友等待时间重置
         return clicked
 

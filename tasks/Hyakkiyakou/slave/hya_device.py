@@ -5,11 +5,13 @@ from datetime import datetime
 from module.base.timer import Timer
 from module.device.handle import Handle, WindowNode, handle_num2title, handle_title2num, is_handle_valid
 from module.logger import logger
-from module.base.utils import point2str
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.exception import RequestHumanTakeover, GameStuckError
 from tasks.base_task import BaseTask
 
 from tasks.Hyakkiyakou.config import ScreenshotMethod, ControlMethod
+
+HYA_CLICK_NAME = 'HYA_BEAN_THROW'
 
 def image_black(img) -> bool:
     for y, x in [(0, 0), (719, 1279), (719, 0), (0, 1279)]:
@@ -87,25 +89,20 @@ class HyaDevice(BaseTask):
 
     def fast_click(self, x: int, y: int, control_method: ControlMethod = ControlMethod.WINDOW_MESSAGE) -> None:
         self._ensure_root_node()
-        logger.info(
-            'Click %s @ %s' % (point2str(x, y), 'Click')
-        )
+        # 撒豆落点由 agent 决策直接给出，已是最终落点，不做空间采样。
+        point = FinalPoint(x, y)
         if not hasattr(self.device, 'root_node'):
             logger.warning('root_node unavailable, falling back to standard click')
-            self.device.click(x, y)
+            execute_single_click(self.device, point, control_name=HYA_CLICK_NAME)
             return
-        if control_method == ControlMethod.MINITOUCH:
-            try:
-                self.device.click_minitouch(x=x, y=y)
-            except AttributeError:
-                logger.warning('click_minitouch failed, falling back to standard click')
-                self.device.click(x, y)
-        else:
-            try:
-                self.device.click_window_message(x=x, y=y, fast=True)
-            except AttributeError:
-                logger.warning('click_window_message failed, falling back to standard click')
-                self.device.click(x, y)
+        # 后端仍由百鬼夜行自己的配置决定（非 minitouch 一律 window_message fast），
+        # 分发交给 Control.click_with_backend，日志 / BehaviorTrace 与普通点击同一条路径。
+        backend = 'minitouch' if control_method == ControlMethod.MINITOUCH else 'window_message'
+        try:
+            execute_single_click(self.device, point, control_name=HYA_CLICK_NAME, backend=backend)
+        except AttributeError:
+            logger.warning(f'{backend} fast click failed, falling back to standard click')
+            execute_single_click(self.device, point, control_name=HYA_CLICK_NAME)
 
     def set_fast_screenshot_interval(self, interval: float):
         """

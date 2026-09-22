@@ -474,7 +474,7 @@ class BossRewardFlowNativeTest(TestCase):
         # 无宝箱时游戏可能自动退出——quit_exp_main 用 appear_then_click(confirm_delay=)，
         # delay 后重新截图二次确认 I_UI_BACK_YELLOW，消失则不点，天然避免 stale click。
         src = _src(BE.quit_exp_main)
-        self.assertIn('appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8, confirm_delay=REACTION_NAVIGATION)',
+        self.assertIn('appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8, policy=InteractionPolicy.NAVIGATION)',
                       src)
         # 没有新造 Boss 专用 exit transaction / current-page guard
         self.assertNotIn('detect_page_in', src)

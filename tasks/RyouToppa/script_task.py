@@ -19,9 +19,10 @@ from module.exception import ScriptError, TaskEnd
 from module.base.timer import Timer
 from module.base.utils.random import random_delay
 from module.exception import GamePageUnknownError
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.click_sampler import ClickSampler
 from module.click_profile import DEFAULT_PROFILES
-from module.reaction_profile import REACTION_FAST, REACTION_FIRE
+from module.interaction_policy import InteractionPolicy, fire_reaction_range
 
 
 area_map = (
@@ -139,7 +140,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             if self.appear(source):
                 logger.info(f'寮突破：点击一次阵容{state_name}按钮')
                 # 锁定 / 解锁按钮：含义明确的稳定按钮，FAST reaction
-                self.appear_then_click(source, interval=0, confirm_delay=REACTION_FAST)
+                self.appear_then_click(source, interval=0, policy=InteractionPolicy.FAST)
                 break
         else:
             message = '寮突破：无法识别当前阵容锁定状态'
@@ -261,7 +262,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         rule = area_map[index].get('rule_click')
         if rule is self.C_AREA_1:
             x, y = ClickSampler.sample_point(rule.roi_front, DEFAULT_PROFILES['wide_card'])
-            self.device.click(x=x, y=y, control_name=rule.name)
+            execute_single_click(self.device, FinalPoint(x, y), control_name=rule.name)
         else:
             self.click(rule)
 
@@ -481,7 +482,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         while 1:
             self.screenshot()
             # 低频寮管理按钮：含义明确的稳定按钮，FAST reaction
-            if self.appear_then_click(self.I_SELECT_RYOU_BUTTON, interval=1, confirm_delay=REACTION_FAST):
+            if self.appear_then_click(self.I_SELECT_RYOU_BUTTON, interval=1, policy=InteractionPolicy.FAST):
                 break
         logger.info(f'Click {self.I_SELECT_RYOU_BUTTON.name}')
 
@@ -496,7 +497,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         while 1:
             self.screenshot()
             # 低频寮管理按钮：含义明确的稳定按钮，FAST reaction
-            if self.appear_then_click(self.I_START_TOPPA_BUTTON, interval=1, confirm_delay=REACTION_FAST):
+            if self.appear_then_click(self.I_START_TOPPA_BUTTON, interval=1, policy=InteractionPolicy.FAST):
                 continue
             # 出现寮奖励， 说明寮突已开
             if self.appear(self.I_RYOU_REWARD, threshold=0.8):
@@ -662,8 +663,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
                         continue
 
             logger.info(f'寮突破：点击区域{index + 1}进攻按钮，第{attempt}次尝试')
-            # FIRE reaction：每次 attempt 独立采样，统一 REACTION_FIRE（此前手写 0.2~0.6）
-            fire_delay = random_delay(*REACTION_FIRE)
+            # FIRE reaction：每次 attempt 独立采样，区间来自任务 FIRE 配置（默认 400~800ms，此前手写 0.2~0.6）
+            fire_delay = random_delay(*fire_reaction_range(self.config.ryou_toppa.fire_reaction))
             logger.info(f'寮突破：进攻按钮确认后等待{fire_delay:.2f}秒再点击')
             time.sleep(fire_delay)
             self.screenshot()

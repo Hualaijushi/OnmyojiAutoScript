@@ -131,7 +131,7 @@ class WaitUntilAppearThenClickBindingTest(TestCase):
         self.assertTrue(result)
         # 缺陷版本这里为 0：首轮被 skip_first_screenshot=5 跳过，用的是旧帧。
         self.assertEqual(self.screenshot_calls, 1)
-        self.task.device.click.assert_called_once_with(10, 20, control_name=target.name)
+        self.task.device.click.assert_called_once_with(x=10, y=20, control_name=target.name)
 
     @patch('tasks.base_task.Timer')
     def test_no_timer_is_created_when_wait_time_is_none(self, timer_cls):
@@ -145,4 +145,4 @@ class WaitUntilAppearThenClickBindingTest(TestCase):
         self.assertTrue(result)
         timer_cls.assert_not_called()
         self.assertEqual(self.screenshot_calls, 1)
-        self.task.device.click.assert_called_once_with(10, 20, control_name=target.name)
+        self.task.device.click.assert_called_once_with(x=10, y=20, control_name=target.name)

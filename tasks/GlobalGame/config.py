@@ -45,41 +45,41 @@ class FatigueProbability(BaseModel):
 
 
 class TaskFatigueConfig(BaseModel):
-    time_scale_minutes: float = Field(default=65.0, gt=0.0)
-    repeat_scale: float = Field(default=15.0, gt=0.0)
-    time_weight: float = Field(default=70.0, ge=0.0)
-    repeat_weight: float = Field(default=20.0, ge=0.0)
+    time_scale_minutes: float = Field(default=65.0, gt=0.0, description='task.time_scale_minutes_help')
+    repeat_scale: float = Field(default=15.0, gt=0.0, description='task.repeat_scale_help')
+    time_weight: float = Field(default=70.0, ge=0.0, description='task.time_weight_help')
+    repeat_weight: float = Field(default=20.0, ge=0.0, description='task.repeat_weight_help')
 
 
 class GlobalFatigueConfig(BaseModel):
-    time_scale_minutes: float = Field(default=180.0, gt=0.0)
-    exponent: float = Field(default=2.0, gt=1.0)
+    time_scale_minutes: float = Field(default=180.0, gt=0.0, description='global_fatigue.time_scale_minutes_help')
+    exponent: float = Field(default=2.0, gt=1.0, description='global_fatigue.exponent_help')
 
 
 class FatigueWeights(BaseModel):
-    idle_task: float = Field(default=0.8, ge=0.0)
-    idle_global: float = Field(default=0.2, ge=0.0)
-    rest_task: float = Field(default=0.25, ge=0.0)
-    rest_global: float = Field(default=0.75, ge=0.0)
+    idle_task: float = Field(default=0.8, ge=0.0, description='weights.idle_task_help')
+    idle_global: float = Field(default=0.2, ge=0.0, description='weights.idle_global_help')
+    rest_task: float = Field(default=0.25, ge=0.0, description='weights.rest_task_help')
+    rest_global: float = Field(default=0.75, ge=0.0, description='weights.rest_global_help')
 
 
 class IdleFatigueConfig(BaseModel):
     # steepness / midpoint 即原 idle.probability 的 k / F0，数值不变，只是不再嵌套在
     # probability 子模型下；它们现在只决定“疲劳强度”logistic，不再是单节点概率。
-    steepness: float = Field(default=0.11, gt=0.0)
-    midpoint: float = Field(default=52.0, ge=0.0, le=100.0)
+    steepness: float = Field(default=0.11, gt=0.0, description='idle.steepness_help')
+    midpoint: float = Field(default=52.0, ge=0.0, le=100.0, description='idle.midpoint_help')
     # idle 事件率：低疲劳保留少量自然走神，高疲劳趋近上限。单位：次 / 小时。
     # 上限只是高疲劳状态的理论值，不表示每小时必定触发这么多次。
-    rate_base: float = Field(default=1.5, gt=0.0)
-    rate_max: float = Field(default=4.0, gt=0.0)
+    rate_base: float = Field(default=1.5, gt=0.0, description='idle.rate_base_help')
+    rate_max: float = Field(default=4.0, gt=0.0, description='idle.rate_max_help')
     # 三角分布时长：最短、众数下限（低疲劳众数）、众数上限（高疲劳众数）、最长。
-    minimum_seconds: float = Field(default=15.0, ge=0.0)
-    mode_minimum_seconds: float = Field(default=25.0, gt=0.0)
-    mode_maximum_seconds: float = Field(default=70.0, gt=0.0)
-    maximum_seconds: float = Field(default=120.0, gt=0.0)
-    range_floor_ratio: float = Field(default=0.12, ge=0.0, le=1.0)
-    task_recovery_per_minute: float = Field(default=8.0, ge=0.0)
-    global_recovery_per_minute: float = Field(default=0.5, ge=0.0)
+    minimum_seconds: float = Field(default=15.0, ge=0.0, description='idle.minimum_seconds_help')
+    mode_minimum_seconds: float = Field(default=25.0, gt=0.0, description='idle.mode_minimum_seconds_help')
+    mode_maximum_seconds: float = Field(default=70.0, gt=0.0, description='idle.mode_maximum_seconds_help')
+    maximum_seconds: float = Field(default=120.0, gt=0.0, description='idle.maximum_seconds_help')
+    range_floor_ratio: float = Field(default=0.12, ge=0.0, le=1.0, description='idle.range_floor_ratio_help')
+    task_recovery_per_minute: float = Field(default=8.0, ge=0.0, description='idle.task_recovery_per_minute_help')
+    global_recovery_per_minute: float = Field(default=0.5, ge=0.0, description='idle.global_recovery_per_minute_help')
 
     @model_validator(mode='after')
     def validate_rate(self):
@@ -100,23 +100,23 @@ class IdleFatigueConfig(BaseModel):
 
 
 class RestProbability(FatigueProbability):
-    maximum: float = Field(default=0.12, ge=0.0, lt=1.0)
-    steepness: float = Field(default=0.10, gt=0.0)
-    midpoint: float = Field(default=58.0, ge=0.0, le=100.0)
+    maximum: float = Field(default=0.12, ge=0.0, lt=1.0, description='rest.probability.maximum_help')
+    steepness: float = Field(default=0.10, gt=0.0, description='rest.probability.steepness_help')
+    midpoint: float = Field(default=58.0, ge=0.0, le=100.0, description='rest.probability.midpoint_help')
 
 
 class RestFatigueConfig(BaseModel):
     probability: RestProbability = Field(default_factory=RestProbability)
-    minimum_seconds: float = Field(default=120.0, ge=0.0)
+    minimum_seconds: float = Field(default=120.0, ge=0.0, description='rest.minimum_seconds_help')
     # 众数下限默认等于最短时间，保持 rest 时长的既有行为不变。
-    mode_minimum_seconds: float = Field(default=120.0, gt=0.0)
-    mode_maximum_seconds: float = Field(default=600.0, gt=0.0)
-    maximum_seconds: float = Field(default=1200.0, gt=0.0)
-    range_floor_ratio: float = Field(default=0.2, ge=0.0, le=1.0)
-    task_recovery_maximum: float = Field(default=70.0, ge=0.0)
-    task_recovery_tau_minutes: float = Field(default=7.0, gt=0.0)
-    global_recovery_maximum: float = Field(default=65.0, ge=0.0)
-    global_recovery_tau_minutes: float = Field(default=9.0, gt=0.0)
+    mode_minimum_seconds: float = Field(default=120.0, gt=0.0, description='rest.mode_minimum_seconds_help')
+    mode_maximum_seconds: float = Field(default=600.0, gt=0.0, description='rest.mode_maximum_seconds_help')
+    maximum_seconds: float = Field(default=1200.0, gt=0.0, description='rest.maximum_seconds_help')
+    range_floor_ratio: float = Field(default=0.2, ge=0.0, le=1.0, description='rest.range_floor_ratio_help')
+    task_recovery_maximum: float = Field(default=70.0, ge=0.0, description='rest.task_recovery_maximum_help')
+    task_recovery_tau_minutes: float = Field(default=7.0, gt=0.0, description='rest.task_recovery_tau_minutes_help')
+    global_recovery_maximum: float = Field(default=65.0, ge=0.0, description='rest.global_recovery_maximum_help')
+    global_recovery_tau_minutes: float = Field(default=9.0, gt=0.0, description='rest.global_recovery_tau_minutes_help')
 
     @model_validator(mode='after')
     def validate_duration(self):
@@ -131,10 +131,10 @@ class RestFatigueConfig(BaseModel):
 
 
 class RestCooldownConfig(BaseModel):
-    base_minutes: float = Field(default=30.0, ge=0.0)
-    rest_duration_multiplier: float = Field(default=3.0, ge=0.0)
-    jitter_minimum: float = Field(default=0.85, gt=0.0)
-    jitter_maximum: float = Field(default=1.15, gt=0.0)
+    base_minutes: float = Field(default=30.0, ge=0.0, description='cooldown.base_minutes_help')
+    rest_duration_multiplier: float = Field(default=3.0, ge=0.0, description='cooldown.rest_duration_multiplier_help')
+    jitter_minimum: float = Field(default=0.85, gt=0.0, description='cooldown.jitter_minimum_help')
+    jitter_maximum: float = Field(default=1.15, gt=0.0, description='cooldown.jitter_maximum_help')
 
     @model_validator(mode='after')
     def validate_jitter(self):
@@ -146,8 +146,8 @@ class RestCooldownConfig(BaseModel):
 class SchedulerIdleConfig(BaseModel):
     # scheduler_idle（无任务可执行的调度空档）：前 recovery_delay_minutes 分钟只冻结
     # GlobalFatigue，超过后按 1 - exp(-(t - delay) / tau) 指数自然恢复。t 为真实墙钟分钟数。
-    recovery_delay_minutes: float = Field(default=5.0, ge=0.0)
-    recovery_tau_minutes: float = Field(default=34.0, gt=0.0)
+    recovery_delay_minutes: float = Field(default=5.0, ge=0.0, description='scheduler_idle.recovery_delay_minutes_help')
+    recovery_tau_minutes: float = Field(default=34.0, gt=0.0, description='scheduler_idle.recovery_tau_minutes_help')
 
 
 class FatigueConfig(BaseModel):

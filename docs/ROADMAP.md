@@ -94,6 +94,18 @@
 
 ## 当前任务
 
+### master L1/L2 交互改造整合（2026-09-22，集成分支 `zoombies-account-rotation-dailytask/synevo-l1l2-integration`，见 `docs/AI_CONTEXT.md` §4.72 / §4.73）
+
+- **状态**：Level A/B **已完成并提交到集成分支**（`unittest discover -s tests` = Ran 1901 / failures 0 / errors 0 / skipped 1；静态守卫 `ok = True`）。
+  未 push、未合并回正式 synevo。Level C **待验**（未启动 MuMu / 游戏 / 真实 OCR，reaction 区间仍 PROVISIONAL）。
+- **三个直接点击入口已按用户决策收口**：`MultiAccountEvo._detect_select` / `check_then_accept` 只换执行入口迁入 L1（不加 policy / reaction）；
+  `SwitchAccount._click_bounds` 保留原实现，在 `dev_tools/click_entry_guard.BUSINESS_EXEMPTIONS` 登记唯一一条精确豁免。
+- **GeneralRoom 已恢复 synevo 原有落点语义**（`randint(±5)`，经 `FinalPoint` 交 L1）。
+- **仍待用户决定**：`INVENTORY` 增补的 1 行 synevo 独有 EvoZone 收尾点是否纳入正式人工审计口径；Kekkai / ReplaceShikigami 两块业务改造是否单独排期。
+- **下一步（Level C）**：真机验证 L1 落点与 L2 反应节奏对 synevo 独有流程（账号轮换 / 多账号觉醒 / 组队邀请 / 结算）的影响；标定 PROVISIONAL reaction 区间。
+- **本轮不做**：L2 暂缓的 13 个调用点（Duel ×2 / SixRealms 商店 ×4 / GeneralInvite 接受 ×5 / GeneralBattle 准备弹窗 ×2）、Chess 拖拽、AbyssShadows 摇杆、结界蹭卡业务、list_find 与 RyouToppa 滑动、TouchSwipeModel 调参。
+
+
 **当前阶段（2026-09-14 更新）：synevo 分支 Level C 真机测试准备——不接新功能。**
 
 `integration/custom-oas`（7f244a8c）已分别合入 `master`（merge `a5e2d7e6`）与测试分支

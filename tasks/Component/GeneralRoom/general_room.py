@@ -6,6 +6,7 @@ import random
 
 from random import randint
 
+from module.click_pipeline import FinalPoint, execute_single_click
 from tasks.Component.GeneralRoom.assets import GeneralRoomAssets
 from module.atom.ocr import RuleOcr
 from module.atom.image import RuleImage
@@ -158,6 +159,9 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 break
             if click_timer.reached():
                 click_timer.reset()
-                self.device.click(x=pos[0] + randint(-5, 5), y=pos[1] + randint(-5, 5))
+                # 保持 synevo 原有落点语义：每轮都在 list_find 命中点上现取一次 ±5 抖动，
+                # 抖动结果即最终落点，包成 FinalPoint 交给 L1，L1 不再做第二次空间采样。
+                execute_single_click(
+                    self.device, FinalPoint(pos[0] + randint(-5, 5), pos[1] + randint(-5, 5)))
 
         return True

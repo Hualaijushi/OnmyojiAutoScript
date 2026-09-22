@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from module.logger import logger
 from module.exception import TaskEnd
+from module.interaction_policy import InteractionPolicy
 from tasks.GameUi.default_pages import page_pet, page_shikigami_records
 from tasks.Orochi.config import Layer
 from tasks.Orochi.page import page_orochi
@@ -37,7 +38,8 @@ class ScriptTask(OrochiScriptTask, PetsAssets):
         if number == 0:
             # 已经投喂过了
             logger.warning('Already feed')
-            self.appear_then_click(self.I_UI_BACK_CIRCLE)
+            # L2：仅在「已经投喂过」分支才等 reaction；fresh confirm 失败则不点，后续 goto_page(page_main) 收口
+            self.appear_then_click(self.I_UI_BACK_CIRCLE, policy=InteractionPolicy.NAVIGATION)
             return
         self.ui_click(self.I_PET_FEED, self.I_PET_SKIP)
         self.ui_click_until_disappear(self.I_PET_SKIP)

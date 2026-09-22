@@ -232,3 +232,17 @@
  → 再次 git diff --check
  → 输出报告（含固定的「## 文档同步」段）
 ```
+
+## L1 / L2 整合后的验证基线（2026-09-22，集成分支 `zoombies-account-rotation-dailytask/synevo-l1l2-integration`）
+
+- **基线（2026-09-22 收尾后）**：`toolkit\python.exe -m compileall -q module tasks tests dev_tools` 通过；
+  `toolkit\python.exe -m unittest discover -s tests` = **Ran 1901，failures 0 / errors 0 / skipped 1，退出码 0**；静态守卫 `check_repo().ok = True`；`git diff --check` 干净。
+  唯一跳过项 `test_config_model_script_task.RealLocalConfigTest` 是因为集成 worktree 里没有真实账号配置，属预期（不要为了跑它去放真实配置）。
+  注意：本分支的测试总数与 master（1996）不同 —— 本分支未迁移结界蹭卡 / ReplaceShikigami 两块业务及其 5 个测试文件，也未迁移 `test_l1_l2_integration.py` 的调度一节。
+- **守卫豁免的写法要求**：业务豁免只能由用户决定新增，登记在 `dev_tools/click_entry_guard.BUSINESS_EXEMPTIONS`，精确到（文件, 函数, 调用形式, 次数）；
+  `tests/test_l1_stage3b_global_guard.py` 的 `SwitchAccountExemptionTest` 反向验证豁免的精确性（同函数多一处裸点击→违规、别的函数裸点击→违规、原调用点消失→过期）。
+  **不得**用扩大白名单 / 放宽断言 / 删除守卫的方式消除守卫红灯。
+- **登记册一致性**：改动点击调用点后必须在**本分支**重新执行 `toolkit\python.exe -m dev_tools.click_callsite_register --write`，不能沿用 master 生成的 `docs/L2_CALLSITE_REGISTER.md`；
+  `tests/test_l2_c0_registry.py` 与 `tests/test_l1_l2_integration.py` 里的统计断言钉的是本分支真实数字（1127 / human 180 / c0 17 / rule 930 / L1 执行器 47 / raw (4, 0, 1)）。
+- **测试夹具适配**：`_LoginFake` 需要提供 synevo 登录流程的 `skip_specific_server` 与 `_try_click_enter_game`；这类替身补齐属夹具适配，断言本身不变。
+- **回归范围**：改 L1/L2 公共层后至少跑 `test_l1_*`、`test_l2_*`、`test_general_battle_*`、`test_fire_*`、`test_second_batch_fire_fsm`、`test_reaction_timing_batch1`，以及 synevo 独有业务的 AccountRotation / MultiAccountEvo / DailyTrifles 相关测试。

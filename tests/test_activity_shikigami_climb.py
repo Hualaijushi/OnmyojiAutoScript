@@ -24,6 +24,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from module.atom.image import RuleImage
+from tasks.Component.config_fire_reaction import FireReactionConfig
 from module.reaction_profile import REACTION_FIRE, REACTION_NAVIGATION
 from tasks.ActivityShikigami import page as as_page
 from tasks.ActivityShikigami.activities import normal as normal_mod
@@ -103,7 +104,7 @@ class EntrySourceTest(TestCase):
         i_old = src.index('I_MAIN_GOTO_ACT,')
         self.assertLess(i_new, i_old)
         # 有 navigation reaction（fresh 二次确认再点）
-        self.assertIn('confirm_delay=REACTION_NAVIGATION', src)
+        self.assertIn('policy=InteractionPolicy.NAVIGATION', src)
 
     def test_page_main_edge_uses_callable_not_bare_legacy_image(self):
         src = _src(as_page)
@@ -391,6 +392,7 @@ class EnterClimbBattleTest(TestCase):
         t = ScriptTask.__new__(ScriptTask)
         events = []
         t.device = SimpleNamespace(image='F', click_record_clear=Mock())
+        t.conf = SimpleNamespace(fire_reaction=FireReactionConfig())
         t.screenshot = Mock(side_effect=lambda: events.append('screenshot'))
         t.I_ACT_FIRE = _img('I_ACT_FIRE')
         t.I_AS_BOSS_FIRE = _img('I_AS_BOSS_FIRE')
@@ -454,7 +456,7 @@ class EnterClimbBattleTest(TestCase):
         src = _src(NormalClimbAct._enter_climb_battle)
         self.assertIn('Timer(ACTIVITY_FIRE_TIMEOUT)', src)
         self.assertIn('range(1, ACTIVITY_FIRE_MAX_TRIES + 1)', src)
-        self.assertIn('random_delay(*REACTION_FIRE)', src)
+        self.assertIn('random_delay(*fire_reaction_range(self.conf.fire_reaction))', src)
         self.assertEqual((ACTIVITY_FIRE_MAX_TRIES, ACTIVITY_FIRE_TIMEOUT,
                           ACTIVITY_FIRE_POST_CLICK_TIMEOUT), (4, 12, 4))
 

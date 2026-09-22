@@ -24,7 +24,7 @@ from module.base.utils.random import random_delay
 from module.atom.image_grid import ImageGrid
 from module.atom.image import RuleImage
 from module.atom.click import RuleClick
-from module.reaction_profile import REACTION_FAST, REACTION_NORMAL, REACTION_CONFIRM, REACTION_FIRE
+from module.interaction_policy import InteractionPolicy, fire_reaction_range
 
 
 # fire() 的有限 attempt / 总超时 / 点击后正向确认等待。engineering baseline，非 Level C 标定：
@@ -35,7 +35,7 @@ RR_FIRE_TIMEOUT = 10
 RR_FIRE_POST_CLICK_TIMEOUT = 3
 
 # 目标级业务 pacing —— 已根据 fresh 九宫格确定本轮目标后、真正点开该目标详情前的人为停顿。
-# 与 FIRE reaction（REACTION_FIRE，在 fire() 里）是两个不同 timing owner，不合并；只在每个新
+# 与 FIRE reaction（任务配置 fire_reaction，在 fire() 里）是两个不同 timing owner，不合并；只在每个新
 # 选定目标点开详情前发生一次，不进 FIRE retry / post-click polling / 再次挑战 / battle /
 # settlement / refresh。PROVISIONAL / Level C：RealmRaid 本轮首次引入自己的目标 pacing，取
 # (1.0, 2.5)（RyouToppa 的区域 (1.0, 3.0) pacing 属 RyouToppa，与此无关、未动）。
@@ -50,7 +50,7 @@ RR_EXIT_FOUR_SURRENDERS = 4
 RR_AGAIN_MAX_TRIES = 4
 RR_AGAIN_TIMEOUT = 10
 RR_AGAIN_POST_CLICK_TIMEOUT = 3
-# 退四「再次挑战」后的确认弹窗：确认按钮独立 reaction，不复用 I_FIRE_AGAIN 的 REACTION_FIRE。
+# 退四「再次挑战」后的确认弹窗：确认按钮独立 reaction，不复用 I_FIRE_AGAIN 的 FIRE reaction。
 RR_AGAIN_CONFIRM_DELAY = (0.3, 0.6)
 
 # 疲劳安全节点前「确认已回到个人突破稳定九宫格」的有界等待（刷新 / 结算动画收尾）。
@@ -259,9 +259,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             while 1:
                 self.screenshot()
                 # 锁定 / 解锁是低频、含义明确的稳定按钮，识别后加一段 FAST reaction 再点
-                if self.appear_then_click(self.I_UNLOCK, interval=1, confirm_delay=REACTION_FAST):
+                if self.appear_then_click(self.I_UNLOCK, interval=1, policy=InteractionPolicy.FAST):
                     continue
-                if self.appear_then_click(self.I_UNLOCK_2, interval=1, confirm_delay=REACTION_FAST):
+                if self.appear_then_click(self.I_UNLOCK_2, interval=1, policy=InteractionPolicy.FAST):
                     continue
                 if self.appear(self.I_LOCK_2, threshold=0.9):
                     break
@@ -271,9 +271,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         else:
             while 1:
                 self.screenshot()
-                if self.appear_then_click(self.I_LOCK, interval=1, confirm_delay=REACTION_FAST):
+                if self.appear_then_click(self.I_LOCK, interval=1, policy=InteractionPolicy.FAST):
                     continue
-                if self.appear_then_click(self.I_LOCK_2, interval=1, confirm_delay=REACTION_FAST):
+                if self.appear_then_click(self.I_LOCK_2, interval=1, policy=InteractionPolicy.FAST):
                     continue
                 if self.appear(self.I_UNLOCK_2, threshold=0.9):
                     break
@@ -558,14 +558,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             if self.appear(self.I_FRESH_ENSURE):
                 break
             # 刷新动作本体：稳定按钮，NORMAL reaction
-            if self.appear_then_click(self.I_FRESH, interval=1, confirm_delay=REACTION_NORMAL):
+            if self.appear_then_click(self.I_FRESH, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
         while 1:
             self.screenshot()
             if not self.appear(self.I_FRESH_ENSURE):
                 return True
             # 刷新确认弹窗：明确确认，CONFIRM reaction
-            if self.appear_then_click(self.I_FRESH_ENSURE, interval=1, confirm_delay=REACTION_CONFIRM):
+            if self.appear_then_click(self.I_FRESH_ENSURE, interval=1, policy=InteractionPolicy.CONFIRM):
                 continue
         return False
 
@@ -577,7 +577,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         不再以「目标详情页旧标识 `I_RR_PERSON` 消失」单独判成功（旧标识可能因页面切换中 /
         暂时识别失败 / 弹窗遮挡而消失，此时并未真正进入战斗）。
 
-        每次真正点 `I_FIRE` 之前：独立采样 `REACTION_FIRE` 作为人为 reaction → `sleep` →
+        每次真正点 `I_FIRE` 之前：独立采样任务 FIRE reaction（`fire_reaction_range`）作为人为 reaction → `sleep` →
         重新截图 → 再次正向战斗确认 → 二次确认 `I_FIRE` 仍存在 → 仍存在才点。
         reaction 期间 `I_FIRE` 消失则不点旧坐标，回到循环顶按当前页面重新判断。
 
@@ -621,7 +621,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 # state == 'timeout'（一直是 transition / unknown）→ 不点任何坐标
                 continue
             # FIRE 就绪 → 每次 attempt 独立采样 reaction → fresh screenshot → 二次确认 → click
-            fire_delay = random_delay(*REACTION_FIRE)
+            fire_delay = random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))
             logger.info(f'Fire {order}: attempt {attempt}, reaction {fire_delay:.2f}s')
             sleep(fire_delay)
             self.screenshot()
@@ -704,7 +704,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         `_is_active_battle_entry()`（准备 / 战斗进行页），**不用**含 result / reward marker 的
         `is_in_battle()`——失败结果页 `I_FALSE` 命中会让 `is_in_battle()` 恒 True，把「仍在失败
         结果页」误判成「已进入下一场战斗」。不再以「`I_FIRE_AGAIN` 消失」单独判成功；每次真实
-        attempt 独立采样 `REACTION_FIRE` → `sleep` → fresh screenshot → 二次确认「再次挑战」仍在
+        attempt 独立采样任务 FIRE reaction → `sleep` → fresh screenshot → 二次确认「再次挑战」仍在
         → 点击；post-click 走 `_wait_again_entered_battle()` 三态（battle / failure_page /
         transition-unknown）。有限 `RR_AGAIN_MAX_TRIES` + 有限 `Timer(RR_AGAIN_TIMEOUT)`，用尽
         仍未进入战斗返回 False（由 `run()` 退四路径改走刷新）。
@@ -747,7 +747,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 # 'failure_page'（仍在失败页，下一 attempt 顶端会点）/ 'timeout'（过渡 / 未知，不点）
                 continue
             # 「再次挑战」就绪 → 每 attempt 独立 reaction → fresh screenshot → 二次确认 → click
-            again_delay = random_delay(*REACTION_FIRE)
+            again_delay = random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))
             logger.info(f'Fire again: attempt {attempt}, reaction {again_delay:.2f}s')
             sleep(again_delay)
             self.screenshot()

@@ -5,6 +5,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.click_sampler import ClickSampler
 from module.exception import RequestHumanTakeover, TaskEnd
 from module.logger import logger
@@ -104,7 +105,8 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             # 整框均匀 `_random_point_in_area` 迁到统一 preferred 热点模型（未登记 →
             # RULE_FALLBACK），不再保留两套点位实现。
             click_x, click_y = ClickSampler.sample_target(select_area, rule.name)
-            self.device.click(x=click_x, y=click_y, control_name=rule.name)
+            # 落点已由 ClickSampler 采样完毕，交给 L1 时必须包成 FinalPoint（零二次采样）。
+            execute_single_click(self.device, FinalPoint(click_x, click_y), control_name=rule.name)
             if self._wait_selected_appear(pre_cnt):
                 return True
         logger.warning('Find friend [redacted] but failed to select')
@@ -133,7 +135,9 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                 continue
             if self.appear(self.I_I_ACCEPT):
                 x, y, width, height = self.I_I_ACCEPT.roi_front
-                self.device.click(x=x + width // 2, y=y + height // 2)
+                # 本任务接受邀请事务暂缓 L2 改造（与 GeneralInvite 五个点位同一决定），
+                # 这里只把执行入口收口到 L1：固定中心点仍是最终落点，不加 policy / reaction。
+                execute_single_click(self.device, FinalPoint(x + width // 2, y + height // 2))
                 time.sleep(1)
 
     @staticmethod

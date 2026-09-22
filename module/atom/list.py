@@ -9,7 +9,7 @@ import numpy as np
 from random import randint
 
 from module.ocr.common import BoxedResult
-from module.atom.ocr import RuleOcr
+from module.atom.ocr import RuleOcr, _normalize_ocr_click_area
 from module.atom.image import RuleImage
 from module.image.rpc import get_image_client
 from module.logger import logger
@@ -43,6 +43,9 @@ class RuleList:
         self.is_bottom = False  # 表示是否已经滑动到底部了
         self._target = None  # 目标
         self.targets = {}  # 目标列表 只是针对image
+        # 最近一次文字命中：((中心 x, 中心 y), 屏幕整数 OCR 框)。只供 L1 在框内采样点击
+        # （click_pipeline.list_click_target），不参与查找 / 滑动逻辑，返回值契约不变。
+        self.last_ocr_hit = None
 
     @property
     def name(self):
@@ -179,6 +182,7 @@ class RuleList:
         """
         if self.is_image:
             return False
+        self.last_ocr_hit = None
         self.target_check(name)
 
         # 开始一次ocr的检测
@@ -199,6 +203,10 @@ class RuleList:
             rec_x, rec_y, rec_w, rec_h = box[0, 0], box[0, 1], box[1, 0] - box[0, 0], box[2, 1] - box[0, 1]
             x = rec_x + rec_w // 2 + self.roi_back[0]
             y = rec_y + rec_h // 2 + self.roi_back[1]
+            self.last_ocr_hit = (
+                (int(x), int(y)),
+                _normalize_ocr_click_area((rec_x + self.roi_back[0], rec_y + self.roi_back[1], rec_w, rec_h)),
+            )
             logger.info(f'Ocr {name} appear in current screen, do not need to scroll')
             return x, y
 

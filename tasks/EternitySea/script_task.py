@@ -3,6 +3,7 @@
 # github https://github.com/runhey
 from datetime import datetime, timedelta
 
+from module.click_pipeline import execute_single_click, list_click_target
 from module.exception import TaskEnd
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -23,6 +24,17 @@ from tasks.Orochi.config import UserStatus
 from module.exception import RequestHumanTakeover
 from tasks.GameUi.page import page_main, page_reward, page_soul_zones, page_shikigami_records
 from time import sleep
+from module.base.timer import Timer
+from module.base.utils.random import random_delay
+from module.interaction_policy import fire_reaction_range
+from tasks.Component.fire_battle_entry import is_battle_result_residue, is_new_battle_entry
+
+# 永生之海单人挑战 FIRE 的有限 attempt / 总超时 / 点击后确认等待。engineering baseline，非 Level C 标定：
+# 对齐 OROCHI_FIRE_* / RR_FIRE_*（4 / 10 / 3）。
+ETERNITY_SEA_FIRE_MAX_TRIES = 4
+ETERNITY_SEA_FIRE_TIMEOUT = 10
+ETERNITY_SEA_FIRE_POST_CLICK_TIMEOUT = 3
+
 
 class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, EternitySeaAssets):
     """永生之海"""
@@ -123,7 +135,7 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 continue
             # 点击挑战
             if not is_first:
-                if self.run_invite(config=self._task_config.invite_config):
+                if self.run_invite(config=self._task_config.invite_config, fire_reaction=self._task_config.fire_reaction):
                     self.run_general_battle(
                         config=self._task_config.general_battle_config,
                         exit_matcher=self.I_GI_EMOJI_1,
@@ -135,7 +147,8 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                     break
             # 第一次会邀请队友
             if is_first:
-                if not self.run_invite(config=self._task_config.invite_config, is_first=True):
+                if not self.run_invite(config=self._task_config.invite_config, is_first=True,
+                                       fire_reaction=self._task_config.fire_reaction):
                     logger.warning('Invite failed and exit this eternity_sea task')
                     success = False
                     break
@@ -199,19 +212,89 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
             if datetime.now() - self.start_time >= self._limit_time:
                 logger.info("EternitySea time limit out")
                 break
-            # 点击挑战
-            while 1:
-                self.screenshot()
-                if self.appear_then_click(self.I_ETERNITY_SEA_FIRE, interval=1):
-                    pass
-                if not self.appear(self.I_ETERNITY_SEA_FIRE):
-                    self.run_general_battle(
-                        config=self._task_config.general_battle_config,
-                        exit_matcher=self.I_ETERNITY_SEA_FIRE,
-                    )
-                    break
+            # 点击挑战：FIRE 状态机，正向确认进入准备 / 战斗页才交接 run_general_battle；
+            # 未进入战斗 → 回外层循环顶重新 screenshot + 判定挑战页
+            if self._fire_eternity_sea_alone():
+                self.run_general_battle(
+                    config=self._task_config.general_battle_config,
+                    exit_matcher=self.I_ETERNITY_SEA_FIRE,
+                )
         self.exit_room()
         return True
+
+    def _classify_eternity_sea_fire_state(self) -> str:
+        """单人挑战前后的当前帧分类，只读。优先级：battle > abnormal > ready > unknown。
+
+        `'battle'` = `is_new_battle_entry()`（准备 / 战斗页）；`'abnormal'` = 结果 / 奖励页残留；
+        `'ready'` = 永生之海挑战按钮在；其余是加载 / 过渡帧。
+        """
+        if is_new_battle_entry(self):
+            return 'battle'
+        if is_battle_result_residue(self):
+            return 'abnormal'
+        if self.appear(self.I_ETERNITY_SEA_FIRE):
+            return 'ready'
+        return 'unknown'
+
+    def _wait_eternity_sea_fire_state(self, timeout: float = ETERNITY_SEA_FIRE_POST_CLICK_TIMEOUT) -> str:
+        """点击后 / 挑战未就绪时的有界轮询，期间不点任何坐标；出现决定性状态即返回，否则 `'timeout'`。"""
+        timer = Timer(timeout).start()
+        while not timer.reached():
+            self.screenshot()
+            state = self._classify_eternity_sea_fire_state()
+            if state != 'unknown':
+                return state
+        return 'timeout'
+
+    def _fire_eternity_sea_alone(self) -> bool:
+        """单人点永生之海挑战直到**正向确认进入准备 / 战斗页**（FIRE Contract，D001 补记 FIRE 分节）。
+
+        每次 attempt：分类当前帧 → 独立采样 `eternity_sea.fire_reaction` → `sleep` → fresh screenshot →
+        重新确认挑战按钮在 → 点一次 → 有界等点击后状态。挑战按钮消失不算成功；过渡帧只等不点；
+        结果 / 奖励页残留直接返回失败。有限 `ETERNITY_SEA_FIRE_MAX_TRIES` + `Timer(ETERNITY_SEA_FIRE_TIMEOUT)`。
+
+        :return: True 已进入准备 / 战斗页；False 异常 / 有限尝试 / 总超时用尽（调用方不交接 run_general_battle）
+        """
+        timeout_timer = Timer(ETERNITY_SEA_FIRE_TIMEOUT).start()
+        for attempt in range(1, ETERNITY_SEA_FIRE_MAX_TRIES + 1):
+            if timeout_timer.reached():
+                break
+            self.screenshot()
+            state = self._classify_eternity_sea_fire_state()
+            if state == 'unknown':
+                state = self._wait_eternity_sea_fire_state()
+                if state in ('timeout', 'ready'):
+                    continue
+            if state == 'battle':
+                logger.info('EternitySea fire: entered battle')
+                return True
+            if state == 'abnormal':
+                logger.warning('EternitySea fire: result / reward page residue, not a new battle')
+                return False
+            fire_delay = random_delay(*fire_reaction_range(self._task_config.fire_reaction))
+            logger.info(f'EternitySea fire: attempt {attempt}, reaction {fire_delay:.2f}s')
+            sleep(fire_delay)
+            self.screenshot()
+            state = self._classify_eternity_sea_fire_state()
+            if state == 'battle':
+                return True
+            if state == 'abnormal':
+                logger.warning('EternitySea fire: result / reward page residue during reaction')
+                return False
+            if state != 'ready':
+                logger.info('EternitySea fire: button gone during reaction, re-evaluate')
+                continue
+            self.appear_then_click(self.I_ETERNITY_SEA_FIRE, interval=0)
+            state = self._wait_eternity_sea_fire_state()
+            if state == 'battle':
+                logger.info('EternitySea fire: entered battle after click')
+                return True
+            if state == 'abnormal':
+                logger.warning('EternitySea fire: result / reward page after click, not a new battle')
+                return False
+            # 'ready'（仍在挑战页）/ 'timeout'（一直过渡）→ 下一 attempt
+        logger.warning('EternitySea fire: bounded retry / timeout without entering battle')
+        return False
 
     def is_room_dead(self) -> bool:
         # 如果在探索界面或者是出现在组队界面，那就是可能房间死了
@@ -242,7 +325,8 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
         """
         pos = self.list_find(self.L_LAYER_LIST, layer)
         if pos:
-            self.device.click(x=pos[0], y=pos[1])
+            control_name = f'ETERNITY_SEA_LAYER_{layer}'
+            execute_single_click(self.device, list_click_target(self.L_LAYER_LIST, pos, control_name), control_name=control_name)
             return True
         return False
 

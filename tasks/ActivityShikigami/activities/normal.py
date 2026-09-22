@@ -5,7 +5,7 @@ import time
 from module.base.timer import Timer
 from module.base.utils.random import random_delay
 from module.logger import logger
-from module.reaction_profile import REACTION_FIRE
+from module.interaction_policy import fire_reaction_range
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.ActivityShikigami.base_act import ActivityResourceNotEnough
 import tasks.ActivityShikigami.page as pages
@@ -338,7 +338,7 @@ class NormalClimbAct:
         - 正向成功唯一判据 = `_is_active_battle_entry()`（准备页 / 战斗进行页窄 detector），
           **不含** result / reward / win / false / 活动结算弹窗 —— 见 `docs/DECISIONS.md`
           D001 补记「Battle Lifecycle Detector ≠ New Battle Entry Detector」。
-        - 每次真实点击前独立采样 `REACTION_FIRE`(0.4~0.8) → `sleep` → fresh screenshot →
+        - 每次真实点击前独立采样任务 FIRE reaction（`fire_reaction_range`，默认 0.4~0.8） → `sleep` → fresh screenshot →
           二次确认挑战键仍在 → 点击；reaction 期间离开 ready / 按钮消失 → 不点旧坐标。
         - 有限 attempt(`ACTIVITY_FIRE_MAX_TRIES`) + 墙钟(`ACTIVITY_FIRE_TIMEOUT`) + post-click
           三态轮询上限(`ACTIVITY_FIRE_POST_CLICK_TIMEOUT`)：fire 键一直不出现 / 页面一直
@@ -366,7 +366,7 @@ class NormalClimbAct:
                     self.appear_then_click(self.I_UI_CONFIRM, interval=1):
                 self.device.click_record_clear()
                 continue
-            fire_delay = random_delay(*REACTION_FIRE)
+            fire_delay = random_delay(*fire_reaction_range(self.conf.fire_reaction))
             logger.info(
                 f'Climb {action_type} fire: attempt {attempt}/{ACTIVITY_FIRE_MAX_TRIES}, '
                 f'reaction {fire_delay:.2f}s before click {fire_rule.name}'

@@ -6,7 +6,7 @@ import time
 from module.base.timer import Timer
 from module.exception import GamePageUnknownError
 from module.logger import logger
-from module.reaction_profile import REACTION_NAVIGATION
+from module.interaction_policy import InteractionPolicy
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.Component.RightActivity.assets import RightActivityAssets
 from tasks.GameUi.page import (
@@ -44,15 +44,15 @@ def _activity_entry_visible(task) -> bool:
 
 def goto_activity_entry(task) -> bool:
     """庭院 → 本期式神活动页的边动作。优先点当期入口图标 `main_goto_act_2`，旧图标作回退；
-    每次 delay 后 fresh 二次确认目标仍在才点（`REACTION_NAVIGATION`）。入口图标消失本身
+    每次 delay 后 fresh 二次确认目标仍在才点（`InteractionPolicy.NAVIGATION`）。入口图标消失本身
     **不**代表进入活动成功——是否真正进入仍由 `page_act` 的 positive marker 判定。"""
     if task.appear_then_click(
             ActivityShikigamiAssets.I_MAIN_GOTO_ACT_2, interval=1,
-            confirm_delay=REACTION_NAVIGATION):
+            policy=InteractionPolicy.NAVIGATION):
         return True
     return task.appear_then_click(
         ActivityShikigamiAssets.I_MAIN_GOTO_ACT, interval=1,
-        confirm_delay=REACTION_NAVIGATION)
+        policy=InteractionPolicy.NAVIGATION)
 
 
 def find_activity_entry(task) -> bool:

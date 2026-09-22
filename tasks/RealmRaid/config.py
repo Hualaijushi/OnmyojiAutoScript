@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from enum import Enum
 
 from tasks.Component.config_scheduler import Scheduler
+from tasks.Component.config_fire_reaction import FireReactionConfig
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.config_base import ConfigBase
 from tasks.Component.SwitchSoul.switch_soul_config import SwitchSoulConfig
@@ -30,6 +31,7 @@ class RealmRaid(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     raid_config: RaidConfig = Field(default_factory=RaidConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
+    fire_reaction: FireReactionConfig = Field(default_factory=FireReactionConfig)
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
 
 

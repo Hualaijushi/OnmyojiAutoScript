@@ -12,8 +12,94 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import any_of, page_main, page_shikigami_records, page_soul_zones
 from module.logger import logger
 from module.exception import TaskEnd
+from module.base.timer import Timer
+from module.base.utils.random import random_delay
+from module.interaction_policy import fire_reaction_range
+from tasks.Component.fire_battle_entry import is_battle_result_residue, is_new_battle_entry
+
+# 业原火挑战 FIRE 的有限 attempt / 总超时 / 点击后确认等待。engineering baseline，非 Level C 标定：
+# 对齐 OROCHI_FIRE_* / RR_FIRE_*（4 / 10 / 3）。
+SOUGENBI_FIRE_MAX_TRIES = 4
+SOUGENBI_FIRE_TIMEOUT = 10
+SOUGENBI_FIRE_POST_CLICK_TIMEOUT = 3
+
 
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SougenbiAssets):
+
+    def _classify_sougenbi_fire_state(self) -> str:
+        """业原火挑战前后的当前帧分类，只读。优先级：battle > abnormal > ready > unknown。
+
+        `'battle'` = `is_new_battle_entry()`（准备 / 战斗页）；`'abnormal'` = 结果 / 奖励页残留；
+        `'ready'` = 仍在业原火页（`I_S_CHECK_SOUGENBI`）且挑战按钮在；其余是加载 / 过渡帧。
+        """
+        if is_new_battle_entry(self):
+            return 'battle'
+        if is_battle_result_residue(self):
+            return 'abnormal'
+        if self.appear(self.I_S_CHECK_SOUGENBI) and self.appear(self.I_S_FIRE):
+            return 'ready'
+        return 'unknown'
+
+    def _wait_sougenbi_fire_state(self, timeout: float = SOUGENBI_FIRE_POST_CLICK_TIMEOUT) -> str:
+        """点击后 / 挑战未就绪时的有界轮询，期间不点任何坐标；出现决定性状态即返回，否则 `'timeout'`。"""
+        timer = Timer(timeout).start()
+        while not timer.reached():
+            self.screenshot()
+            state = self._classify_sougenbi_fire_state()
+            if state != 'unknown':
+                return state
+        return 'timeout'
+
+    def _fire_sougenbi(self) -> bool:
+        """点业原火挑战直到**正向确认进入准备 / 战斗页**（FIRE Contract，D001 补记 FIRE 分节）。
+
+        每次 attempt：分类当前帧 → 独立采样 `sougenbi.fire_reaction` → `sleep` → fresh screenshot →
+        重新确认仍在业原火页且挑战按钮在 → 点一次 → 有界等点击后状态。挑战按钮消失不算成功；过渡帧只等不点；
+        结果 / 奖励页残留直接返回失败。有限 `SOUGENBI_FIRE_MAX_TRIES` + `Timer(SOUGENBI_FIRE_TIMEOUT)`。
+
+        :return: True 已进入准备 / 战斗页；False 异常 / 有限尝试 / 总超时用尽（调用方不交接 run_general_battle）
+        """
+        timeout_timer = Timer(SOUGENBI_FIRE_TIMEOUT).start()
+        for attempt in range(1, SOUGENBI_FIRE_MAX_TRIES + 1):
+            if timeout_timer.reached():
+                break
+            self.screenshot()
+            state = self._classify_sougenbi_fire_state()
+            if state == 'unknown':
+                state = self._wait_sougenbi_fire_state()
+                if state in ('timeout', 'ready'):
+                    continue
+            if state == 'battle':
+                logger.info('Sougenbi fire: entered battle')
+                return True
+            if state == 'abnormal':
+                logger.warning('Sougenbi fire: result / reward page residue, not a new battle')
+                return False
+            fire_delay = random_delay(*fire_reaction_range(self.config.sougenbi.fire_reaction))
+            logger.info(f'Sougenbi fire: attempt {attempt}, reaction {fire_delay:.2f}s')
+            sleep(fire_delay)
+            self.screenshot()
+            state = self._classify_sougenbi_fire_state()
+            if state == 'battle':
+                return True
+            if state == 'abnormal':
+                logger.warning('Sougenbi fire: result / reward page residue during reaction')
+                return False
+            if state != 'ready':
+                logger.info('Sougenbi fire: left ready state during reaction, re-evaluate')
+                continue
+            self.appear_then_click(self.I_S_FIRE, interval=0)
+            state = self._wait_sougenbi_fire_state()
+            if state == 'battle':
+                logger.info('Sougenbi fire: entered battle after click')
+                return True
+            if state == 'abnormal':
+                logger.warning('Sougenbi fire: result / reward page after click, not a new battle')
+                return False
+            # 'ready'（仍在业原火页）/ 'timeout'（一直过渡）→ 下一 attempt
+        logger.warning('Sougenbi fire: bounded retry / timeout without entering battle')
+        return False
+
 
     def run(self):
         con = self.config.sougenbi
@@ -92,17 +178,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, SougenbiAssets):
             if ticket == 0:
                 break
 
-            # 点击挑战
-            while 1:
-                self.screenshot()
-                if self.appear_then_click(self.I_S_FIRE, interval=1):
-                    pass
-                if not self.appear(self.I_S_FIRE):
-                    self.run_general_battle(
-                        config=con.general_battle_config,
-                        exit_matcher=any_of(self.I_S_FIRE, self.I_S_CHECK_SOUGENBI),
-                    )
-                    break
+            # 点击挑战：FIRE 状态机，正向确认进入准备 / 战斗页才交接 run_general_battle；
+            # 未进入战斗 → 回外层循环顶重新 screenshot + 判定业原火页与票数
+            if self._fire_sougenbi():
+                self.run_general_battle(
+                    config=con.general_battle_config,
+                    exit_matcher=any_of(self.I_S_FIRE, self.I_S_CHECK_SOUGENBI),
+                )
         self.goto_page(page_main)
         if s_con.buff_enable:
             self.open_buff()

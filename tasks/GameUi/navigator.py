@@ -19,6 +19,7 @@ from module.atom.image import RuleImage
 from module.atom.list import RuleList
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.exception import GamePageUnknownError, GameNotRunningError
 from module.logger import logger
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
@@ -347,7 +348,7 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
             if interval is not None:
                 return self.click(action, interval=interval)
             x, y = action.coord()
-            self.device.click(x=x, y=y, control_name=action.name)
+            execute_single_click(self.device, FinalPoint(x, y), control_name=action.name)
             return True
         return False
 
@@ -533,12 +534,12 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
                 f"fallback click: action={self._action_name(transition.action)}, "
                 f"position=({click_x}, {click_y})"
             )
-            self.device.click(
-                x=click_x,
-                y=click_y,
-                control_name=(
-                    f"TOWN_FALLBACK_{self._action_name(transition.action)}"
-                ),
+            # L1：模板没识别到时 roi_front 只是资源里的旧图标框、不是当前帧真实边界（皮肤/动画可能
+            # 已改变图标形状），往框边采样可能点空，所以保底点刻意取中心——按 FinalPoint 原样执行。
+            execute_single_click(
+                self.device,
+                FinalPoint(click_x, click_y),
+                control_name=f"TOWN_FALLBACK_{self._action_name(transition.action)}",
             )
             action_done = True
 

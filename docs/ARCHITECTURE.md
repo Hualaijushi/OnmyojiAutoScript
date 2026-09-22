@@ -631,3 +631,23 @@ refresh 点击后但尚未确认完成 / 临时解锁尚未恢复时。
 | 点击落点分布 / preferred center | **T7-5（2026-09-04，D014 T7-5 段）：普通 Point 生产默认已从整 ROI 均匀改成 preferred 热点 + 偏移模型**。`RuleImage`/`RuleClick`/`RuleOcr`/`RuleGif`/`RuleLongClick` 的 `coord()` = `ClickSampler.sample_target(roi, rule.name)` → `module/click_preference.py` 的 `resolve_target_preference`（静态 registry；未标定 → `CENTER_FALLBACK=(0.5,0.5)`+`default_point`）→ `adapt_point_profile` → `sample(strategy=HABIT)`。registry：`area_1`（EMPIRICAL）+ 3 条 Region 兜底（`random_default`/`random_save_right`/`random_save_bottom` → `CENTER_FALLBACK`+`default_region`）。**T7-5 Stage 2（2026-09-06）新增 `ClickSampler.sample_region(roi, name)`**（Region Target：业务已选定 region 后区内取点，`default_region` profile 比 Point 宽、不做 short_side 适配）。`LEGACY_UNIFORM` 保留但**生产链上 bare `sample(roi)` 消费者 = 0**。inventory：`docs/T7_TARGET_PREFERENCE_MAP.md`。以下能力早已落地：`HABIT`（三成分 mixture + Safe ROI rejection，非 clamp fallback）/ `STRICT`（窄 profile 无 tail）/ `UNIFORM`（Safe ROI 内均匀）+ `module/click_profile.py` 的 `ClickProfile`（frozen，ROI 相对）/ `ClickProfileManager` / `DEFAULT_PROFILES` 已实现。`module/click_profile.py` 的 **`adapt_point_profile(base, roi)` + `point_size_factor`**（T7-2 / T7-4）：Point Target 的语义基础 profile 按运行时 `short_side=min(w,h)` 用**同一个** smoothstep `size_factor`（锚点 24/96）连续适配三件事——`preferred`（→ 中心）、`core/medium sigma`（→ `tiny` 的 σ 锚点 `POINT_MIN_*_SIGMA_*`）、`tail_weight`（→ 0，削掉的回补 `core_weight`）；`safe_margin` / `max_attempts` / `provisional` / `name` 原样透传（`safe_margin` 不随尺寸变——Safe ROI 是硬边界，职责独立），`f=1` 逐字段恢复 base。取代离散尺寸分类——纯计算。**`ClickSampler.sample_point(roi, base_profile)`**（T7-3.2）= `adapt_point_profile` + `sample(strategy=HABIT)` 的薄组合入口（放 `ClickSampler`，**不进 `BaseTask`**——god class 约束）。**非 LEGACY 生产 opt-in（都是逐调用点显式）**：**唯一一个** = `RyouToppa.C_AREA_1`（`HABIT` + `wide_card`，经 `ClickSampler.sample_point` + `RyouToppa.ScriptTask._click_toppa_area` 的 `rule is self.C_AREA_1` 身份守卫，T7-3.2）。GeneralBattle 结算曾是 opt-in ②（Contract v2 `HABIT` + `_SETTLEMENT_PRIMARY_PROFILE`），Contract V3（D016）三个 Large Safe Region 经 `_sample_settlement_click`（**不经 `coord()`**）；**T7-5 Stage 2 起走 `ClickSampler.sample_region`**（中心偏置、非整区均匀；region 选择 marker/80-20 + Generic Result 两次点击 policy 不变）。**T7-5 起 `C_AREA_2..8` 与其它所有 `Rule*.coord()` 默认路径 = `sample_target` = `HABIT` + `CENTER_FALLBACK`**（不再 `LEGACY_UNIFORM`）；`RyouToppa._click_toppa_area` 对 `C_AREA_1` 的显式 `sample_point(wide_card)` 与 registry `area_1` 等价、保留未改。**不放** `RuleClick` / `Control` / minitouch。人工样本由 `dev_tools/manual_click_recorder.py` 采集、`manual_click_analyze.py` 分析、`runtime_roi_probe.py` 采资产运行时 ROI | `docs/ROADMAP.md` T7-1；`docs/DECISIONS.md` D014 / D002；`docs/AI_CONTEXT.md` §4.24 / §4.25 / §4.28 / §4.29 / §4.31 / §4.32 |
 
 **不要**把上述能力塞进 `Control` / `screenshot.py` / `Timer` / `minitouch`——这些是稳定性基础层，见 `docs/DECISIONS.md` D002。（`Minitouch.swipe_minitouch_trajectory` 是例外中的合规做法：它只是「把点列表发给 minitouch」的薄执行层，轨迹**形状与时间**全在 `TouchSwipeModel`，minitouch 侧不含任何策略 / 拟人逻辑，见 D018。）
+
+## L1 / L2 交互分层（2026-09-22 由 master 整合进本分支，集成分支 `zoombies-account-rotation-dailytask/synevo-l1l2-integration`）
+
+本分支在整合前没有 L1 执行器与 L2 反应层（`module/click_pipeline.py`、`module/interaction_policy.py` 都不存在），
+`ClickSampler` / `ClickProfile` / `reaction_profile` / `TouchSwipeModel` / `FrameWait` / `BehaviorTrace` / minitouch 拟人化按压则早已与 master 逐字节相同。整合后的合法调用图：
+
+```
+单击：任务 / BaseTask / 业务组件 → execute_single_click → Control.click / click_with_backend → 设备后端
+长按：任务 / BaseTask / 业务组件 → execute_long_click   → Control.long_click                → 设备后端
+L2 ：目标已识别 → InteractionPolicy → reaction 采样一次 → sleep → fresh screenshot → 同目标二次确认 → 新帧坐标 → L1
+FIRE：battle-entry 状态机自己拥有 reaction（fire_reaction_range + 任务级 fire_reaction 配置），不走通用 policy
+```
+
+- 坐标语义由 `FinalPoint` / `ClickBounds` / `ClickRegion` / `Rule*` 显式声明，一次动作只采样一次最终落点；`Control` 层不做空间抖动。
+- 滑动 / 拖动 / 连续触摸手势不属于 L1 单击 / 长按范围（Chess `press_and_drag`、`TouchSwipeModel` 保持原状）。
+- 静态守卫 `dev_tools/click_entry_guard.py` 默认禁止生产直接点击 / 长按，白名单分两张表：`_INTERNAL_EXITS` 是架构内部出口（执行器 3 / Control 后端注册表 13 / 后端实现 3 / 演示 2 / 死代码 1），
+  `BUSINESS_EXEMPTIONS` 是用户明确决定保留原实现的业务点击豁免（层名 `exempt`）。两张表同样精确到（文件, 函数, 调用形式, 次数），并同样做过期检测。
+  **本分支现状（2026-09-22 收尾后）**：守卫 `ok = True`；MultiAccountEvo 的 `_detect_select` / `check_then_accept` 已接入 L1，生产侧只剩 SwitchAccount `_click_bounds` 一条精确豁免——
+  它是 synevo 原有账号切换的原生控件点击，按用户决定保留原实现，不接 L1 / L2。
+- synevo 独有业务的时序所有权不变：Settlement v1.2 归 GeneralBattle 自己的 session 状态机；账号轮换 / 多账号觉醒的节奏归 `module/multi_account/*` 与 `run_embedded`；两者都不接普通 policy。

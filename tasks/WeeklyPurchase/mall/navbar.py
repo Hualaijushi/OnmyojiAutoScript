@@ -7,6 +7,7 @@ import time
 from module.atom.click import RuleClick
 from module.atom.image import RuleImage
 from module.base.timer import Timer
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.logger import logger
 
 from tasks.GameUi.page import page_main, page_guild
@@ -73,7 +74,8 @@ class MallNavbar(GameUi, WeeklyPurchaseAssets):
             if self.appear(check_rule):
                 return True
             if not interval_timer.started() or interval_timer.reached():
-                self.device.click(x=pos[0], y=pos[1], control_name=control_name)
+                # L1 执行入口：`pos` 是 `list_find` 已采样的最终坐标，以 FinalPoint 原样点击，不重新识别 / 采样
+                execute_single_click(self.device, FinalPoint(pos[0], pos[1]), control_name=control_name)
                 max_click_cnt -= 1
                 interval_timer.reset()
         return False

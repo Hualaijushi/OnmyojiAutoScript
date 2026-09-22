@@ -11,6 +11,7 @@ import numpy as np
 
 from module.atom.click import RuleClick
 from module.atom.image import RuleImage
+from module.click_pipeline import ClickBounds, execute_single_click
 from module.exception import GameStuckError
 from module.logger import logger
 from tasks.Chess.runtime.board_positions import SET_JADE_AREAS, SET_POSITIONS
@@ -999,6 +1000,8 @@ class ChessHandOperationsMixin:
                     roi_x + (left + right) // 2,
                     roi_y + (top + bottom) // 2,
                 ),
+                # 卡名 OCR 框（屏幕坐标），供点击时在框内采样；position 仍用于排序与日志。
+                'bounds': (roi_x + left, roi_y + top, right - left, bottom - top),
             })
         return sorted(cards, key=lambda item: item['position'][0])
 
@@ -1051,10 +1054,10 @@ class ChessHandOperationsMixin:
                 f'similarity={card["similarity"]:.3f}, '
                 f'position={card["position"]}'
             )
-            self.device.click(
-                x=card['position'][0],
-                y=card['position'][1],
-                control_name='CHESS_DISCOVER_CARD',
+            # 原来直点卡名 OCR 框中心；卡名框就是可点的手牌区域 → 框内统一采样一次。
+            execute_single_click(
+                self.device,
+                ClickBounds(card['bounds'], 'CHESS_DISCOVER_CARD'),
             )
 
             use_deadline = time.monotonic() + self.DISCOVER_SOUL_UI_TIMEOUT

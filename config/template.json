@@ -240,6 +240,10 @@
       "enable_switch_by_name": false,
       "group_name": "",
       "team_name": ""
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "ryou_toppa": {
@@ -282,6 +286,10 @@
       "enable_switch_by_name": false,
       "group_name": "",
       "team_name": ""
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "kekkai_utilize": {
@@ -293,7 +301,9 @@
       "failure_interval": "00 06:00:00",
       "server_update": "09:00:00",
       "delay_date": 1,
-      "float_time": "00:00:00"
+      "float_time": "00:00:00",
+      "success_jitter_min": 0,
+      "success_jitter_max": 0
     },
     "utilize_config": {
       "utilize_rule": "default",
@@ -695,6 +705,10 @@
       "eleven_switch": "-1,-1",
       "twelve_switch": "-1,-1",
       "thirteen_switch": "-1,-1"
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "orochi_moans": {
@@ -751,6 +765,10 @@
       "enable_switch_by_name": false,
       "group_name": "",
       "team_name": ""
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "fallen_sun": {
@@ -797,6 +815,10 @@
       "enable_switch_by_name": false,
       "group_name": "",
       "team_name": ""
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "eternity_sea": {
@@ -850,6 +872,10 @@
       "enable_switch_by_name": false,
       "group_name": "",
       "team_name": ""
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "six_realms": {
@@ -1066,6 +1092,10 @@
       "continuous_battle": false,
       "max_continuous": 0,
       "quick_exit": false
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "martial_arts": {
@@ -1392,6 +1422,10 @@
       "enable_switch_by_name": false,
       "group_name": "",
       "team_name": ""
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "account_rotation": {

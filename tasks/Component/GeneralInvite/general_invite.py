@@ -8,11 +8,12 @@ from enum import Enum
 from cached_property import cached_property
 from datetime import timedelta, time
 from module.atom.image import RuleImage
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.click_sampler import ClickSampler
 
 from module.base.timer import Timer
 from module.base.utils.random import random_delay
-from module.reaction_profile import REACTION_FIRE
+from module.interaction_policy import InteractionPolicy, fire_reaction_range
 from tasks.GameUi.assets import GameUiAssets
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralInvite.assets import GeneralInviteAssets
@@ -59,13 +60,14 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
     invite_retry_seconds_first: float = 20.0
     invite_retry_seconds: float = 30.0
 
-    def run_invite(self, config: InviteConfig, is_first: bool = False) -> bool:
+    def run_invite(self, config: InviteConfig, is_first: bool = False, fire_reaction=None) -> bool:
         """
         队长！！身份。。。在组队界面邀请好友（ 如果开启is_first） 等待队员进入开启挑战
         请注意，返回的时候成功时是进入战斗了！！！
         如果是失败，那就是没有队友进入，然后会退出房间的界面
         :param config:
         :param is_first: 如果是第一次开房间的那就要邀请队员，其他情况等待队员进入
+        :param fire_reaction: 当前任务的 FIRE reaction 配置组（没有则用公共默认），原样交给 click_fire
         :return:
         """
         if not self.ensure_enter():
@@ -104,7 +106,7 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
 
             # 点击挑战
             if self.room_check_can_fire(config):
-                fire_result = self.click_fire()
+                fire_result = self.click_fire(fire_reaction=fire_reaction)
                 if fire_result == 'battle':
                     return True
                 # room_failed / timeout：不把「旧房间状态消失」当成功，返回 False 让 caller
@@ -325,7 +327,7 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 return state
         return 'timeout'
 
-    def click_fire(self) -> str:
+    def click_fire(self, fire_reaction=None) -> str:
         """房间内点击「挑战 / 开始战斗」的 **bounded battle-entry transaction**（组队进入战斗的公共 owner）。
 
         返回值（`str`，测试锁全部取值）：
@@ -339,7 +341,8 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
         failure marker 时归 UNKNOWN，有界 polling 等决定性状态，不点任何坐标。
 
         RETRYABLE_ROOM 下识别 `I_FIRE`（优先）/ `I_FIRE_SEA` → 每 attempt 独立
-        `random_delay(*REACTION_FIRE)`（0.4~0.8s，与 RealmRaid / Orochi / EvoZone 同一 profile）
+        `random_delay(*fire_reaction_range(fire_reaction))`（调用方沿配置传入的任务 FIRE override；
+        未传 = 公共默认 0.4~0.8s）
         → `sleep` → fresh `screenshot` → 重新分类 + 二次确认挑战按钮仍在 → `appear_then_click(...,
         interval=1, threshold=0.7)`。reaction 期间离开 retryable / 按钮消失 → 不点旧坐标。
 
@@ -384,7 +387,7 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 if state == 'room_failed':
                     return 'room_failed'
                 continue
-            fire_delay = random_delay(*REACTION_FIRE)
+            fire_delay = random_delay(*fire_reaction_range(fire_reaction))
             logger.info(f'Room challenge: attempt {attempt}, reaction {fire_delay:.2f}s before click {target.name}')
             sleep(fire_delay)
             self.screenshot()
@@ -589,7 +592,7 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             # T7-5 Stage 2：匹配到的好友名 OCR bbox 是安全点击 ROI，从任务私有整框均匀
             # `_random_point_in_area` 迁到统一 preferred 模型（未登记 → RULE_FALLBACK）。
             click_x, click_y = ClickSampler.sample_target(select_area, rule.name)
-            self.device.click(x=click_x, y=click_y, control_name=rule.name)
+            execute_single_click(self.device, FinalPoint(click_x, click_y), control_name=rule.name)
             if self._wait_selected_appear(pre_cnt):
                 return True
         logger.warning(f'Find friend "{name}" but failed to select')
@@ -622,10 +625,11 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             if self.appear(self.I_LOAD_FRIEND) or self.appear(self.I_INVITE_ENSURE):
                 return True
             if not click_timer.started() or click_timer.reached():
-                clicked = self.appear_then_click(self.I_ADD_1) or \
-                    self.appear_then_click(self.I_ADD_2) or \
-                    self.appear_then_click(self.I_ADD_5_4) or \
-                    self.appear_then_click(self.I_ADD_SEA)
+                # 房间「+」加人位：稳定可见的普通按钮，NORMAL reaction + fresh confirm（位子已被占则不点）。
+                clicked = self.appear_then_click(self.I_ADD_1, policy=InteractionPolicy.NORMAL) or \
+                    self.appear_then_click(self.I_ADD_2, policy=InteractionPolicy.NORMAL) or \
+                    self.appear_then_click(self.I_ADD_5_4, policy=InteractionPolicy.NORMAL) or \
+                    self.appear_then_click(self.I_ADD_SEA, policy=InteractionPolicy.NORMAL)
                 click_timer.reset()
                 if clicked:
                     no_click_timeout.reset()

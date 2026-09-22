@@ -1798,3 +1798,29 @@ Level C 状态：v1.1 = **FAIL**；v1.2 = **Level A/B PASS，Level C RE-TEST PEN
 验证：`budget=2` 不再卡 Reward；Reward 能跨 segment 继续；semantic terminal 后无残留点击；永久
 Reward 不会无限 renew；普通按钮仍单击；FIRE/MultiAccountEvo/EvoZone 组队完全不受影响；并观察
 总安全帽 9 是否过紧或过松。未有新证据前不改 2/3/4 权重、0.10~0.30s 或 anchor keep 概率。
+
+## D-SYNEVO-L1L2 —— master L1/L2 交互改造整合进 synevo 的取舍（2026-09-22）
+
+集成分支 `zoombies-account-rotation-dailytask/synevo-l1l2-integration`。本条只记录整合本身的决定，不改变 master 已有的 L1/L2 设计决策（D001 / D014 / D025 / D026 等仍是同一套契约）。
+
+- **业务基线以 synevo 为准，L1/L2 只叠加执行层**：所有双方都改过的文件走三方合并（base=共同祖先 / ours=synevo / theirs=master WIP），
+  禁止整文件覆盖。GeneralBattle 的 Settlement v1.2、GeneralInvite 的可配置重试、GeneralRoom 的 10 秒等待、Navigator 的狩猎 8 秒超时、EvoZone 的 `run_embedded` / `active_evo_zone`、Login / DailyTrifles 的轮换业务全部按 synevo 原样保留。
+- **EvoZone 的配置源与 FIRE 形态分开处理**：业务配置一律读 `active_evo_zone`（嵌入式运行按当前账号生效配置）；FIRE reaction 区间统一用 `self.config.evo_zone.fire_reaction`，
+  与其它 FIRE 任务同一形态并被源码形态守卫锁定。`_embedded_evo_zone` 是 `config.evo_zone` 的深拷贝且不覆写 `fire_reaction`，两条路径取值相同。若将来 MultiAccountEvo 需要按账号覆写 FIRE 区间，再一并改动源与守卫。
+- **FIRE 配置透传向后兼容**：`click_fire(fire_reaction=None)` / `run_invite(fire_reaction=None)` 默认 `None` = 公共默认区间，synevo 现有调用方不传参时行为不变；一次点击只有一处 `random_delay`，不叠加第二次延迟。
+- **用户排除范围不迁移**：结界蹭卡业务（重试调度 / 收敛守卫 / 成功抖动）、ReplaceShikigami 分类切换有界化、Chess 拖拽、AbyssShadows 摇杆、list_find 与 RyouToppa 滑动、TouchSwipeModel 参数、L2 暂缓的 13 个调用点。
+  这些模块只允许迁「点击执行入口」这一层（Kekkai 即按此处理，只改 `switch_friend_list` 的一行执行入口）。
+- **静态守卫红灯不得用白名单掩盖**：本分支发现 3 个 synevo 独有轮换业务的直接点击未纳入 L1，按用户要求**不扩大 `ALLOWED_EXITS`、不批量改业务**，
+  保留守卫失败作为阻断信号，并在 AI_CONTEXT / ROADMAP / DEVELOP_LOG 逐点记录。判断：不阻断 L1/L2 能力本身（所有已迁路径均可用），但阻断「全仓零旁路」这一验收口径。
+- **统计口径按本分支重算**：登记册必须在本分支重新生成（1127 点，非 master 的 1092）；测试里的统计断言改为本分支真实数字并写明来源，
+  不复制 master 数字、也不放宽断言。`INVENTORY` 为 synevo 独有的 EvoZone 收尾调用点增补 1 行（按既有 R7/R4 规则归 KEEP_IMMEDIATE，运行时零改动），待用户确认是否纳入正式人工审计口径。
+
+### D-SYNEVO-L1L2 补记（2026-09-22 收尾轮）
+
+- **「保留原实现」与「收口执行入口」分开表达**：账号切换控件点击（`NeteaseAccountUi._click_bounds`）按用户决定**保留原实现**，不接 L1 / L2；
+  为此在静态守卫里新增 `BUSINESS_EXEMPTIONS` 一张**独立**的业务豁免表（与架构内部出口表 `_INTERNAL_EXITS` 分开），精确到（文件, 函数, 调用形式, 次数），
+  并保留过期检测：该函数多出裸点击会报违规、原调用点消失会报过期。**豁免只能由用户决定新增**，不得为了让守卫转绿而自行扩表或放宽其它检查。
+- **MultiAccountEvo 两处点击只换执行入口**：`_detect_select` / `check_then_accept` 迁入 `execute_single_click(FinalPoint(...))`，坐标来源、坐标系、随机落点语义、等待 / 重试 / 返回值全部不变，
+  **不加 `policy=`、不加独立 reaction**——`check_then_accept` 与 GeneralInvite 五个接受事务点位同源，后者已由用户暂缓 L2 改造，本轮不借 MultiAccountEvo 绕过该决定。
+- **落点分布以目标分支现状为准**：GeneralRoom 队伍列表点击恢复 synevo 原有的「`list_find` 命中点 + `randint(±5)`」，不采用 master 的「OCR 框内采样一次」。
+  整合的职责是搬运执行层，**不顺带改变目标分支已在跑的落点分布**；对应的「点击旁不得有业务随机偏移」守卫改为登记精确例外（文件 + 函数 + 随机调用序列），而不是删除该守卫。

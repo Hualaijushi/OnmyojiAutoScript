@@ -1026,11 +1026,21 @@ class SamplingTest(unittest.TestCase):
     def test_sample_settlement_click_uses_region_model_and_keeps_name(self):
         # T7-5 Stage 2：selected-region 内采样从整 ROI LEGACY_UNIFORM 改为 sample_region
         # （preferred 偏置 + default_region profile）。region 的**选择**逻辑不在这里。
+        # L1 Stage 2：源码形态改为 `ClickRegion(rule.roi_front, rule.name)`，其解析恰好是同一个
+        # `ClickSampler.sample_region(roi, name)`（行为等价由下一个用例的运行期断言证明）。
         src = inspect.getsource(GeneralBattle._sample_settlement_click)
-        self.assertIn("ClickSampler.sample_region(rule.roi_front, rule.name)", src)
+        self.assertIn("ClickRegion(rule.roi_front, rule.name)", src)
         self.assertNotIn("ClickSampler.sample(rule.roi_front)", src)
+        self.assertNotIn("sample_target", src)
         self.assertNotIn("STRATEGY_HABIT", src)          # 策略封装在 sample_region 内
         self.assertIn("control_name=rule.name", src)
+        self.assertNotIn("self.device.click(", src)
+        # 运行期：sample_region 恰一次、参数是（选定 region 的 roi_front, 名字）；sample_target 从未被调用
+        task = _make_task()
+        with patch.object(gb.ClickSampler, "sample_region", return_value=(801, 502)) as region,                 patch.object(gb.ClickSampler, "sample_target") as target:
+            task._sample_settlement_click(GeneralBattle.C_RANDOM_DEFAULT)
+        region.assert_called_once_with(GeneralBattle.C_RANDOM_DEFAULT.roi_front, GeneralBattle.C_RANDOM_DEFAULT.name)
+        target.assert_not_called()
 
     def test_sample_settlement_click_forwards_sampler_coords(self):
         task = _make_task()
@@ -1124,7 +1134,7 @@ class RegressionBoundaryTest(unittest.TestCase):
         coord_src = inspect.getsource(gb.RuleClick.coord)
         self.assertIn("ClickSampler.sample_target(self.roi_front, self.name)", coord_src)
         settle_src = inspect.getsource(gb.GeneralBattle._sample_settlement_click)
-        self.assertIn("ClickSampler.sample_region(rule.roi_front, rule.name)", settle_src)
+        self.assertIn("ClickRegion(rule.roi_front, rule.name)", settle_src)   # Stage 2：Region 语义显式声明，解析即 sample_region
         self.assertNotIn("sample_target", settle_src)
         self.assertNotIn("ClickSampler.sample(rule.roi_front)", settle_src)
 

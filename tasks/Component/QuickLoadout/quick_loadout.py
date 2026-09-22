@@ -15,6 +15,7 @@ from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.atom.swipe import RuleSwipe
 from module.base.timer import Timer
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.logger import logger
 from tasks.Component.QuickLoadout.config import (
     NamedQuickLoadoutConfig,
@@ -80,6 +81,8 @@ class QuickLoadout(BaseTask, SwitchSoulAssets):
     MAX_GROUP_SWIPES = 10
     MAX_PRESET_SWIPES = 15
     STAGE_NAME_MATCH_THRESHOLD = 0.75
+    # 面板内的点击点（分组 / 预设 / 装配按钮）都是「出战锚点 → 面板布局常量」推导出的行列交点，
+    # 没有识别到的按钮框：一律按 FinalPoint 原样执行，不在推导点周围再随机。
 
     @staticmethod
     def _parse_custom_presets(
@@ -325,7 +328,7 @@ class QuickLoadout(BaseTask, SwitchSoulAssets):
         panel_x, panel_y, _, _ = layout.panel
         if config.mode == QuickLoadoutMode.NUMBER:
             y = panel_y + self.GROUP_FIRST_Y + (config.group_number - 1) * self.GROUP_ROW_HEIGHT
-            self.device.click(panel_x + self.GROUP_CLICK_X, y, control_name='QUICK_LOADOUT_GROUP')
+            execute_single_click(self.device, FinalPoint(panel_x + self.GROUP_CLICK_X, y), control_name='QUICK_LOADOUT_GROUP')
             sleep(0.6)
             return True
 
@@ -338,7 +341,7 @@ class QuickLoadout(BaseTask, SwitchSoulAssets):
             y, score = self._find_name_y(layout.group_ocr, config.group_name, results)
             if y is not None and score >= 0.55:
                 logger.info(f'Quick loadout group OCR matched {config.group_name} [{score:.2f}]')
-                self.device.click(panel_x + self.GROUP_CLICK_X, y, control_name='QUICK_LOADOUT_GROUP_OCR')
+                execute_single_click(self.device, FinalPoint(panel_x + self.GROUP_CLICK_X, y), control_name='QUICK_LOADOUT_GROUP_OCR')
                 sleep(0.6)
                 return True
             stable_count = stable_count + 1 if current and current == previous else 0
@@ -382,7 +385,7 @@ class QuickLoadout(BaseTask, SwitchSoulAssets):
 
     def _equip_quick_loadout_souls(self, layout: QuickLoadoutLayout, row_y: int) -> None:
         panel_x = layout.panel[0]
-        self.device.click(panel_x + self.PRESET_EQUIP_X, row_y, control_name='QUICK_LOADOUT_EQUIP_SOUL')
+        execute_single_click(self.device, FinalPoint(panel_x + self.PRESET_EQUIP_X, row_y), control_name='QUICK_LOADOUT_EQUIP_SOUL')
         timer = Timer(self.CONFIRM_TIMEOUT).start()
         while not timer.reached():
             self.screenshot()
@@ -396,7 +399,7 @@ class QuickLoadout(BaseTask, SwitchSoulAssets):
 
     def _deploy_quick_loadout(self, layout: QuickLoadoutLayout, fight_anchor: RuleImage, dismiss: RuleClick, row_y: int) -> bool:
         panel_x = layout.panel[0]
-        self.device.click(panel_x + self.PRESET_SELECT_X, row_y, control_name='QUICK_LOADOUT_PRESET')
+        execute_single_click(self.device, FinalPoint(panel_x + self.PRESET_SELECT_X, row_y), control_name='QUICK_LOADOUT_PRESET')
         sleep(0.4)
         self.click(fight_anchor)
         timer = Timer(self.PANEL_CLOSE_TIMEOUT).start()

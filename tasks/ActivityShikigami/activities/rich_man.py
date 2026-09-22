@@ -3,6 +3,7 @@
 import random
 import time
 
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.exception import GameStuckError
 from module.logger import logger
 from tasks.ActivityShikigami.base_act import ActivityResourceNotEnough
@@ -326,7 +327,9 @@ class RichManAct:
             x, y, width, height = self.I_RM_FITGHT_ANCHOR.roi_front
             click_x = max(0, min(1279, x + width // 2))
             click_y = max(0, min(719, y + height // 2 - 70))
-            self.device.click(x=click_x, y=click_y, control_name='rm_boss_fight_dynamic_enter')
+            # 落点在锚点上方 70px（首领入口在锚点上方），不在锚点框内：按 FinalPoint 原样执行。
+            execute_single_click(
+                self.device, FinalPoint(click_x, click_y), control_name='rm_boss_fight_dynamic_enter')
             deadline = time.monotonic() + 5.0
             while time.monotonic() < deadline:
                 self.screenshot()

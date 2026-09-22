@@ -136,8 +136,8 @@ class ProfileAndConstantsTest(TestCase):
 
     def test_click_fire_imports_and_uses_reaction_fire(self):
         src = _src(gi)
-        self.assertIn('from module.reaction_profile import REACTION_FIRE', src)
-        self.assertIn('random_delay(*REACTION_FIRE)', _src(GeneralInvite.click_fire))
+        self.assertRegex(src, r'from module\.interaction_policy import [^\n]*\bfire_reaction_range\b')
+        self.assertIn('random_delay(*fire_reaction_range(fire_reaction))', _src(GeneralInvite.click_fire))
 
     def test_bounded_constants_present_and_finite(self):
         self.assertEqual(GI_FIRE_MAX_TRIES, 4)
@@ -186,7 +186,7 @@ class ClickFireSourceShapeTest(TestCase):
 
     def test_timing_owner_no_stack(self):
         self.assertEqual(self.body.count('random_delay('), 1)
-        self.assertIn('random_delay(*REACTION_FIRE)', self.body)
+        self.assertIn('random_delay(*fire_reaction_range(fire_reaction))', self.body)
         self.assertEqual(self.body.count('sleep('), 1)
         self.assertIn('sleep(fire_delay)', self.body)
         for tok in ('confirm_delay', 'reaction_delay', 'CLICK_REACTION_DELAY'):
@@ -194,7 +194,7 @@ class ClickFireSourceShapeTest(TestCase):
         self.assertIn('self.appear_then_click(target, interval=1, threshold=0.7)', self.body)
 
     def test_reaction_then_fresh_screenshot_then_reconfirm_order(self):
-        i = self.body.index('random_delay(*REACTION_FIRE)')
+        i = self.body.index('random_delay(*fire_reaction_range(fire_reaction))')
         tail = self.body[i:]
         self.assertIn('sleep(fire_delay)', tail)
         j = tail.index('sleep(fire_delay)')
@@ -363,7 +363,7 @@ class ClickFireFsmBehaviorTest(TestCase):
 class RunInviteGuardTest(TestCase):
     def test_run_invite_only_true_on_battle(self):
         src = _src(GeneralInvite.run_invite)
-        self.assertIn('fire_result = self.click_fire()', src)
+        self.assertIn('fire_result = self.click_fire(fire_reaction=fire_reaction)', src)
         self.assertIn("if fire_result == 'battle':", src)
         # 找到 `if self.room_check_can_fire(config):` 块，里面 return True 只在 == 'battle' 分支
         i = src.index('if self.room_check_can_fire(config):')
@@ -432,7 +432,7 @@ class OrochiEvoZoneCompatTest(TestCase):
             self.assertNotIn('click_fire', alone)
             fire = _src(getattr(cls, fm))
             self.assertEqual(fire.count('random_delay('), 1)
-            self.assertIn('random_delay(*REACTION_FIRE)', fire)
+            self.assertRegex(fire, r'random_delay\(\*fire_reaction_range\(self\.config\.\w+\.fire_reaction\)\)')
             self.assertNotIn('click_fire', fire)
 
     def test_leader_paths_reach_public_owner_not_own_reaction(self):

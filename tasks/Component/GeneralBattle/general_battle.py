@@ -17,8 +17,10 @@ from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
 from module.base.utils import color_similar, get_color
 from module.base.utils.random import random_delay, random_int
+from module.click_pipeline import ClickRegion, FinalPoint, execute_single_click
 from module.click_sampler import ClickSampler
 from module.exception import GameStuckError
+from module.interaction_policy import InteractionPolicy
 from module.logger import logger
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig, GreenMarkType, GreenMarkEnum
@@ -641,8 +643,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         （v1.2）需要「采样一次、复用多次点击」，走的是独立的 ``_sample_settlement_point`` /
         ``_click_settlement_point`` 两个原语，不调本方法。
         """
-        x, y = ClickSampler.sample_region(rule.roi_front, rule.name)
-        self.device.click(x=x, y=y, control_name=rule.name)
+        # `ClickRegion` 解析就是 `ClickSampler.sample_region(roi, name)` 一次，与原直接采样逐字等价
+        execute_single_click(self.device, ClickRegion(rule.roi_front, rule.name), control_name=rule.name)
 
     def _settlement_click(self, context: BattleContext, region: RuleClick | None = None) -> bool:
         """受 ``settlement_click_timer`` 随机间隔节流地点击一次结算推进区域。
@@ -704,8 +706,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
 
     def _click_settlement_point(self, point: tuple[int, int], control_name: str) -> None:
         """点击一个已经采样好的结算落点，不重新采样。"""
+        # 锚点已在 `_sample_settlement_point` 里采样过一次，这里只执行：FinalPoint 不再采样
         x, y = point
-        self.device.click(x=x, y=y, control_name=control_name)
+        execute_single_click(self.device, FinalPoint(x, y), control_name=control_name)
 
     @staticmethod
     def _point_in_roi(point: tuple[int, int], roi: tuple[int, int, int, int]) -> bool:
@@ -1329,25 +1332,27 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         self.device.screenshot_interval_set('combat')
 
     def green_mark_choose(self, mark_mode: GreenMarkType = GreenMarkType.GREEN_MAIN):
-        x, y = None, None
+        # L1：先选定绿标规则目标，真正点击时再经管线采样一次（C_GREEN_* 是固定 RuleClick，
+        # 采样时刻前移或后移不改变分布），并带上目标名供 BehaviorTrace 区分。
+        rule = None
         match mark_mode:
             case GreenMarkType.GREEN_LEFT1:
-                x, y = self.C_GREEN_LEFT_1.coord()
+                rule = self.C_GREEN_LEFT_1
                 logger.info("Green left 1")
             case GreenMarkType.GREEN_LEFT2:
-                x, y = self.C_GREEN_LEFT_2.coord()
+                rule = self.C_GREEN_LEFT_2
                 logger.info("Green left 2")
             case GreenMarkType.GREEN_LEFT3:
-                x, y = self.C_GREEN_LEFT_3.coord()
+                rule = self.C_GREEN_LEFT_3
                 logger.info("Green left 3")
             case GreenMarkType.GREEN_LEFT4:
-                x, y = self.C_GREEN_LEFT_4.coord()
+                rule = self.C_GREEN_LEFT_4
                 logger.info("Green left 4")
             case GreenMarkType.GREEN_LEFT5:
-                x, y = self.C_GREEN_LEFT_5.coord()
+                rule = self.C_GREEN_LEFT_5
                 logger.info("Green left 5")
             case GreenMarkType.GREEN_MAIN:
-                x, y = self.C_GREEN_MAIN.coord()
+                rule = self.C_GREEN_MAIN
                 logger.info("Green main")
         while True:
             self.screenshot()
@@ -1355,7 +1360,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 break
         if self.appear_then_click(self.I_LOCAL):
             time.sleep(0.3)
-        self.device.click(x, y)
+        execute_single_click(self.device, rule)
 
     def green_mark_name(self, name: str = ''):
         if name == '':
@@ -1376,7 +1381,13 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                     best = {'name': ret.ocr_text, 'x': x, 'y': y, 'similarity': similarity}
             if best['similarity'] > 0.5:
                 logger.info(f'Green name success, text: {best["name"]}[{best["similarity"]:.2f}]')
-                self.device.click(best['x'], best['y'], control_name=best['name'])
+                # 落点是名字框左上角 +(5, 30) 的业务偏移（点名字下方的式神），不是框内目标：
+                # 按 FinalPoint 原样执行，L1 不能把它重新采样回文字框里。
+                execute_single_click(
+                    self.device,
+                    FinalPoint(best['x'], best['y']),
+                    control_name=best['name'],
+                )
                 return
         logger.warning(f'Green name failed, best text: {best["name"]}[{best["similarity"]:.2f}]')
 
@@ -1410,9 +1421,10 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 break
             if self.appear(self.I_PRESENT_LESS_THAN_5):
                 break
-            if self.appear_then_click(self.I_PRESET, interval=1):
+            # 预设入口图片按钮：NORMAL；OCR 兜底目标框每帧动态，保持立即点击（L2-2 分类见 docs/L2_INTERACTION_POLICY_MAP.md）。
+            if self.appear_then_click(self.I_PRESET, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
-            if self.appear_then_click(self.I_PRESET_WIT_NUMBER, interval=1):
+            if self.appear_then_click(self.I_PRESET_WIT_NUMBER, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
             if self.appear_then_click(self.O_PRESET, interval=1):
                 continue
@@ -1472,7 +1484,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             self.screenshot()
             if not self.appear(self.I_PRESET_ENSURE):
                 break
-            if self.appear_then_click(self.I_PRESET_ENSURE, interval=1):
+            # 确认阵容预设：CONFIRM。
+            if self.appear_then_click(self.I_PRESET_ENSURE, interval=1, policy=InteractionPolicy.CONFIRM):
                 continue
 
     def random_click_swipt(self):
@@ -1511,7 +1524,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             return None
         return self.run_general_battle(config=config, battle_key="__legacy_takeover__")
 
-    def check_lock(self, enable: bool, lock_image, unlock_image, confirm_delay: tuple[float, float] | None = None):
+    def check_lock(self, enable: bool, lock_image, unlock_image, confirm_delay: tuple[float, float] | None = None,
+                   policy: InteractionPolicy | None = None):
         """
         检测是否锁定队伍。
 
@@ -1519,7 +1533,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             enable: 目标是否应为锁队状态。
             lock_image: 已锁定状态的识别图像。
             unlock_image: 未锁定状态的识别图像。
-            confirm_delay: 可选的点击前 reaction 区间；调用方按业务显式传入（默认 None = 原行为）。
+            confirm_delay: legacy 点击前 reaction 区间（默认 None = 原行为）。
+            policy: L2 InteractionPolicy；与 confirm_delay 互斥，原样交给 appear_then_click。
 
         Returns:
             None: 直接执行锁定状态切换。
@@ -1530,7 +1545,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 self.screenshot()
                 if self.appear(lock_image):
                     break
-                if self.appear_then_click(unlock_image, interval=1, confirm_delay=confirm_delay):
+                if self.appear_then_click(unlock_image, interval=1, confirm_delay=confirm_delay, policy=policy):
                     continue
         else:
             logger.info("Unlock team")
@@ -1538,7 +1553,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 self.screenshot()
                 if self.appear(unlock_image):
                     break
-                if self.appear_then_click(lock_image, interval=1, confirm_delay=confirm_delay):
+                if self.appear_then_click(lock_image, interval=1, confirm_delay=confirm_delay, policy=policy):
                     continue
 
     def check_and_open_buff(self, buff: Union[BuffClass | list[BuffClass]] = None):
