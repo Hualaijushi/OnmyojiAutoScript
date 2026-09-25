@@ -80,6 +80,8 @@
 - **新增测试必须真实锁住修复语义**：
   - correctness Bug 尽量做**正向 + 反向验证**——修复后测试通过；临时回退修复后测试应失败（证明测试真的抓得住这个 Bug）。回退验证做完必须恢复修复。
   - API 契约测试要断言「谁被调用、带什么参数」，不只是「没抛异常」。
+- **配置 API（`GET /{script}/{task}/args` / `script_set_arg`）护栏（2026-09-18，`tests/test_config_model_script_task.py`）**：新增 / 改动任何配置模型（尤其是嵌套子模型、`default_factory`、枚举）都要跑它：每个组必须是标量参数列表、不得把嵌套模型整体当一个值、默认值等于模型默认实例、实际值不被默认值覆盖、GET 不写文件、其它任务输出与旧实现逐字一致。测试或脚本里切到临时配置目录时，`os.chdir` 必须放在所有项目 import **之后**——`module/logger.py` 与 `deploy/logger.py` 在 import 时都会 chdir 到仓库根，先 chdir 再 import 会静默读到仓库里的真实 `config/`。
+- **配置页中文覆盖护栏（2026-09-18，`tests/test_global_game_fatigue_i18n.py`）**：改 `GlobalGame.fatigue` 字段或 `assets/i18n/zh-CN.json` 时，从真实 `script_task('GlobalGame')` 取全部 fatigue 字段，逐项检查标签键与 `_help` 说明键在远程翻译里有中文、不等于原始键、键唯一且不遮蔽其它任务字段；`enable` 属 OASX 本地全局键，远程不得覆盖。`zh-CN.json` 已有重复键，**只能按原格式追加、不能整体重新序列化**。需要 OASX 端证据时，在 OASX 隔离 worktree 里用真实 `ApiClient` 连隔离后端跑 Flutter 测试：`flutter_test` 下必须先 mock `dev.fluttercommunity.plus/connectivity`（`check` → `wifi`）与 `plugins.flutter.io/path_provider`，并 `HttpOverrides.global = null`，否则请求静默失败。
 - **不允许挂死测试**：任何可能进入循环等待 / 无限重试的被测路径，测试里必须有哨兵异常或次数上限（例：`tests/test_base_task_wait_until_appear.py` 的 `_LoopNotBounded` + 截图次数上限；`tests/test_behavior_trace.py` 的 throughput 用极宽松 `assertLess` 只防数量级异常）。
 - **性能 / 吞吐测试用非严格断言**：`assertLess(dt, <很宽松的上限>)` 只防死循环 / 数量级异常，并 `print` 实际值供人工查看；不写 `assert dt < 50ms` 这种受机器波动影响的脆弱断言。
 - **mock 而非真实依赖**：用 `unittest.mock` / `SimpleNamespace` / 对象 `__new__` 拼装最小实例。参考现有 `tests/test_swipe_duration_cleanup.py`（`Control.__new__` + `SimpleNamespace` config）、`tests/test_behavior_trace.py`（`tempfile` + monkeypatch 模块级 `_LOG_DIR` / `_now`）。

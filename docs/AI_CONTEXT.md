@@ -34,15 +34,19 @@
 
 ## 2. 当前 Git 状态
 
-以下状态核对时间为 2026-09-14。
+以下状态核对时间为 2026-09-25。
 
 - 当前分支：`master`
-- 当前 HEAD / `origin/master`：`a5e2d7e6b84f3545994d9bd15ca6d0ff0bcb755b`。
-- 工作区当前非干净：仅有 GeneralBattle Settlement Micro-Burst v1.2 本轮 9 个授权文件的未提交修改；无 staged 文件，未 commit / push。
+- 2026-09-14 ~ 09-23 积压在工作区的全部成果已按主题拆成 3 个 commit 提交到 `master`（父提交 `a5e2d7e6`），并以普通 push（非 force）推送 `origin/master`：
+  1. `68a89f4d` feat: finalize l1 l2 interaction and settlement improvements（L1/L2、FIRE、Settlement V3 / Micro-Burst、ActivityShikigami 全部改造，§4.70~§4.74、§4.77、§4.82~§4.92）；
+  2. `139f3bcd` fix: improve KekkaiUtilize reliability and shikigami switching bounds（§4.78~§4.81）；
+  3. fix: improve GlobalGame configuration handling（§4.75~§4.76；即当前 HEAD，本节随该 commit 一起提交，故不写自身 hash——以 `git log -1` 为准）。
+- 拆分方式：只按整文件 / 整块暂存，文档中间版本只整块删除其它主题的章节，不改写文字；每个 commit 提交前都把暂存区导出到仓库外独立目录跑 compileall + 全量 unittest（C1 1909 / C1+C2 2018 / C1+C2+C3 2044，全 OK）。
+- 工作区：提交后应为干净（`config/oas*.json`、`log/` 等本地文件仍由 `.gitignore` 排除，未纳入版本控制）。
 
 ### 2.1 已失效的 2026-09-02 工作区清单（历史记录）
 
-以下清单中的“当前”均指 2026-09-02 当时状态，只保留用于追溯，不覆盖上方 2026-09-14 当前事实。
+以下清单中的“当前”均指 2026-09-02 当时状态，只保留用于追溯，不覆盖上方 2026-09-25 当前事实。
   - 当前**无任何 staged 文件**（用户已把此前 staged 的 `docs/AI_CONTEXT.md` / `docs/DEVELOP_LOG.md` 取消暂存；两者现与其余 `docs/*.md` 一样是未跟踪新文件，见下方「未跟踪」）。
   - 未 staged：`script.py`、`tasks/base_task.py`、`tasks/GlobalGame/config.py`、`tasks/RyouToppa/config.py`、`tasks/RyouToppa/script_task.py`、`tasks/KekkaiUtilize/config.py`、`tasks/KekkaiUtilize/script_task.py`、`tasks/Chess/runtime/press_and_drag.py`、`tasks/Script/config_optimization.py`、`module/atom/swipe.py`、`module/atom/click.py`、`module/atom/image.py`、`module/atom/ocr.py`、`module/atom/gif.py`、`module/base/protect.py`、`module/base/utils/random.py`、`module/device/control.py`、`module/server/script_process.py`、`module/server/script_router.py`、`module/server/stats_router.py`、`tasks/Component/GeneralBattle/general_battle.py`、`tasks/Component/GeneralBattle/assets.py`（+ `gb/click.json`、`gb/gb_reward.png`、`gb/image.json`）、`tasks/RyouToppa/assets.py`（+ `dev/click.json`）、`tests/test_general_battle_timing.py`、`tasks/RealmRaid/script_task.py`、`tasks/KekkaiActivation/script_task.py`（后两个 2026-09-02 cleanup 批次 1 起，纯死代码删除，见 §4.36）。（`assets.py` / `gb/*` / `RyouToppa/*` 是**用户 2026-09-02 手动重新框选**：`C_RANDOM_LEFT` 55×370→192×506、`C_RANDOM_RIGHT` 79×388→191×518，新增 `C_RANDOM_RD` 574×314 与 `C_RANDOM_RD2` 198×425，`I_REWARD` 重新框 `(558,508,166,106)` + 重截 `gb_reward.png`，另加两条 `S_BATTLE_RANDOM_*` swipe。**2026-09-03 用户又把 `assets.py` 里的 RD/RD2 换成三个新安全区 `C_RANDOM_DEFAULT` / `C_RANDOM_SAVE_RIGHT` / `C_RANDOM_SAVE_BOTTOM` + 两个奖励布局判别标志 `I_GET_BATTLE_REWARD` / `_2`（+ 两个新 PNG），`C_RANDOM_RIGHT`/`C_RANDOM_BOTTOM` 也重框**。`general_battle.py` / `test_general_battle_timing.py` 当前状态是 **SETTLEMENT CONTRACT V3（§4.3.1 / §4.39，2026-09-03）**——强制两次推进点击 + 奖励布局感知区域策略，RD/RD2 与 HABIT profile 已从生产移除（V2 §4.28 已 Superseded）。`module/atom/{click,image,ocr,gif}.py` 的 `coord()` / `coord_more()` 现在走 `ClickSampler.sample_target(roi, name)`（T7-5，§4.44：按目标 preferred 热点 + 偏移模型，未标定 → CENTER_FALLBACK；`ocr.py` 仍先经 `_normalize_ocr_click_area()` 把 FULL 模式浮点 bbox 整数化，见 §4.43）；新增 `module/click_preference.py`（`??`）；`module/base/utils/random.py` 2026-09-02 只新增了一个 `random_normal(mu, sigma)` helper——见 §4.25。）
   - 未跟踪（`git status` 的 `??`，即新增、尚未 `git add` 的文件）：`module/fatigue.py`、`module/behavior_trace.py`、`module/atom/frame_state.py`、`module/base/frame_wait.py`、`module/server/behavior_stats.py`、`tests/test_fatigue.py`、`tests/test_kekkai_utilize_threshold.py`、`tests/test_base_task_wait_until_appear.py`、`tests/test_behavior_trace.py`、`tests/test_swipe_duration_cleanup.py`、`tests/test_rule_swipe_trace_removed.py`、`tests/test_frame_state.py`、`tests/test_frame_wait.py`、`tests/test_list_find.py`、`tests/test_manual_click_recorder.py`、`tests/test_manual_click_analyze.py`、`tests/test_runtime_roi_probe.py`、`tests/test_click_sampler.py`、`tests/test_click_profile.py`、`tests/test_click_roi_inventory.py`、`tests/test_large_click_roi_review.py`、`tests/test_general_battle_settlement.py`、`tests/test_settlement_trace_check.py`、`tests/test_ryoutoppa_c_area_1_point_opt_in.py`、`tests/test_kekkai_activation_state.py`、`tests/test_kekkai_utilize_state.py`、`tests/test_realm_raid_state.py`、`tests/test_exploration_state.py`、`tests/test_behavior_click_stats.py`、`module/click_sampler.py`、`module/click_profile.py`、`dev_tools/manual_click_recorder.py`、`dev_tools/manual_click_analyze.py`、`dev_tools/runtime_roi_probe.py`、`dev_tools/click_roi_inventory.py`、`dev_tools/large_click_roi_review.py`、`dev_tools/settlement_trace_check.py`、`docs/AI_CONTEXT.md`、`docs/DEVELOP_LOG.md`、`docs/机械性审查报告.md`、`docs/机械性修改清单.md`、`docs/Kekkai状态机静态收口.md`、`docs/RealmRaid状态机静态收口.md`、`docs/Exploration状态机静态收口.md`、`docs/状态验证与重试模式归纳.md`、`docs/ROADMAP.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/TESTING.md`、`CLAUDE.md`、`AGENTS.md`。以上均为**未跟踪的新文件**，不是「已跟踪」。
@@ -3155,6 +3159,55 @@ Login `_app_handle_login` 与 DailyTrifles `summon_recall` 属小号轮换业务
 - **状态**：Level A/B **PASS**（新增 `tests/test_fire_batch_a.py` 19 项；修改 `test_l2_interaction_reaction.py` FIRE owner 清单与
   `test_l2_policy_migration.py` 清单 1 行（L2M-084 KEEP_SPECIAL → ALREADY_L2），删除 0；8 类变异 × 4 个文件 = 32 次全部被抓；
   全量 1611 → **1630/1630 OK**）；Level C **PENDING**。
+### 4.75 GlobalGame 配置接口 HTTP 500 修复（嵌套配置组展开）
+
+2026-09-18，独立 Bugfix（编号跳过 §4.71~§4.74：已被未合并的 L1 / L2 worktree 占用）。在隔离 worktree
+`D:\oas_xy\wt-fix-globalgame-args-500`（分支 `fix/globalgame-args-500`，基于 `a5e2d7e6`）开发，再以补丁应用到本工作树
+（`module/config/config_model.py` 在本工作树原本对 HEAD 干净）；**未 commit / push**。
+
+- **现象**：OASX 打开「全局配置」→ `GET /{script}/GlobalGame/args` HTTP 500（`text/plain` 的 `Internal Server Error`，
+  前端 Dart 报 `String is not a subtype of Map`），oas1 / oas2 / 空配置都复现，其它任务正常。
+- **根因**：`ConfigModel.script_task` 内 `merge_value` 假设配置组里每个字段都是标量或枚举，直接取 `value["default"]`。
+  `7f244a8c`（2026-09-14）给 `GlobalGame` 加的 `FatigueConfig` 含 7 个嵌套子模型字段（`task` / `global_fatigue` / `weights` /
+  `idle` / `rest` / `cooldown` / `scheduler_idle`，`rest` 下还有 `probability`），都用 `Field(default_factory=...)`；pydantic 2
+  对 default_factory 字段只输出 `{"$ref": ...}`、不输出 `default` → `KeyError('default')`（首个触发字段 `fatigue.task`）。
+  这是全仓唯一含嵌套子模型的配置组（全任务扫描只有 `global_game` 失败）；疲劳面板只经 `PUT .../LoadFactor` 写单个字段，
+  所以此前没人打开整组页面发现。
+- **修复**：嵌套模型字段（`$ref` 指向带 `properties` 的 `$defs`；枚举 `$ref` 仍按单参数处理）展开成 `父.子` 叶子参数追加到同一组列表，
+  响应结构不变（组 → 扁平参数列表）。实际值取当前配置；默认值取该字段自己的默认实例（显式 default > `default_factory` 实例 >
+  上层默认实例沿用，所以 `rest.probability.maximum` 默认 0.12 而不是基类 0.18）；必填字段没有默认值时 `default` 为 `None`，
+  不编造。写入：`script_set_arg` 对带 `.` 的参数名走 `_set_nested_arg`——dump 顶层子模型、改叶子、`model_validate` 整体重建，
+  字段约束与子模型 `model_validator` 生效，校验失败原配置不变、不落盘。
+- **不变**：其它全部任务 `script_task` 输出与旧实现逐字一致（174 个 任务×配置 组合快照比对 + 测试内旧实现对照）；疲劳算法、
+  FIRE、L1 / L2、GeneralBattle、OASX 零改动。
+- **验证**：新增 `tests/test_config_model_script_task.py` 16 项（CASE 1~12 + 嵌套写入 3 项 + 本地真实 oas*.json 副本 1 项；
+  CASE 10 在本基线无 `fire_reaction` 组时 skip，已用 L2 worktree 模型注入修复代码跑通 400 / 800）；6 组变异全部被抓。隔离端口
+  真实 HTTP：修复前 oas1 / oas2 GlobalGame = 500，修复后 200 JSON、6 组齐全、fatigue 41 项与配置文件逐值一致（含用户改过的
+  `load_factor` / `idle.*`）；读取前后 `config/oas1.json` / `oas2.json` 哈希与 mtime 不变。
+- **待办**：正在运行的 OAS 后端需重启才加载修复；L2 worktree 有同一缺陷（补丁可干净应用，本轮未改）。
+
+### 4.76 GlobalGame 疲劳配置中文显示（嵌套字段 i18n）
+
+2026-09-18，承接 §4.75。隔离 worktree `wt-fix-globalgame-args-500` 开发 + OASX 隔离 worktree `D:\oas_xy\wt-oasx-i18n-verify`
+（HEAD + 用户 34 个未提交文件逐字镜像）验证，再以补丁应用到本工作树；OASX 用户仓库**零改动**；未 commit / push。
+
+- **根因**：§4.75 把嵌套字段展开成 `idle.steepness` 这类完整路径后，OASX `ArgumentView` 用 `name`（= 该路径）做 `.tr` 标签键、用
+  `description` 做说明键；GetX 4.7.3 的 `.tr` 是整串键精确查表（点号无特殊含义，`com.netease.onmyoji.*` 早已这样用），但后端
+  `assets/i18n/zh-CN.json` 与 OASX 本地表都没有这些键 → 显示原始键名；嵌套字段在模型里没有 `description` → 也没有说明。
+  组标题 `fatigue` 与 `load_factor` 同样缺键。
+- **修复（只改后端显示资源）**：`tasks/GlobalGame/config.py` 给 39 个嵌套叶子字段补 `description='<路径>_help'`（沿用
+  `<字段>_help` 说明键规则；默认值 / 约束 / 字段名不变，schema 去掉新说明后与原来逐字一致）；`assets/i18n/zh-CN.json` 按原格式在末尾
+  追加 80 个键（`fatigue` 组名、`load_factor`、39 个路径标签、39 个说明）。`enable` 继续用 OASX 本地全局键「启用该功能」，远程不覆盖。
+  中文名称与说明按 `module/fatigue.py` 真实公式写（例：`idle.steepness` 调的是发呆**强度**曲线，不是概率；`idle.rate_*` 单位次/小时）。
+- **链路事实**：远程翻译经 `GET /home/additional_translate`（每次请求现读 `assets/i18n/*.json`）→ OASX `refreshTransFromRemote` →
+  `Get.appendTranslations`（`addAll`，同名覆盖本地键）；只在连接服务器 / 进入主页时拉取。保存用 `model.title`（原始点号键），与翻译无关。
+- **既有问题（未改）**：`assets/i18n/zh-CN.json` 原本就有 25 个重复键（如 `ap_limit` / `boss_group_team`，json 解析取最后一个值），
+  所以本次只做末尾追加、不整体重新序列化；新增键没有 `en-US` 版本，英文界面仍显示原始键。
+- **验证**：新增 `tests/test_global_game_fatigue_i18n.py` 9 项（41/41 标签、41/41 说明、单位、键唯一且不遮蔽其它任务字段、真实
+  `/home/additional_translate` 路由、默认值锁定、点号写回）。OASX 隔离 worktree 的 Flutter 测试用真实 `ApiClient` 连隔离后端
+  （真实 `script_app` + `home_app`，临时配置副本），oas1 / oas2 均通过：`loadGroups` 6 组 / fatigue 41 项、`.tr` 41/41、真实 PUT 点号参数后重开
+  中文与值保持、`ArgumentView` 渲染无原始键名且编辑回调仍收到原始键；对照组（未改翻译的后端）同一测试失败。未启动 OASX 桌面应用，非人工 UI 实测。
+
 ### 4.77 FIRE 点击前延迟配置最小范围接入 master（RealmRaid / RyouToppa / EvoZone / Orochi / ActivityShikigami / EternitySea / FallenSun / Sougenbi）
 
 2026-09-18。从 L2 worktree `wt-l2-interaction-reaction`（未合并、未提交）按「最小范围移植」搬运 FIRE reaction

@@ -414,3 +414,20 @@ class OASXTranslationTest(TestCase):
         raw = (repo / 'assets' / 'i18n' / 'zh-CN.json').read_text(encoding='utf-8')
         for key in ('fire_reaction', 'fire_reaction_min_ms', 'fire_reaction_max_ms'):
             self.assertEqual(raw.count(json.dumps(key, ensure_ascii=False) + ':'), 1)
+
+
+# =====================================================================================
+# 八、回归：GlobalGame 全局配置与疲劳翻译不受本轮影响
+# =====================================================================================
+
+class GlobalGameAndFatigueNoRegressionTest(TestCase):
+    def test_global_game_args_api_and_fatigue_translation_still_intact(self):
+        from module.config.config_model import ConfigModel
+        from module.server.i18n import I18n
+        with patch.object(ConfigModel, 'write_json', side_effect=AssertionError('不应写文件')):
+            result = ConfigModel().script_task('GlobalGame')
+        self.assertEqual(list(result), ['emergency', 'costume_config', 'battle', 'ocr', 'team_flow', 'fatigue'])
+        self.assertEqual(len(result['fatigue']), 41)
+        zh = I18n.load_additions()['zh-CN']
+        self.assertEqual(zh['idle.steepness'], '发呆强度曲线陡峭度')
+        self.assertNotIn('fire_reaction', {i['name'] for i in result['fatigue']})

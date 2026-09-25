@@ -9344,6 +9344,56 @@ Exploration / ActivityShikigami / Kekkai / L1 / Fatigue 分域回归与 compilea
 MuMu / 游戏 / OCR。
 
 状态：Batch A **Level A/B PASS / Level C PENDING**；Batch B（AreaBoss ×2、Secret、DemonEncounter ×2）未开始。
+## 2026-09-18 - GlobalGame 配置接口 HTTP 500 修复：嵌套配置组展开
+
+OASX 打开 oas2「全局配置」报 `OAS内部服务异常 | 500`。在隔离 worktree `wt-fix-globalgame-args-500`（分支
+`fix/globalgame-args-500`，基于 `a5e2d7e6`）开发，补丁应用到运行工作树（`config_model.py` 原本干净）；未 commit / push。
+
+### 根因
+
+`ConfigModel.script_task.merge_value` 对每个字段取 `value["default"]`。`7f244a8c` 新增的 `GlobalGame.fatigue`（`FatigueConfig`）
+有 7 个 `Field(default_factory=...)` 嵌套子模型，pydantic 2 schema 对它们只有 `$ref` → `KeyError('default')`（首个 `fatigue.task`）。
+oas1 / oas2 / 空配置都复现；全任务扫描只有 `global_game` 失败；上游 `merge_value` 从未支持嵌套模型。
+
+### 修复
+
+- `merge_value` 递归展开嵌套模型字段为 `父.子` 叶子参数；实际值取当前配置，默认值取字段默认实例（显式 default / `default_factory` /
+  上层默认实例），必填无默认时为 `None`；枚举 `$ref` 行为不变。
+- `script_set_arg` 对带 `.` 的参数名走新 `_set_nested_arg`：dump 顶层子模型 → 改叶子 → `model_validate` → 替换并保存；校验失败不改不存。
+
+### 验证
+
+新增 `tests/test_config_model_script_task.py` 16 项；6 组变异（回到 `value["default"]` / 忽略父级默认实例 / 值被默认覆盖 /
+嵌套整体当参数 / 嵌套写入不校验 / 缺默认时编造 0）全部被抓。174 个 任务×配置 快照：除 `global_game` 外逐字一致。
+隔离 127.0.0.1 端口真实 HTTP（真实 `script_app` 路由 + 临时配置副本）：修复前 GlobalGame 500，修复后 200、6 组、fatigue 41 项逐值
+等于配置文件。compileall 通过；运行工作树全量 1505 → **1521 OK（skipped 1）**；隔离 worktree 1494 → 1510；`git diff --check` 干净。
+`config/oas1.json` / `oas2.json` 哈希与 mtime 全程不变。未启动 MuMu / 游戏 / OCR；正在运行的 OAS 需重启生效。
+
+## 2026-09-18 - GlobalGame 疲劳配置中文显示：嵌套字段 i18n
+
+§4.75 修好 500 后，OASX 全局配置里疲劳嵌套参数显示 `idle.steepness` 等原始键名。隔离 worktree 开发，补丁应用到运行工作树；
+OASX 仓库零改动；未 commit / push。
+
+### 根因
+
+OASX `ArgumentView` 用 `name.tr` 显示标签、`description.tr` 显示说明；GetX 4.7.3 `.tr` 整串键查表，点号键可用（已有
+`com.netease.onmyoji.*` 先例）。后端 `assets/i18n/zh-CN.json` 与 OASX 本地表都没有这 39 个路径键、`fatigue`、`load_factor`；
+疲劳子模型字段也没有 `description`，所以没有说明。对照组（未改翻译的后端）下 OASX 同一 Flutter 测试失败，证实是缺键而非 OASX 查找问题。
+
+### 修复
+
+- `tasks/GlobalGame/config.py`：39 个嵌套叶子字段补 `description='<路径>_help'`，默认值 / 约束 / 字段名不变（schema 去说明后逐字一致）。
+- `assets/i18n/zh-CN.json`：末尾追加 80 个键（组名、`load_factor`、39 标签、39 说明），原有内容逐字保留（文件原有 25 个重复键，不重新序列化）。
+- 中文按 `module/fatigue.py` 实际公式命名：发呆是强度 logistic → 次/小时事件率 → 节点概率；休息是每节点 logistic 概率；时长三角分布分别随任务 / 全局疲劳变化。
+
+### 验证
+
+新增 `tests/test_global_game_fatigue_i18n.py` 9 项。OASX 隔离 worktree（HEAD + 用户未提交文件镜像）Flutter 测试用真实 `ApiClient`
+连隔离后端：oas1 / oas2 各 41/41 中文标签与说明、真实 PUT 点号参数后重开保持、`ArgumentView` 无原始键名、编辑回调仍收到原始键；
+`args_test` 通过。运行工作树全量 1521 → **1530 OK（skipped 1）**；隔离 worktree 1510 → 1519；compileall 通过；`git diff --check` 干净。
+`config/oas1.json` / `oas2.json` 在本轮应用与测试前后哈希、mtime 不变。另：本轮开始前 16:51 `oas1.json` 被用户重启后的 OAS
+（16:50 启动）写过一次，仅 `global_game.fatigue.enable` 变化，非本轮操作。需重启后端 + 重新连接 OASX 生效。
+
 ## 2026-09-18 - FIRE 点击前延迟配置最小范围接入 master
 
 L2 worktree 已实现 FIRE reaction 任务级配置（`FireReactionConfig` + `fire_reaction_range`），本轮按「最小范围
@@ -9728,3 +9778,26 @@ Settlement Micro-Burst 的 anchor 跨调用复用模型在"弹窗刚消失、真
 - 仍未完成：`0.30~0.60s` 未经真机验证——需观察是否还会出现「在旧帧上判定 same state 而补第二下」，
   以及放慢后连点观感与整体结算耗时是否可接受。分支 `master`，HEAD `a5e2d7e6`（未变）。
   未 commit / push / merge / reset / restore / checkout / clean / stash。
+
+## 2026-09-25　master 阶段性收尾：积压成果按主题拆成 3 个 commit 并推送
+
+- 背景：2026-09-14 ~ 09-23 的 25 轮成果（105 项：修改 79 / 新增 26 / 删除 0）一直留在 master 工作区。
+  只读审查发现其中 KekkaiUtilize 3 轮 + 式神分类切换、GlobalGame 2 轮不属于「L1/L2 + 结算」阶段范围，
+  按用户确认的方案拆成 3 个 commit（文档跟随对应代码提交，不单独拆 docs commit）：
+  1. `68a89f4d` feat: finalize l1 l2 interaction and settlement improvements —— 94 个文件；
+  2. `139f3bcd` fix: improve KekkaiUtilize reliability and shikigami switching bounds —— 16 个文件；
+  3. fix: improve GlobalGame configuration handling —— `config_model.py` / `GlobalGame/config.py` / 2 个测试 +
+     本条及 AI_CONTEXT §2 / ROADMAP 的状态同步（hash 以 `git log` 为准）。
+- 拆分细节：`KekkaiUtilize/script_task.py` 只让 L1 的 2 处（import + `execute_single_click`）进 C1，其余 18 处进 C2；
+  `config/template.json` 的 `success_jitter` 进 C2；`assets/i18n/zh-CN.json` 按用户要求整文件进 C1（不拆 JSON，
+  提前带入的 GlobalGame / KekkaiUtilize 翻译 key 在 C1 中无人引用、无副作用）。两个测试类因依赖后续 commit 延后补回：
+  `test_l1_l2_integration.py::ReactionDoesNotShiftScheduleTest`（复用 C2 的 `SchedulerHarness`）→ C2，
+  `test_fire_reaction_task_config.py::GlobalGameAndFatigueNoRegressionTest`（依赖 C3 的 `config_model` 修复）→ C3。
+  6 份交接文档的中间版本只整块删除其它主题的章节 / 条目 / 列表项 / 表格行，不改写文字；跨主题的单行（如测试基线增量链）留在 C1。
+  分拆版本经 `git hash-object -w` + `git update-index --cacheinfo` 只写入暂存区，工作区文件未被改动。
+- 验证：每个 commit 前把暂存区 `git checkout-index` 导出到仓库外独立目录跑 `compileall -q module tasks tests dev_tools` +
+  `unittest discover -s tests`：C1 **1909 OK**、C1+C2 **2018 OK**、C1+C2+C3 **2044 OK**；`git diff --cached --check`
+  C2 / C3 干净，C1 仅有 13 行已知例外（`ActivityShikigami/assets.py` 3 行、`GeneralBattle/assets.py` 10 行，资产生成工具
+  固定输出的 `# 描述 ` 行尾空格，HEAD 中同类行已有 88 / 66 行，经用户确认保持原样）；密钥扫描 0 命中；
+  `config/oas*.json`、`log/` 未纳入。推送前 `git fetch origin` 确认 `origin/master` 仍为 `a5e2d7e6`，普通 push，无 force。
+- 未做：不改任何业务逻辑；Level C 真机验证（L1/L2、FIRE、Settlement、ActivityShikigami、KekkaiUtilize、GlobalGame）仍按 ROADMAP 待验。

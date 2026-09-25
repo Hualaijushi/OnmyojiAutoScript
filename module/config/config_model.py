@@ -370,21 +370,62 @@ class ConfigModel(ConfigBase):
                 results[key] = sch["$defs"][value]
             return results
 
-        def merge_value(groups, jsons, definitions) -> list[dict]:
+        def nested_model_def(value, definitions):
+            # $ref 指向带 properties 的 $defs 条目 = 嵌套模型；指向带 enum 的条目 = 枚举（仍按单个参数处理）
+            if '$ref' not in value:
+                return None
+            target = definitions[re.search(r"/([^/]+)$", value['$ref']).group(1)]
+            return target if 'properties' in target else None
+
+        def nested_defaults(model, key, value, defaults):
+            # 嵌套模型字段自身的默认实例（dump 成 dict）。pydantic 2 对 default_factory 字段不在 schema 输出 default，
+            # 所以要从 FieldInfo 取工厂实例；上层已确定默认实例时沿用上层的，保证子模型被父级工厂覆写的默认值不丢
+            if defaults is not None:
+                return defaults.get(key)
+            if 'default' in value:
+                return value['default']
+            field = type(model).model_fields.get(key) if isinstance(model, BaseModel) else None
+            if field is not None and field.default_factory is not None:
+                instance = field.get_default(call_default_factory=True, validated_data={})
+                return instance.model_dump(mode='json') if isinstance(instance, BaseModel) else instance
+            # 必填的嵌套字段没有默认实例，叶子参数回落到各自 schema 声明的默认值
+            return None
+
+        def merge_value(groups, jsons, definitions, model=None, prefix='', defaults=None) -> list[dict]:
             # 将 groups的参数，同导出的json一起合并, 用于前端显示
+            # 嵌套模型字段展开成「父.子」形式的叶子参数（如 fatigue 的 rest.probability.maximum），
+            # 保持每组仍是扁平参数列表；实际值取当前配置，默认值取该字段的默认实例
             result = []
             for key, value in groups["properties"].items():
-                # deal with exclude 
+                # deal with exclude
                 if key in jsons and jsons[key] == 0xABCDEF:
                     continue
 
+                nested = nested_model_def(value, definitions)
+                if nested is not None:
+                    sub_jsons = jsons.get(key) if isinstance(jsons, dict) else None
+                    sub_jsons = sub_jsons if isinstance(sub_jsons, dict) else {}
+                    result.extend(merge_value(nested, sub_jsons, definitions,
+                                              model=getattr(model, key, None),
+                                              prefix=f'{prefix}{key}.',
+                                              defaults=nested_defaults(model, key, value, defaults)))
+                    continue
+
+                if defaults is not None and key in defaults:
+                    default = defaults[key]
+                elif "default" in value:
+                    default = value["default"]
+                else:
+                    # 必填字段没有默认值，不编造业务默认值
+                    default = None
+
                 item = {}
-                item["name"] = key
+                item["name"] = f'{prefix}{key}'
                 item["title"] = value["title"] if "title" in value else inflection.underscore(key)
                 if "description" in value:
                     item["description"] = value["description"]
-                item["default"] = value["default"]
-                item["value"] = jsons[key] if key in jsons else value["default"]
+                item["default"] = default
+                item["value"] = jsons[key] if key in jsons else default
                 item["type"] = value["type"] if "type" in value else "enum"
                 if '$ref' in value:  # list
                     enum_key = re.search(r"/([^/]+)$", value['$ref']).group(1)
@@ -407,7 +448,7 @@ class ConfigModel(ConfigBase):
                 for group_name in groups.keys():
                     if group_name in key:
                         groups_value[key] = groups[group_name]
-            result[key] = merge_value(groups_value[key], value, schema["$defs"])
+            result[key] = merge_value(groups_value[key], value, schema["$defs"], model=getattr(task, key, None))
 
         return result
 
@@ -449,6 +490,9 @@ class ConfigModel(ConfigBase):
                 if k not in group:
                     continue
                 group_object = v[index] if group_object is None else None
+        if '.' in argument and isinstance(group_object, BaseModel):
+            # script_task 展开的嵌套参数（如 fatigue 的 rest.probability.maximum）
+            return self._set_nested_arg(task, group, group_object, argument, value)
         argument_object = getattr(group_object, argument, None)
 
         if argument_object is None:
@@ -470,6 +514,36 @@ class ConfigModel(ConfigBase):
         except ValidationError as e:
             logger.error(e)
             return False
+
+    def _set_nested_arg(self, task: str, group: str, group_object: BaseModel, argument: str, value) -> bool:
+        """
+        设置嵌套参数。嵌套子模型没有开 validate_assignment，直接 setattr 不会校验；
+        这里把顶层子模型 dump 出来改叶子后 model_validate 整体重建，字段约束和子模型的
+        model_validator 都会生效，校验失败时原配置保持不变
+        :param argument: 形如 'task.time_scale_minutes' / 'rest.probability.maximum'
+        """
+        top, *path = argument.split('.')
+        top_object = getattr(group_object, top, None)
+        if not isinstance(top_object, BaseModel):
+            logger.error(f'Set arg {task}.{group}.{argument}.{value} failed')
+            return False
+        data = top_object.model_dump()
+        node = data
+        for name in path[:-1]:
+            node = node.get(name) if isinstance(node, dict) else None
+        if not isinstance(node, dict) or path[-1] not in node:
+            logger.error(f'Set arg {task}.{group}.{argument}.{value} failed')
+            return False
+        node[path[-1]] = value
+        try:
+            new_top = type(top_object).model_validate(data)
+        except ValidationError as e:
+            logger.error(e)
+            return False
+        setattr(group_object, top, new_top)
+        logger.info(f'Set arg {self.config_name}.{task}.{group}.{argument}.{value}')
+        self.save()
+        return True
 
     def copy_script_task(self, task_name: str, source_task: BaseModel) -> bool:
         model_task_name = convert_to_underscore(task_name)

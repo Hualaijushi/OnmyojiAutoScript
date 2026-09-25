@@ -99,7 +99,7 @@
 
 ## 当前任务
 
-**L1 / L2 交互层（2026-09-15，worktree `feature/l2-interaction-reaction-layer`，基于 master `a5e2d7e6`，未提交）**：
+**L1 / L2 交互层（2026-09-15 起于 worktree `feature/l2-interaction-reaction-layer` 开发；2026-09-25 已随 master `68a89f4d` 提交并推送，Level C 仍待验）**：
 
 - **L1 Global Click Pipeline + L1.2**：Level A/B **COMPLETE**（master 基线移植见 AI_CONTEXT §4.71；Login / DailyTrifles 原为显式
   排除项，Stage 3B §4.86 起已迁入 L1 执行器，不再豁免），Level C **PENDING**。
