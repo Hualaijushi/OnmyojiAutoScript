@@ -7,6 +7,7 @@ from time import sleep
 import difflib
 from datetime import time, datetime, timedelta
 from module.atom.image import RuleImage
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.ocr.common import BoxedResult
 
 from tasks.Component.config_base import Time
@@ -96,7 +97,8 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
                 self.goto_page(page_summon)
                 self.appear_then_click(self.I_UI_BACK_RED, interval=1)
                 x, y = list[i].coord()
-                self.device.click(x, y)
+                # 原写法未传 control_name（Control 默认 'Click'），迁移后保持不传，日志 / trace 名字不变
+                execute_single_click(self.device, FinalPoint(x, y))
                 sleep(1)
                 self.screenshot()
                 if self.appear(self.I_RECALL_TICKET):

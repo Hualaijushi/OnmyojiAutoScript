@@ -4,8 +4,7 @@
 import time
 import random
 
-from random import randint
-
+from module.click_pipeline import execute_single_click, list_click_target
 from tasks.Component.GeneralRoom.assets import GeneralRoomAssets
 from module.atom.ocr import RuleOcr
 from module.atom.image import RuleImage
@@ -132,6 +131,11 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
         pos = self.list_find(self.L_TEAM_LIST, name)
         if not pos:
             return False
+        # 原「OCR 中心 + randint(±5)」只是模拟点击分布，没有业务偏移语义：改为在命中的 OCR 框内
+        # 由统一模型采样；若列表改成图片模式，pos 已是 coord() 采样点，按 FinalPoint 原样执行，
+        # 不会叠加第二次随机。
+        control_name = f'GR_ZONE_{name}'
+        click_target = list_click_target(self.L_TEAM_LIST, pos, control_name)
         if name == '愤怒的石距' or name == '喷怒的石距':
             name = '价悠的石距'
         self.O_GR_ZONES_NAME.keyword = name
@@ -153,6 +157,6 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 break
             if click_timer.reached():
                 click_timer.reset()
-                self.device.click(x=pos[0] + randint(-5, 5), y=pos[1] + randint(-5, 5))
+                execute_single_click(self.device, click_target, control_name=control_name)
 
         return True

@@ -1,3 +1,5 @@
+from module.click_pipeline import FinalPoint, execute_single_click
+from module.interaction_policy import InteractionPolicy
 from tasks.Dokan.assets import DokanAssets
 from tasks.GameUi.action import sequence
 from tasks.GameUi.default_pages import (page_shirin, page_shikigami_records, page_battle, page_battle_result,
@@ -21,8 +23,8 @@ def map_enter_dokan(task) -> bool:
         pos = task.O_DOKAN_MAP.ocr_full(task.device.image)
         if pos != (0, 0, 0, 0):
             x = pos[0] + pos[2] / 2  # 取中间
-            y = pos[1] - 20  # 往上偏移20
-            task.device.click(x=x, y=y, control_name='dokan_map_goto_dokan')
+            y = pos[1] - 20  # 往上偏移20（文字框外的道馆图标），业务偏移点按 FinalPoint 原样执行
+            execute_single_click(task.device, FinalPoint(x, y), control_name='dokan_map_goto_dokan')
         try_count += 1
     return False
 
@@ -47,7 +49,9 @@ def priority_enter_dokan(task) -> bool:
                      DokanAssets.I_RYOU_DOKAN_ATTACK_PRIORITY_3,
                      DokanAssets.I_RYOU_DOKAN_ATTACK_PRIORITY_4]
     target_priority = priority_list[task.config.dokan.dokan_config.dokan_attack_priority]
-    return task.appear_then_click(target_priority, interval=1.2)
+    # L2：优先级选项识别后先 reaction，再 fresh confirm 原选项（目标消失则零点击、返回 False，
+    # 由 Navigator 6 秒 action 预算内的原重试路径接管）；选择规则与 interval 不变
+    return task.appear_then_click(target_priority, interval=1.2, policy=InteractionPolicy.NORMAL)
 
 
 # 道馆攻击优先级页面

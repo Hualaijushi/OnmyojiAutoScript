@@ -28,6 +28,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from module import reaction_profile as rp
+from tasks.Component.config_fire_reaction import FireReactionConfig
 from tasks.RealmRaid.script_task import (
     ScriptTask as RealmRaid,
     RR_FIRE_MAX_TRIES,
@@ -107,7 +108,7 @@ class RyouToppaFireReactionTest(TestCase):
         self.src = _src(RyouToppa.attack_area)
 
     def test_fire_delay_unified_to_reaction_fire_not_old_value(self):
-        self.assertIn('fire_delay = random_delay(*REACTION_FIRE)', self.src)
+        self.assertIn('fire_delay = random_delay(*fire_reaction_range(self.config.ryou_toppa.fire_reaction))', self.src)
         self.assertNotIn('random_delay(0.2, 0.6)', self.src)
 
     def test_fire_delay_sampled_inside_the_attempt_loop(self):
@@ -125,7 +126,7 @@ class RyouToppaFireReactionTest(TestCase):
         self.assertTrue(in_loop, '每次 FIRE attempt 必须重新采样 REACTION_FIRE')
 
     def test_reaction_then_fresh_screenshot_then_recheck(self):
-        i_delay = self.src.index('fire_delay = random_delay(*REACTION_FIRE)')
+        i_delay = self.src.index('fire_delay = random_delay(*fire_reaction_range(self.config.ryou_toppa.fire_reaction))')
         tail = self.src[i_delay:]
         self.assertIn('time.sleep(fire_delay)', tail)
         i_sleep = tail.index('time.sleep(fire_delay)')
@@ -158,6 +159,7 @@ class RyouToppaFireReactionTest(TestCase):
 class _RRHarness:
     def __init__(self):
         self.task = RealmRaid.__new__(RealmRaid)
+        self.task.config = SimpleNamespace(realm_raid=SimpleNamespace(fire_reaction=FireReactionConfig()))
         self.events = []
         self.task.device = SimpleNamespace(
             image='FRAME', image_frame_id='FID',
@@ -369,7 +371,7 @@ class RealmRaidCallerCompatTest(TestCase):
 class FireTimingOwnerTest(TestCase):
     def test_realmraid_fire_only_reaction_fire_no_stack(self):
         src = _src(RealmRaid.fire)
-        self.assertIn('random_delay(*REACTION_FIRE)', src)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))', src)
         self.assertNotIn('confirm_delay', src)
         self.assertNotIn('REACTION_FAST', src)
         # 只有一处 random_delay（FIRE reaction），没有第二套 repeat/retry delay
@@ -381,7 +383,7 @@ class FireTimingOwnerTest(TestCase):
         # 恰两处 random_delay：区域 pacing(1.0,3.0) + FIRE reaction(*REACTION_FIRE)
         self.assertEqual(src.count('random_delay('), 2)
         self.assertIn('random_delay(1.0, 3.0)', src)
-        self.assertIn('random_delay(*REACTION_FIRE)', src)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.ryou_toppa.fire_reaction))', src)
 
     def test_constants_are_engineering_baseline_values(self):
         self.assertEqual(RR_FIRE_MAX_TRIES, 4)

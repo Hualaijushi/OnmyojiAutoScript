@@ -4,6 +4,7 @@
 import time
 from time import sleep
 
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.exception import TaskEnd
 from module.logger import logger
 from module.base.timer import Timer
@@ -221,15 +222,19 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
             logger.info(f'Current selected {"10" if selected_10 else "50"} amulet')
             count += 10 if selected_10 else 50
             logger.info(f'Broken amulet:Count[{count}], Remain[{real_num}]')
+            # 复选框位置是从「文字左边界 - 当前勾选框宽度」推算的，不是识别到的真实框，
+            # 在推算框内采样可能漂出目标：保持推算中心作为 FinalPoint。
             # 一次50票不超过限制且当前选择的是10票则切换50票
             if count + 50 < dest_num and selected_10:
                 logger.hr('Switch to 50 amulet')
-                self.device.click(x=x_50 - width_check // 2, y=y_check + height_check // 2, control_name='Click_50')
+                point = FinalPoint(x_50 - width_check // 2, y_check + height_check // 2)
+                execute_single_click(self.device, point, control_name='Click_50')
                 self.device.click_record_clear()
             # 一次50票会超过限制且当前选择的是50票则切换10票
             if count + 50 >= dest_num and not selected_10:
                 logger.hr('Switch to 10 amulet')
-                self.device.click(x=x_10 - width_check // 2, y=y_check + height_check // 2, control_name='Click_10')
+                point = FinalPoint(x_10 - width_check // 2, y_check + height_check // 2)
+                execute_single_click(self.device, point, control_name='Click_10')
                 self.device.click_record_clear()
         # 正常结束且还有票, 则执行一次退出
         exit_amulet()

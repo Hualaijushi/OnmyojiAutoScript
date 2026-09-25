@@ -11,6 +11,7 @@ from time import sleep
 from future.backports.datetime import datetime
 
 from module.base.timer import Timer
+from module.click_pipeline import ClickBounds, execute_single_click
 from module.exception import TaskEnd
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -368,12 +369,14 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
                 return True
             # 在所有列表中都没有符合的,且忽略系数限制,那么就选择最低分数的那个,点击显示挑战按钮
             if ignore_score:
-                x, y, w, h = bounty_list[idx_selected]
+                # bounty_list 项是 I_RIGHTPAD_POINT_BOUNTY 的匹配框；原来直点框左上角只是拆包顺手，
+                # 与正常路径（对该图标 coord()）一致改为在匹配框内按同一目标身份采样。
+                bounty_bounds = ClickBounds(tuple(bounty_list[idx_selected]), self.I_RIGHTPAD_POINT_BOUNTY.name)
                 while 1:
                     self.screenshot()
                     if self.appear(self.I_CENTER_CHALLENGE):
                         return True
-                    self.device.click(x, y)
+                    execute_single_click(self.device, bounty_bounds)
                     sleep(0.5)
             return False
 

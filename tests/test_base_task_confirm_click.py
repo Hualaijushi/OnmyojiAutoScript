@@ -39,7 +39,7 @@ class BaseTaskConfirmClickTest(TestCase):
         self.assertTrue(result)
         self.task.appear.assert_called_once_with(target, interval=1, threshold=None)
         target.coord.assert_called_once_with()
-        self.task.device.click.assert_called_once_with(10, 20, control_name='target')
+        self.task.device.click.assert_called_once_with(x=10, y=20, control_name='target')
         sleep_mock.assert_not_called()
         random_delay_mock.assert_not_called()
         self.task.screenshot.assert_not_called()

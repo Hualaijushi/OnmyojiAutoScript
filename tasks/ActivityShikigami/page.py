@@ -6,7 +6,7 @@ import time
 from module.base.timer import Timer
 from module.exception import GamePageUnknownError
 from module.logger import logger
-from module.reaction_profile import REACTION_NAVIGATION
+from module.interaction_policy import InteractionPolicy
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.Component.RightActivity.assets import RightActivityAssets
 from tasks.GameUi.page import (
@@ -27,6 +27,14 @@ from tasks.GlobalGame.assets import GlobalGameAssets
 
 ACTIVITY_COLUMN_SWITCH_MAX_TRIES = 8
 ACTIVITY_AUXILIARY_SETTLE_SECONDS = 1.0
+# `find_activity_entry` 旧栏目切换回退的墙钟兜底：与次数上限 `ACTIVITY_COLUMN_SWITCH_MAX_TRIES`
+# 并列的第二重独立有界（8 次循环 × 每次至多约 settle(1.0s) + 点击 + 节流 sleep(0.5s) ≈ 12~16s，
+# 这里留出余量）。**能力边界必须写清楚**：这个 Timer 只在循环重新拿到控制权、跑到循环顶部的
+# 判断语句时才会被检查——如果某一次 `screenshot()` / `appear()` 本身在更底层同步阻塞、
+# 迟迟不返回，这个 Timer 不会被执行到，也就无法中断那一次调用（2026-09-22 真机事故：
+# 五次栏目切换点击后进程停滞约 35 分钟直至外部重启，期间无任何日志，见 docs/AI_CONTEXT.md
+# 本轮补记）。加这层墙钟只能确保「正常往返于循环体」的耗时有界，不能替代设备层自身的超时。
+ACTIVITY_ENTRY_FALLBACK_TIMEOUT = 20
 
 
 def _settle_activity_auxiliary(task):
@@ -44,31 +52,77 @@ def _activity_entry_visible(task) -> bool:
 
 def goto_activity_entry(task) -> bool:
     """庭院 → 本期式神活动页的边动作。优先点当期入口图标 `main_goto_act_2`，旧图标作回退；
-    每次 delay 后 fresh 二次确认目标仍在才点（`REACTION_NAVIGATION`）。入口图标消失本身
-    **不**代表进入活动成功——是否真正进入仍由 `page_act` 的 positive marker 判定。"""
+    每次 delay 后 fresh 二次确认目标仍在才点（`InteractionPolicy.NAVIGATION`）。入口图标消失本身
+    **不**代表进入活动成功——是否真正进入仍由 `page_act` 的 positive marker 判定。
+
+    诊断说明：`appear_then_click` 内部「初次识别」与「delay 后二次确认」共用同一个布尔返回值，
+    这里拿不到更细的中间状态——本函数只能诊断「两个入口图标本帧是否都未被识别到」这一种情况，
+    无法从返回值本身区分「初次没识别到」与「初次识别到但二次确认时已经消失」，如需区分需要改
+    `appear_then_click` 本体，本轮不做（见 docs/AI_CONTEXT.md 本轮补记「未确认」项）。"""
     if task.appear_then_click(
             ActivityShikigamiAssets.I_MAIN_GOTO_ACT_2, interval=1,
-            confirm_delay=REACTION_NAVIGATION):
+            policy=InteractionPolicy.NAVIGATION):
         return True
-    return task.appear_then_click(
-        ActivityShikigamiAssets.I_MAIN_GOTO_ACT, interval=1,
-        confirm_delay=REACTION_NAVIGATION)
+    if task.appear_then_click(
+            ActivityShikigamiAssets.I_MAIN_GOTO_ACT, interval=1,
+            policy=InteractionPolicy.NAVIGATION):
+        return True
+    logger.info('ActivityShikigami: 当期/旧活动入口图标本帧均未识别到，交由旧栏目切换回退处理')
+    return False
 
 
 def find_activity_entry(task) -> bool:
-    """在庭院右侧栏目中寻找本期式神活动入口。"""
+    """`goto_activity_entry` 未命中新/旧入口图标后的回退：在庭院右侧栏目里切换查找本期入口。
+
+    每轮循环只截一次新图：常规情况在轮次开头截图；如果本轮点击了栏目切换按钮，则改用点击后
+    立即拍的新帧——这张帧既用来确认这次点击是否已经带出活动入口，也直接充当下一轮循环顶部的
+    判断画面，不再于点击后额外等待和截图，避免「点击 → 截图 → 识别 → 下一轮又截图 → 重复识别」。
+
+    有界性由两重独立上限保证：次数上限 `ACTIVITY_COLUMN_SWITCH_MAX_TRIES` 与墙钟上限
+    `ACTIVITY_ENTRY_FALLBACK_TIMEOUT`（能力边界见常量定义处的说明），任一上限先到都走同一条
+    「未找到」退出路径，不吞异常、不伪造成功。
+    """
     switched = 0
+    fallback_timer = Timer(ACTIVITY_ENTRY_FALLBACK_TIMEOUT).start()
+    logger.info('ActivityShikigami: 新入口未命中，进入旧栏目切换回退')
+    need_screenshot = True
     for _ in range(ACTIVITY_COLUMN_SWITCH_MAX_TRIES):
-        task.screenshot()
+        if fallback_timer.reached():
+            logger.warning(
+                f'ActivityShikigami entry fallback 墙钟超时（{ACTIVITY_ENTRY_FALLBACK_TIMEOUT}s），'
+                f'已切换栏目 {switched} 次'
+            )
+            raise GamePageUnknownError('Cannot find ActivityShikigami entry (fallback timeout)')
+
+        if need_screenshot:
+            task.screenshot()
+        need_screenshot = True
+
         if not task.appear(task.I_CHECK_MAIN):
+            logger.warning('ActivityShikigami: 查找入口期间已离开庭院主页，中止回退')
             return False
         if _activity_entry_visible(task):
+            logger.info(f'ActivityShikigami: 切换 {switched} 次栏目后找到活动入口')
             return True
-        if task.appear(RightActivityAssets.I_TOGGLE_BUTTON):
-            _settle_activity_auxiliary(task)
-            if task.appear_then_click(RightActivityAssets.I_TOGGLE_BUTTON, interval=0):
-                switched += 1
-        time.sleep(0.5)
+
+        if not task.appear(RightActivityAssets.I_TOGGLE_BUTTON):
+            time.sleep(0.5)
+            continue
+
+        _settle_activity_auxiliary(task)
+        if not task.appear_then_click(RightActivityAssets.I_TOGGLE_BUTTON, interval=0):
+            time.sleep(0.5)
+            continue
+
+        switched += 1
+        logger.info(f'ActivityShikigami: 第 {switched} 次切换栏目')
+        # 点击已经落下：本轮判断改用点击后的新帧，同一张帧直接作为下一轮循环顶部的画面，
+        # 不再重复截图（对应下面的 need_screenshot = False）。
+        task.screenshot()
+        need_screenshot = False
+        if _activity_entry_visible(task):
+            logger.info(f'ActivityShikigami: 第 {switched} 次切换栏目后立即找到活动入口')
+            return True
 
     task.screenshot()
     if _activity_entry_visible(task):

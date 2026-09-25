@@ -59,12 +59,16 @@ class GeneralBattleAssets:
 	C_RANDOM_BOTTOM = RuleClick(roi_front=(819,639,425,69), roi_back=(819,639,425,69), name="random_bottom")
 	# 整体随机点击 
 	C_RANDOM_ALL = RuleClick(roi_front=(42,94,1207,543), roi_back=(42,94,1207,543), name="random_all")
-	# 战斗结算/奖励默认点击范围
+	# 战斗结算/奖励默认点击范围 
 	C_RANDOM_DEFAULT = RuleClick(roi_front=(742,430,362,230), roi_back=(742,430,362,230), name="random_default")
-	# 结算安全点击区域底部
+	# 结算安全点击区域底部 
 	C_RANDOM_SAVE_BOTTOM = RuleClick(roi_front=(819,639,425,69), roi_back=(819,639,425,69), name="random_save_bottom")
-	# 结算安全点击
+	# 结算安全点击 
 	C_RANDOM_SAVE_RIGHT = RuleClick(roi_front=(1185,209,87,441), roi_back=(1185,209,87,441), name="random_save_right")
+	# 周年庆结算点击1 
+	C_RANDOM_ACTIVITY_1 = RuleClick(roi_front=(937,431,296,248), roi_back=(937,431,296,248), name="random_activity_1")
+	# 周年庆活动结算2 
+	C_RANDOM_ACTIVITY_2 = RuleClick(roi_front=(659,522,406,171), roi_back=(659,522,406,171), name="random_activity_2")
 
 
 	# Image Rule Assets
@@ -126,13 +130,13 @@ class GeneralBattleAssets:
 	I_GB_SKIN_CONFIRM = RuleImage(roi_front=(594,447,90,55), roi_back=(594,447,90,55), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_gb_skin_confirm.png")
 	# 战斗组队退出页面标志 
 	I_GB_CHECK_TEAM_EXIT = RuleImage(roi_front=(507,288,270,54), roi_back=(411,233,452,247), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_gb_check_team_exit.png")
-	# 时运加成关闭
+	# 时运加成关闭 
 	I_GB_CLOSE_RED = RuleImage(roi_front=(1108,128,45,41), roi_back=(1108,128,45,41), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_gb_close_red.png")
-	# 御魂溢出
+	# 御魂溢出 
 	I_OVER_GHOST = RuleImage(roi_front=(697,409,89,32), roi_back=(697,409,89,32), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_over_ghost.png")
-	# 通用结算奖励区域，判断是否战斗结束以及奖励是否过多
+	# 通用结算奖励区域，判断是否战斗结束以及奖励是否过多 
 	I_GET_BATTLE_REWARD = RuleImage(roi_front=(557,439,146,149), roi_back=(557,439,146,149), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_get_battle_reward.png")
-	# 通用结算奖励区域，判断是否战斗结束以及奖励是否过多
+	# 通用结算奖励区域，判断是否战斗结束以及奖励是否过多 
 	I_GET_BATTLE_REWARD_2 = RuleImage(roi_front=(557,439,146,149), roi_back=(557,439,146,149), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_get_battle_reward_2.png")
 
 
@@ -167,3 +171,5 @@ class GeneralBattleAssets:
 	S_BATTLE_RANDOM_LEFT = RuleSwipe(roi_front=(122,155,480,426), roi_back=(667,147,461,427), mode="default", name="battle_random_left")
 	# description 
 	S_BATTLE_RANDOM_RIGHT = RuleSwipe(roi_front=(719,138,417,392), roi_back=(237,163,387,394), mode="default", name="battle_random_right")
+
+

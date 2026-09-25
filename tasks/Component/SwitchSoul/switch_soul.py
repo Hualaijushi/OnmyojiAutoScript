@@ -7,6 +7,7 @@ from typing import Union
 from module.atom.click import RuleClick
 from module.atom.long_click import RuleLongClick
 from module.atom.ocr import RuleOcr
+from module.click_pipeline import FinalPoint, execute_single_click
 from tasks.base_task import BaseTask
 from tasks.Component.SwitchSoul.assets import SwitchSoulAssets
 from module.logger import logger
@@ -278,7 +279,9 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
         x1, y1 = target.coord()
         x, y = action.coord()
 
-        self.device.click(x=x, y=y1, control_name=target.name)
+        # 按钮列（action 采样的 x）× 命中队伍名所在行（OCR 采样的 y）：两轴各已采样一次，
+        # 组合点就是最终落点，不再采样。
+        execute_single_click(self.device, FinalPoint(x, y1), control_name=target.name)
         return True
 
 

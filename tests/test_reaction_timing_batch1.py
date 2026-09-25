@@ -84,18 +84,18 @@ class RealmRaidReactionTest(TestCase):
         src = _src(RealmRaid.ensure_lock)
         for tgt in ('I_UNLOCK', 'I_UNLOCK_2', 'I_LOCK', 'I_LOCK_2'):
             self.assertIn(
-                f'appear_then_click(self.{tgt}, interval=1, confirm_delay=REACTION_FAST)', src, tgt)
+                f'appear_then_click(self.{tgt}, interval=1, policy=InteractionPolicy.FAST)', src, tgt)
 
     def test_check_refresh_fresh_normal_ensure_confirm(self):
         src = _src(RealmRaid.check_refresh)
-        self.assertIn('appear_then_click(self.I_FRESH, interval=1, confirm_delay=REACTION_NORMAL)', src)
-        self.assertIn('appear_then_click(self.I_FRESH_ENSURE, interval=1, confirm_delay=REACTION_CONFIRM)', src)
+        self.assertIn('appear_then_click(self.I_FRESH, interval=1, policy=InteractionPolicy.NORMAL)', src)
+        self.assertIn('appear_then_click(self.I_FRESH_ENSURE, interval=1, policy=InteractionPolicy.CONFIRM)', src)
 
     def test_fire_and_fire_again_confirm_timing_owners_are_separate(self):
         fire_src = _src(RealmRaid.fire)
         again_src = _src(RealmRaid._fire_again)
         self.assertNotIn('confirm_delay', fire_src)
-        self.assertIn('random_delay(*REACTION_FIRE)', again_src)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))', again_src)
         self.assertIn('I_FRESH_ENSURE, interval=2,\n                                      confirm_delay=RR_AGAIN_CONFIRM_DELAY)', again_src)
         self.assertNotIn('I_FIRE_AGAIN, interval=0, threshold=0.8, confirm_delay', again_src)
 
@@ -111,12 +111,12 @@ class OrochiReactionTest(TestCase):
         for func in (Orochi.run_leader, Orochi.run_alone, Orochi.run_wild):
             src = _src(func)
             if 'check_lock(' in src:
-                self.assertIn('confirm_delay=REACTION_FAST', src, func.__name__)
+                self.assertIn('policy=InteractionPolicy.FAST', src, func.__name__)
 
     def test_form_team_uses_normal_in_leader_and_wild(self):
         for func in (Orochi.run_leader, Orochi.run_wild):
             self.assertIn(
-                'appear_then_click(self.I_FORM_TEAM, interval=1, confirm_delay=REACTION_NORMAL)',
+                'appear_then_click(self.I_FORM_TEAM, interval=1, policy=InteractionPolicy.NORMAL)',
                 _src(func), func.__name__)
 
     def test_orochi_fire_targets_have_no_confirm_delay(self):
@@ -132,17 +132,17 @@ class OrochiReactionTest(TestCase):
 class EvoZoneReactionTest(TestCase):
     def test_check_lock_calls_pass_fast(self):
         for func in (EvoZone.run_leader, EvoZone.run_alone):
-            self.assertIn('confirm_delay=REACTION_FAST', _src(func), func.__name__)
+            self.assertIn('policy=InteractionPolicy.FAST', _src(func), func.__name__)
 
     def test_kirin_type_selection_uses_deliberate_single_site(self):
         src = _src(EvoZone.evozone_enter)
-        self.assertIn('appear_then_click(kirintype, interval=1, confirm_delay=REACTION_DELIBERATE)', src)
+        self.assertIn('appear_then_click(kirintype, interval=1, policy=InteractionPolicy.DELIBERATE)', src)
         # 只有一个点击点，不重复给 5 个具体类型各加一次
-        self.assertEqual(src.count('confirm_delay='), 1)
+        self.assertEqual(src.count('policy='), 1)
 
     def test_form_team_uses_normal(self):
         self.assertIn(
-            'appear_then_click(self.I_FORM_TEAM, interval=1, confirm_delay=REACTION_NORMAL)',
+            'appear_then_click(self.I_FORM_TEAM, interval=1, policy=InteractionPolicy.NORMAL)',
             _src(EvoZone.run_leader))
 
     def test_evozone_fire_and_layer_untouched(self):
@@ -157,14 +157,14 @@ class RyouToppaReactionTest(TestCase):
     def test_lock_toggle_uses_fast_action_none_form(self):
         src = _src(RyouToppa._ensure_team_lock_state)
         # source（当前状态图，无 action=）+ FAST
-        self.assertIn('appear_then_click(source, interval=0, confirm_delay=REACTION_FAST)', src)
+        self.assertIn('appear_then_click(source, interval=0, policy=InteractionPolicy.FAST)', src)
 
     def test_admin_buttons_use_fast(self):
         src = _src(RyouToppa.start_ryou_toppa)
         self.assertIn(
-            'appear_then_click(self.I_SELECT_RYOU_BUTTON, interval=1, confirm_delay=REACTION_FAST)', src)
+            'appear_then_click(self.I_SELECT_RYOU_BUTTON, interval=1, policy=InteractionPolicy.FAST)', src)
         self.assertIn(
-            'appear_then_click(self.I_START_TOPPA_BUTTON, interval=1, confirm_delay=REACTION_FAST)', src)
+            'appear_then_click(self.I_START_TOPPA_BUTTON, interval=1, policy=InteractionPolicy.FAST)', src)
         # #26 排除：I_GUILD_ORDERS_REWARDS 带 action= 的调用不加
         self.assertIn('appear_then_click(self.I_GUILD_ORDERS_REWARDS, action=self.C_SELECT_FIRST_RYOU, interval=1)', src)
         self.assertNotIn('I_GUILD_ORDERS_REWARDS, action=self.C_SELECT_FIRST_RYOU, interval=1, confirm_delay', src)
@@ -173,7 +173,7 @@ class RyouToppaReactionTest(TestCase):
         src = _src(RyouToppa.attack_area)
         # 保留区域业务 pacing 与 I_FIRE 手搓 reaction（2026-09-08 起 FIRE 统一 REACTION_FIRE）
         self.assertIn('random_delay(1.0, 3.0)', src)
-        self.assertIn('random_delay(*REACTION_FIRE)', src)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.ryou_toppa.fire_reaction))', src)
         self.assertNotIn('random_delay(0.2, 0.6)', src)
         # I_FIRE 的点击点没有再叠 confirm_delay
         self.assertIn("appear_then_click(RealmRaidAssets.I_FIRE, interval=0, threshold=0.8)", src)
@@ -190,27 +190,27 @@ class ExplorationReactionTest(TestCase):
         body = _src(BaseExploration.switch_rotate).split('"""')[-1]   # 去 docstring 只扫代码体
         self.assertNotIn('I_E_AUTO_ROTATE_ON', body)
         self.assertIn(
-            'appear_then_click(self.I_E_AUTO_ROTATE_OFF, interval=0.8, confirm_delay=REACTION_FAST)',
+            'appear_then_click(self.I_E_AUTO_ROTATE_OFF, interval=0.8, policy=InteractionPolicy.FAST)',
             _src(Exploration.run_on_exp_settings))
 
     def test_exit_dialog_confirm_and_navigation(self):
         src = _src(Exploration.run_on_exp_exit)
         self.assertIn(
-            'appear_then_click(self.I_E_EXIT_CANCEL, interval=0.8, confirm_delay=REACTION_NAVIGATION)', src)
+            'appear_then_click(self.I_E_EXIT_CANCEL, interval=0.8, policy=InteractionPolicy.NAVIGATION)', src)
         self.assertIn(
-            'appear_then_click(self.I_E_EXIT_CONFIRM, interval=0.8, confirm_delay=REACTION_CONFIRM)', src)
+            'appear_then_click(self.I_E_EXIT_CONFIRM, interval=0.8, policy=InteractionPolicy.CONFIRM)', src)
 
     def test_back_yellow_uses_navigation(self):
         self.assertIn(
-            'appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8, confirm_delay=REACTION_NAVIGATION)',
+            'appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8, policy=InteractionPolicy.NAVIGATION)',
             _src(BaseExploration.quit_exp_main))
 
     def test_chapter_confirm_uses_normal_all_four_sites(self):
         src = _src(BaseExploration.open_expect_level)
         self.assertEqual(
-            src.count('appear_then_click(self.I_UI_CONFIRM, interval=1, confirm_delay=REACTION_NORMAL)'), 2)
+            src.count('appear_then_click(self.I_UI_CONFIRM, interval=1, policy=InteractionPolicy.NORMAL)'), 2)
         self.assertEqual(
-            src.count('appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1, confirm_delay=REACTION_NORMAL)'), 2)
+            src.count('appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1, policy=InteractionPolicy.NORMAL)'), 2)
         # 明确不动 OCR 目标与 swipe→sleep(1) settle 段
         self.assertIn('ocr_appear_click(self.O_E_EXPLORATION_LEVEL_NUMBER)', src)
         self.assertNotIn('O_E_EXPLORATION_LEVEL_NUMBER, confirm_delay', src)
@@ -296,7 +296,7 @@ class TimingOwnerNoStackTest(TestCase):
     def test_ryoutoppa_i_fire_owner_is_hand_rolled_random_delay_only(self):
         src = _src(RyouToppa.attack_area)
         # 同一段里既没有 confirm_delay，又保留了手搓 fire_delay（2026-09-08 起统一 REACTION_FIRE）
-        self.assertIn('fire_delay = random_delay(*REACTION_FIRE)', src)
+        self.assertIn('fire_delay = random_delay(*fire_reaction_range(self.config.ryou_toppa.fire_reaction))', src)
         self.assertNotIn('confirm_delay', src)
 
     def test_generalbattle_prepare_and_settlement_owners_intact(self):

@@ -135,12 +135,13 @@ class GeneralBattleTimingTest(TestCase):
         self.assertFalse(context.prepare_click_timer.started())
 
     def _settlement_ns(self, **overrides):
-        """构造带结算节流计时器 + Settlement Micro-Burst v1 字段的最小 context。"""
+        """构造带结算节流计时器 + Settlement Micro-Burst v1.2 字段的最小 context。"""
         base = dict(
             settlement_click_timer=_TimerStub(),
             settlement_session_active=False,
             settlement_click_budget=0,
             settlement_clicks_used=0,
+            settlement_total_clicks=0,
             settlement_anchor=None,
             settlement_region_name=None,
             settlement_stage_name=None,
@@ -265,7 +266,7 @@ class GeneralBattleTimingTest(TestCase):
         # 但仍不是 confirm_delay，也不是被删过的 reaction_delay / CLICK_REACTION_DELAY。
         source = inspect.getsource(RealmRaidScriptTask.fire)
 
-        self.assertIn('random_delay(*REACTION_FIRE)', source)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))', source)
         self.assertIn('self.appear_then_click(self.I_FIRE, interval=0, threshold=0.8)', source)
         self.assertIn('self.click(click, interval=2)', source)   # partition 打开详情不变
         self.assertNotIn('confirm_delay', source)

@@ -31,6 +31,7 @@ from module.atom.click import RuleClick
 from module.atom.image import RuleImage
 from tasks.Component.GeneralBattle.general_battle import BattleAction, GeneralBattle
 from tasks.RealmRaid.script_task import ScriptTask as RR
+from tasks.Component.config_fire_reaction import FireReactionConfig
 
 
 def _src(func):
@@ -46,6 +47,7 @@ class _Harness:
 
     def __init__(self):
         self.task = RR.__new__(RR)
+        self.task.config = SimpleNamespace(realm_raid=SimpleNamespace(fire_reaction=FireReactionConfig()))
         self.events = []
         self.task.device = SimpleNamespace(
             image='FRAME',
@@ -162,7 +164,7 @@ class FireCharacterizationTest(TestCase):
         self.assertIn('Timer(RR_FIRE_TIMEOUT)', src)
         self.assertIn('range(1, RR_FIRE_MAX_TRIES + 1)', src)
         self.assertNotIn('while True', src)
-        self.assertIn('random_delay(*REACTION_FIRE)', src)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))', src)
         self.assertNotIn('confirm_delay', src)
         # 三态：battle / retryable / (timeout=transition-unknown)
         self.assertIn("state = self._wait_fire_entered_battle()", src)
@@ -323,7 +325,7 @@ class FireAgainThreeStateTest(TestCase):
     def test_only_reaction_fire_no_stack(self):
         src = _src(RR._fire_again)
         self.assertEqual(src.count('random_delay('), 1)
-        self.assertIn('random_delay(*REACTION_FIRE)', src)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))', src)
         self.assertIn('I_FRESH_ENSURE, interval=2,\n                                      confirm_delay=RR_AGAIN_CONFIRM_DELAY)', src)
         self.assertNotIn('I_FIRE_AGAIN, interval=0, threshold=0.8, confirm_delay', src)
 
@@ -516,6 +518,7 @@ class ActiveBattleEntryContractTest(TestCase):
         self.addCleanup(lambda: setattr(_RRFakeTimer, 'budget', 6))
 
         t = RR.__new__(RR)
+        t.config = SimpleNamespace(realm_raid=SimpleNamespace(fire_reaction=FireReactionConfig()))
         events = []
         t.device = SimpleNamespace(image='F', click_record_clear=Mock())
         t.wait_until_appear = Mock()

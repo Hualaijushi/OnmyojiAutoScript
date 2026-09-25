@@ -3,6 +3,7 @@
 import random
 import time
 
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.exception import GameStuckError
 from module.logger import logger
 from tasks.ActivityShikigami.base_act import ActivityResourceNotEnough
@@ -33,6 +34,9 @@ class RichManAct:
         # `ScriptTask` 实例会按 `task_sequence_v` 顺序连跑多条线）。大富翁线没有 Fatigue
         # 安全节点，宏观空闲仍由 `prepare_next_action` 里的 `random_sleep` 负责。
         self._fatigue_owns_macro_idle = False
+        # 爬塔线专用的单击结算（2026-09-23）不接大富翁：本线的结算沿用 GeneralBattle 原有
+        # Settlement V3 / Micro-Burst，不做改动。
+        self._climb_owns_settlement_single_click = False
         self.setup_rich_man_pages()
         self.switch_soul_for_from_courtyard('rich_man')
         self.goto_page(pages.page_rich_man)
@@ -326,7 +330,9 @@ class RichManAct:
             x, y, width, height = self.I_RM_FITGHT_ANCHOR.roi_front
             click_x = max(0, min(1279, x + width // 2))
             click_y = max(0, min(719, y + height // 2 - 70))
-            self.device.click(x=click_x, y=click_y, control_name='rm_boss_fight_dynamic_enter')
+            # 落点在锚点上方 70px（首领入口在锚点上方），不在锚点框内：按 FinalPoint 原样执行。
+            execute_single_click(
+                self.device, FinalPoint(click_x, click_y), control_name='rm_boss_fight_dynamic_enter')
             deadline = time.monotonic() + 5.0
             while time.monotonic() < deadline:
                 self.screenshot()

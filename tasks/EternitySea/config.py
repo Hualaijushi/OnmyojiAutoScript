@@ -8,6 +8,7 @@ from tasks.Component.SwitchSoul.switch_soul_config import SwitchSoulConfig
 
 from tasks.Component.GeneralInvite.config_invite import InviteConfig
 from tasks.Component.config_scheduler import Scheduler
+from tasks.Component.config_fire_reaction import FireReactionConfig
 from tasks.Component.config_base import ConfigBase, Time
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Orochi.config import UserStatus
@@ -42,6 +43,7 @@ class EternitySea(ConfigBase):
     eternity_sea_config: EternitySeaConfig = Field(default_factory=EternitySeaConfig)
     invite_config: InviteConfig = Field(default_factory=InviteConfig)
     general_battle_config: EternitySeaBattleConfig = Field(default_factory=EternitySeaBattleConfig)
+    fire_reaction: FireReactionConfig = Field(default_factory=FireReactionConfig)
     switch_soul_config_1: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
     switch_soul_config_2: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
 

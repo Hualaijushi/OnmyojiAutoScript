@@ -14,6 +14,7 @@ from cached_property import cached_property
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.exception import TaskEnd
 from module.image.recipes import match_highlight_rule
 from module.logger import logger
@@ -245,7 +246,9 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             # 根据邀请按钮位置生成 对应的点击位置 打开追踪界面
             # NOTE magic Number
 
-            self.device.click(btn.roi_front[0], btn.roi_front[1] - 40, control_name=str(btn) + ' y-40')
+            # 落点在邀请按钮左上角上方 40px（按钮框外），是业务偏移，按 FinalPoint 原样执行。
+            point = FinalPoint(btn.roi_front[0], btn.roi_front[1] - 40)
+            execute_single_click(self.device, point, control_name=str(btn) + ' y-40')
             # 防止点击后界面来不及刷新
             sleep(1.5)
         # 关闭单个任务的追踪界面

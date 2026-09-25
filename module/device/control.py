@@ -1,4 +1,5 @@
 import time
+from functools import partial
 
 # from module.base.button import Button
 from module.base.decorator import cached_property
@@ -74,6 +75,18 @@ class Control(Minitouch, Adb, Scrcpy, Window):
             methods['window_message'] = self.long_click_window_message
         return methods
 
+    @cached_property
+    def click_backend_methods(self):
+        """`click_with_backend` 可显式指定的单击后端（百鬼夜行撒豆这类高频小游戏）。
+
+        window_message 保留原高速路径的 `fast=True`（10~40ms 按压），minitouch 与普通点击同一实现；
+        不按 IS_WINDOWS 裁剪，与原业务直调时一致。
+        """
+        return {
+            'minitouch': self.click_minitouch,
+            'window_message': partial(self.click_window_message, fast=True),
+        }
+
     def click(self, x: int, y: int, control_check=True, control_name='Click') -> None:
         """
 
@@ -85,12 +98,27 @@ class Control(Minitouch, Adb, Scrcpy, Window):
         """
         if control_check:
             self.handle_control_check(control_name)
-        x, y = ensure_int(x, y)
-        self._invalidate_image_batch_cache()
         method = self.click_methods.get(
             self.config.script.device.control_method,
             self.click_adb
         )
+        self._dispatch_click(method, x, y, control_name)
+
+    def click_with_backend(self, x: int, y: int, backend, control_name='Click') -> None:
+        """用显式指定的后端执行一次单击，不读 control_method 配置。
+
+        不做 control_check：原高速路径从不进 click_record，高频撒豆若计数会误触发
+        GameTooManyClickError。坐标取整 / 日志 / BehaviorTrace 与 `click` 共用同一段实现。
+        """
+        key = getattr(backend, 'value', backend)
+        method = self.click_backend_methods.get(key)
+        if method is None:
+            raise ValueError(f'未知的单击后端：{backend!r}')
+        self._dispatch_click(method, x, y, control_name)
+
+    def _dispatch_click(self, method, x, y, control_name) -> None:
+        x, y = ensure_int(x, y)
+        self._invalidate_image_batch_cache()
         start = time.perf_counter()
         method(x, y)
         elapsed = time.perf_counter() - start

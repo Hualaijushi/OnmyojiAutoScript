@@ -48,6 +48,11 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
         # （否则「爬塔 → 伪神降临」会让伪神线既没有 Fatigue 安全节点、也跳过 random_sleep，
         # 出现零 macro-idle owner）。这里的值只是实例初始默认，不承担线间切换职责。
         self._fatigue_owns_macro_idle = False
+        # 同一契约用于「结算单击策略」owner：爬塔线专用的单击结算（2026-09-23）只应在
+        # `NormalClimbAct.run_climb()` 运行期间生效，绝不能沿用上一条线的残留值——
+        # `current_action_type` 在跨线切换后可能仍是上一条climb 线的旧值（'ap'/'pass'/...），
+        # 不能拿它当判据，必须靠每条线自己在 `run_*` 入口显式声明。
+        self._climb_owns_settlement_single_click = False
 
     @cached_property
     def conf(self) -> ActivityShikigami:

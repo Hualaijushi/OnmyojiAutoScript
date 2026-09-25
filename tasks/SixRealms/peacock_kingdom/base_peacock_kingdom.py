@@ -1,6 +1,7 @@
 import time
 
 from module.atom.image import RuleImage
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle, BattleContext, BattleAction
@@ -74,7 +75,7 @@ class BasePeacockKingdom(GeneralBattle, SixRealmsCommon):
         if self.appear_then_click(self.I_LOCAL):
             time.sleep(0.3)
         x, y = self.C_PK_GREEN_MAIN.coord()
-        self.device.click(x, y, control_name=self.C_PK_GREEN_MAIN.name)
+        execute_single_click(self.device, FinalPoint(x, y), control_name=self.C_PK_GREEN_MAIN.name)
 
     def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         context.reward_no_battle_ts = None

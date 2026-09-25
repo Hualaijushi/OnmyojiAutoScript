@@ -16,6 +16,17 @@ from tasks.FallenSun.assets import FallenSunAssets
 from tasks.FallenSun.config import FallenSun, UserStatus
 from module.logger import logger
 from module.exception import TaskEnd
+from module.click_pipeline import execute_single_click, list_click_target
+from module.base.timer import Timer
+from module.base.utils.random import random_delay
+from module.interaction_policy import fire_reaction_range
+from tasks.Component.fire_battle_entry import is_battle_result_residue, is_new_battle_entry
+
+# 日轮之陨单人挑战 FIRE 的有限 attempt / 总超时 / 点击后确认等待。engineering baseline，非 Level C 标定：
+# 对齐 OROCHI_FIRE_* / RR_FIRE_*（4 / 10 / 3）。
+FALLEN_SUN_FIRE_MAX_TRIES = 4
+FALLEN_SUN_FIRE_TIMEOUT = 10
+FALLEN_SUN_FIRE_POST_CLICK_TIMEOUT = 3
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, FallenSunAssets):
@@ -82,7 +93,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         """
         pos = self.list_find(self.L_LAYER_LIST, layer)
         if pos:
-            self.device.click(x=pos[0], y=pos[1])
+            control_name = f'FALLEN_SUN_LAYER_{layer}'
+            execute_single_click(self.device, list_click_target(self.L_LAYER_LIST, pos, control_name), control_name=control_name)
             return True
 
     def check_lock(self, lock: bool = True) -> bool:
@@ -167,7 +179,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
             # 点击挑战
             if not is_first:
-                if self.run_invite(config=self.config.fallen_sun.invite_config):
+                if self.run_invite(config=self.config.fallen_sun.invite_config, fire_reaction=self.config.fallen_sun.fire_reaction):
                     self.run_general_battle(
                         config=self.config.fallen_sun.general_battle_config,
                         battle_key=self._fallen_sun_battle_key(),
@@ -181,7 +193,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
             # 第一次会邀请队友
             if is_first:
-                if not self.run_invite(config=self.config.fallen_sun.invite_config, is_first=True):
+                if not self.run_invite(config=self.config.fallen_sun.invite_config, is_first=True,
+                                       fire_reaction=self.config.fallen_sun.fire_reaction):
                     logger.warning('Invite failed and exit this fallen_sun task')
                     success = False
                     break
@@ -295,22 +308,91 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 logger.info('FallenSun time limit out')
                 break
 
-            # 点击挑战
-            while 1:
-                self.screenshot()
-                if self.appear_then_click(self.I_FALLEN_SUN_FIRE, interval=1):
-                    pass
-
-                if not self.appear(self.I_FALLEN_SUN_FIRE):
-                    self.run_general_battle(
-                        config=self.config.fallen_sun.general_battle_config,
-                        battle_key=self._fallen_sun_battle_key(),
-                        exit_matcher=self.I_FALLEN_SUN_FIRE,
-                    )
-                    break
+            # 点击挑战：FIRE 状态机，正向确认进入准备 / 战斗页才交接 run_general_battle；
+            # 未进入战斗 → 回外层循环顶重新 screenshot + 判定挑战页
+            if self._fire_fallen_sun_alone():
+                self.run_general_battle(
+                    config=self.config.fallen_sun.general_battle_config,
+                    battle_key=self._fallen_sun_battle_key(),
+                    exit_matcher=self.I_FALLEN_SUN_FIRE,
+                )
 
         # 回去
         self.goto_page(page_main)
+
+    def _classify_fallen_sun_fire_state(self) -> str:
+        """单人挑战前后的当前帧分类，只读。优先级：battle > abnormal > ready > unknown。
+
+        `'battle'` = `is_new_battle_entry()`（准备 / 战斗页）；`'abnormal'` = 结果 / 奖励页残留；
+        `'ready'` = 日轮之陨挑战按钮在；其余是加载 / 过渡帧。
+        """
+        if is_new_battle_entry(self):
+            return 'battle'
+        if is_battle_result_residue(self):
+            return 'abnormal'
+        if self.appear(self.I_FALLEN_SUN_FIRE):
+            return 'ready'
+        return 'unknown'
+
+    def _wait_fallen_sun_fire_state(self, timeout: float = FALLEN_SUN_FIRE_POST_CLICK_TIMEOUT) -> str:
+        """点击后 / 挑战未就绪时的有界轮询，期间不点任何坐标；出现决定性状态即返回，否则 `'timeout'`。"""
+        timer = Timer(timeout).start()
+        while not timer.reached():
+            self.screenshot()
+            state = self._classify_fallen_sun_fire_state()
+            if state != 'unknown':
+                return state
+        return 'timeout'
+
+    def _fire_fallen_sun_alone(self) -> bool:
+        """单人点日轮之陨挑战直到**正向确认进入准备 / 战斗页**（FIRE Contract，D001 补记 FIRE 分节）。
+
+        每次 attempt：分类当前帧 → 独立采样 `fallen_sun.fire_reaction` → `sleep` → fresh screenshot →
+        重新确认挑战按钮在 → 点一次 → 有界等点击后状态。挑战按钮消失不算成功；过渡帧只等不点；
+        结果 / 奖励页残留直接返回失败。有限 `FALLEN_SUN_FIRE_MAX_TRIES` + `Timer(FALLEN_SUN_FIRE_TIMEOUT)`。
+
+        :return: True 已进入准备 / 战斗页；False 异常 / 有限尝试 / 总超时用尽（调用方不交接 run_general_battle）
+        """
+        timeout_timer = Timer(FALLEN_SUN_FIRE_TIMEOUT).start()
+        for attempt in range(1, FALLEN_SUN_FIRE_MAX_TRIES + 1):
+            if timeout_timer.reached():
+                break
+            self.screenshot()
+            state = self._classify_fallen_sun_fire_state()
+            if state == 'unknown':
+                state = self._wait_fallen_sun_fire_state()
+                if state in ('timeout', 'ready'):
+                    continue
+            if state == 'battle':
+                logger.info('FallenSun fire: entered battle')
+                return True
+            if state == 'abnormal':
+                logger.warning('FallenSun fire: result / reward page residue, not a new battle')
+                return False
+            fire_delay = random_delay(*fire_reaction_range(self.config.fallen_sun.fire_reaction))
+            logger.info(f'FallenSun fire: attempt {attempt}, reaction {fire_delay:.2f}s')
+            sleep(fire_delay)
+            self.screenshot()
+            state = self._classify_fallen_sun_fire_state()
+            if state == 'battle':
+                return True
+            if state == 'abnormal':
+                logger.warning('FallenSun fire: result / reward page residue during reaction')
+                return False
+            if state != 'ready':
+                logger.info('FallenSun fire: button gone during reaction, re-evaluate')
+                continue
+            self.appear_then_click(self.I_FALLEN_SUN_FIRE, interval=0)
+            state = self._wait_fallen_sun_fire_state()
+            if state == 'battle':
+                logger.info('FallenSun fire: entered battle after click')
+                return True
+            if state == 'abnormal':
+                logger.warning('FallenSun fire: result / reward page after click, not a new battle')
+                return False
+            # 'ready'（仍在挑战页）/ 'timeout'（一直过渡）→ 下一 attempt
+        logger.warning('FallenSun fire: bounded retry / timeout without entering battle')
+        return False
 
     def run_wild(self):
         logger.error('Wild mode is not implemented')

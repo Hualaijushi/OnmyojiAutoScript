@@ -90,6 +90,17 @@
   - **Region Target ≠ Point Target，但共享 preferred-only 适配**：业务已选定 region 内的采样走 `ClickSampler.sample_region`（`default_region` profile，比 Point 宽）→ `adapt_preferred_by_size` 只计算 effective preferred → HABIT。Region **不得调用 `adapt_point_profile`**，其 sigma / weights / margin / tail 不随尺寸收缩；但 preferred 必须与 Point 一样按 short side 24/96 smoothstep 适配。region 的**选择**逻辑（GeneralBattle `_select_reward_region` 的 marker → DEFAULT / 80-20、Generic Result 两次点击、`positive guard`、state machine）与采样无关、必须有独立回归证明「policy 一字未变，只有区内坐标分布可能变」。
   - **无安全 ROI 的 exact click 保留合法**：`EXACT_COORDINATE_BLOCKED`（点运行时检测中心 / 框外偏移 / 硬编码 / 有意固定 fallback / slave 设备）不强行迁移、不凭空造 ROI；但必须进 `docs/T7_TARGET_PREFERENCE_MAP.md` 写文件 / 行号 / 原因。
   - **empirical calibration ≠ 代码迁移**：`normal_button` / `I_FIRE` 等在缺真实 runtime ROI 时保持 `RULE_FALLBACK`，不伪造 empirical 值；这是 Level C calibration，不阻塞「空间模型已统一」的结论。未来取得自身人工数据后以 EMPIRICAL 条目覆盖规则兜底。
+- **L1 全局单击管线（2026-09-15，D026；`tests/test_l1_click_pipeline.py`）—— 长期契约**：任何改到 `module/click_pipeline.py`、`ClickSampler.sample_target` / `sample_region`、`Control.click`，或把某个业务点位接入 / 移出 `execute_single_click` 的改动，都要保证：
+  - **坐标语义显式**：裸 `(x, y)` / list / `None` / `RuleSwipe` 必须 `TypeError`；`FinalPoint` 在 `ClickSampler` 全部方法被打桩为抛错时仍能解析（零采样），numpy 浮点按 `int()` 截断与 `ensure_int` 逐像素一致。
+  - **原生控件不借图片热点**：`ClickBounds(native=True)` 即使传入已登记为 EMPIRICAL 的名字，`resolve_target_preference` 也只能收到 `None`；退化 bounds（宽或高为 0）回中心且零采样。
+  - **一次调用 = 一次物理点击**：端到端串到真实 `Minitouch.click_minitouch` 时恰好一次 DOWN / 一次 UP，dwell 仍调 `random_triangular(45, 130, 65)`；`execute_single_click` 拒绝 `RuleLongClick`；后端抛错时只尝试一次。
+  - **BehaviorTrace 坐标 = 执行坐标**：记录的 `extra` 与传给后端的 `(x, y)`、`execute_single_click` 的返回值三者相等；trace 关闭或 `_write_line` 抛错都不影响点击。
+  - **L1 不拥有 L2 / L3**：`click_pipeline` 可执行代码不出现 `sleep` / `random_delay` / `confirm_delay` / `REACTION_*` / `Timer` / `screenshot` / 循环，import 只允许 atom 规则类 + `click_sampler`；生产代码无 `multi_click(` 消费者。
+  - **业务已给定落点不被重采**：Settlement `_click_settlement_point` 原样执行、`_sample_settlement_click` 走 Region 而非 Point；`list_appear_click` / `EvoZone.check_layer` / `green_mark_name` 在采样器被打桩为抛错时仍逐像素执行原坐标。
+  - **收口点位不回退**：`ConvertedSitesGuardTest` 列出的函数体必须含 `execute_single_click(` 且不含 `self.device.click(`。新增语义断言要按本节「正向 + 反向验证」做变异回退，确认能抓到 double randomization / 原生控件查热点 / 接受裸坐标。
+  - **L1.2 静态迁移守卫（`StaticMigrationGuardTest`，按「文件 + 函数」不按行号）**：`module/` + `tasks/` 里直接 `device.click(` 的函数与次数必须**等于** `CANONICAL_DIRECT_CLICKS` 白名单（新增直调要么走 `execute_single_click`，要么先证明语义清晰再进白名单）；`click_minitouch(` / `click_window_message(` 只能出现在 `module/device/`；同一函数里不得同时有点击与 `randint` / `uniform` / `random_point_in_roi` / `random_rectangle_point`；`multi_click` 无 AST 调用；`Control.click_with_backend` / `_dispatch_click` / `list_click_target` / `HyaDevice.fast_click` 无 sleep / Timer / screenshot / 循环。
+  - **文字列表命中在 OCR 框内采样**：真实 `RuleList.ocr_appear` 命中后 `list_click_target` 得到 `ClickBounds(OCR 框)`，pos 不对应 / 无结果 / 图片列表都退回 `FinalPoint` 且零采样；迁移后的本地随机（SixRealms）Region 必须等于旧 `randint` 支撑集。
+  - **指定后端不改后端行为**：`click_with_backend('window_message')` 必须仍以 `fast=True` 调用、不读 `control_method`、不调 `handle_control_check`，BehaviorTrace 记录执行坐标；默认 `Control.click` 仍做 `handle_control_check`。
 - **BehaviorTrace Swipe Trajectory Backend（2026-09-07，`tests/test_control_swipe_trajectory.py` / `test_behavior_click_stats.py` / `test_behavior_trace.py`）—— 长期契约**（见 `docs/DECISIONS.md` D004 补记 + D011 补记）：
   - **一次 swipe = 一条 ACTION**：`Control.swipe_trajectory` 无论 `trajectory` 有多少点（≤~80）都只 `record()` 一次 `ACTION`（`action='swipe'`）。任何改到 `Control.swipe` / `Control.swipe_trajectory` / `_swipe_trajectory_extra` / `BehaviorTrace` 的改动都要证明：**没有** `MOVE` / `SWIPE_POINT` / `FRAME` 事件、`trajectory` 点不会变成 N 条 ACTION、FrameWait 轮询不产生 ACTION。事件模型永远只有 `TASK` / `ACTION`（D004）。
   - **trajectory 直接来自 executor 输入**：记录的 `extra.trajectory` 是传给 `Control.swipe_trajectory` 的那一份 commanded 点列（`[x,y,dt_ms]` 三元，`dt` 语义 = D018），**不按 start/end 重新 `generate`、不还原曲线、不抽稀**。legacy `Control.swipe` 只带端点、**无 `trajectory` 键**（不许伪造完整曲线）。
@@ -122,9 +133,28 @@
 - **Reaction Timing / `confirm_delay` 迁移长期规则（2026-09-08，`docs/DECISIONS.md` D001 补记 / `docs/AI_CONTEXT.md` §4.51；`tests/test_reaction_timing_batch1.py`）**：
   - **只给 stable Point Target 加**：稳定页面、长期可见、位置在等待期间不移动 / 目标不会自动消失、不是抢窗口 / 短命弹窗 / 高频 poll、且不是 `action=` 分支（点的是 `action.coord()` 静态坐标、不重定位）。动态搜索结果 / OCR / 滑动列表候选 / `*_FIRE`（缺正向战斗页确认，属 R2 STATE_WAIT_FIRST）不加。
   - **explicit opt-in，profile 来自 `module/reaction_profile.py`**：consumer 在调用点显式传 `confirm_delay=REACTION_*`；**不在 `RuleImage` / asset / `Control` / `Device` 层设默认**，不改 `appear_then_click` 默认 `None`。`module/reaction_profile.py` 只允许具名 `(min,max)` tuple 常量 —— 任何改动都要保证：无 `def` / `sleep(` / `random_delay` / `class` / task·device 依赖（正文扫描，去 docstring）；6 组值精确、递增二元组；`REACTION_PROFILES` dict 与具名常量一致；`REACTION_PROFILES_PROVISIONAL is True`。**当前 6 组区间是 PROVISIONAL engineering baseline**，改值必须连带更新 D001 补记 + §4.51，且不在无 Level C 证据时放大区间。
-  - **excluded critical timing 不叠加**：已有同语义 timing owner 的点击不再加 `confirm_delay` —— RyouToppa `attack_area` 的 `I_FIRE`（手搓 `random_delay(0.2,0.6)` + fresh frame + 二次 appear）、GeneralBattle `I_PREPARE_HIGHLIGHT`（`prepare_click_timer`）、Settlement V3 三个 Region（`settlement_click_timer` + 强制双击间隔，D016）。任何改到这些路径的改动要有用例证明 `confirm_delay` 未被加入、原 timer / `random_delay` 仍在。
+  - **excluded critical timing 不叠加**：已有同语义 timing owner 的点击不再加 `confirm_delay` —— RyouToppa `attack_area` 的 `I_FIRE`（手搓 `random_delay(0.2,0.6)` + fresh frame + 二次 appear）、GeneralBattle `I_PREPARE_HIGHLIGHT`（`prepare_click_timer`）、Settlement Micro-Burst v1.2 三个 Region（跨 burst `settlement_click_timer` + burst 内 `0.30~0.60s` fresh semantic gate，2026-09-23 由 `0.10~0.30s` 放宽，D025 补记）。任何改到这些路径的改动要有用例证明 `confirm_delay` 未被加入、原 timer / `random_delay` 仍在。
   - **公共 helper 扩参保持向后兼容**：给共享方法（如 `GeneralBattle.check_lock`）加 `confirm_delay` 时默认必须 `None` 并透传，非 opt-in 调用方行为逐字不变（mock 断言「不传 → 内部收到 `None`」）。
   - **迁移用源码扫描 + mock 断言**，不为实现方便大范围重写既有用例；`appear_then_click` primitive 本体由 `tests/test_base_task_confirm_click.py` 独立锁定，迁移轮不改 primitive。
+- **L2 Timing Ownership（2026-09-15，D001 补记 L2；`tests/test_l2_interaction_reaction.py`）—— 长期契约**：任何改到 `module/interaction_policy.py`、`BaseTask.appear_then_click`、FIRE owner 的 reaction、`FireReactionConfig` 或新增 `policy=` consumer 的改动，都要保证：
+  - **legacy 默认不变慢**：`appear_then_click(target)` 与 `policy=IMMEDIATE` 不调 `random_delay` / `sleep` / `screenshot`；`policy` / `confirm_delay` 默认都是 `None`。
+  - **一个 reaction owner**：同时传 `policy` 与 `confirm_delay` 必须 `ValueError` 且零副作用；全仓不得出现两者同时（非形参透传）的调用；`confirm_delay=REACTION_*` 不得回流（具名 profile 一律 `policy=`）。FIRE 目标的 `appear_then_click` 不得带 `policy` / `confirm_delay`。
+  - **fresh confirm**：reaction → 新截图 → 同目标再识别 → 用新帧 `coord()`；reaction 后目标消失零点击、`appear` 恰两次、不重试；每次调用独立采样（SystemRandom）。
+  - **FIRE 配置**：无 override = `REACTION_FIRE`；ms / 1000；`0 <= min <= max <= 5000`，`min == max` 合法；非法构造与非法 `setattr` 都要 `ValidationError` 且旧值不变；运行时不交换非法区间。`fire_reaction_range(` 只允许出现在 11 个 FIRE owner 函数里（2026-09-18 L2-3B Batch A 起），每个 owner 恰一次、位于有限 attempt 循环内，reaction 与 FIRE 点击之间必须有 `sleep` + `screenshot` + positive-state 检查；`tasks/` 不再直接引用 `REACTION_FIRE`；`config/template.json` 与 `zh-CN.json` 同步。
+  - **L2 不下沉 / 不越界**：`click_pipeline` / `Control.click` / `click_with_backend` / `_dispatch_click` / `click_minitouch` 不引用 reaction 相关名字，且对应模块不 import `interaction_policy` / `reaction_profile`；Settlement 方法不引用 policy / FIRE 配置 / REACTION_*；`interaction_policy` 与 Fatigue 互不 import。变异回退（legacy 默认改 NORMAL、静默吞掉双 owner、去掉 fresh 截图、FIRE owner 忽略任务配置、ms 不换算、放行 min>max、FIRE 点击叠 policy、Control 里加 sleep）必须全部被抓。
+- **Timing Ownership Migration Guard（2026-09-15，L2-2，D001 补记；`tests/test_l2_policy_migration.py`）—— 长期契约**：
+  - **审计清单锁源码**：`AUDIT_SCOPE` 内每个点击调用点的（文件, 函数, 调用, 目标, 当前 timing）必须与 `INVENTORY` 逐行一致，
+    分类与 `docs/L2_INTERACTION_POLICY_MAP.md` 一一对应；新增点击 / 改 policy / 去掉 policy 都要同时更新清单与文档。
+  - **分类不变量**：MIGRATE 用声明的 policy（CONFIRM 决策不能是 NORMAL）；KEEP_IMMEDIATE / KEEP_SPECIAL / NEEDS_C 必须仍是立即点击；
+    FIRE 目标、Settlement / 奖励阶段弹窗不带普通 policy；GameUi（navigator / default_pages / chess_battle）不 import
+    `interaction_policy`、点击不带 policy / confirm_delay。
+  - **行为验证用真实迁移函数**：驱动 `GeneralInvite._open_invite_panel_if_needed` 与 `GeneralBattle.switch_preset_team`
+    走真实 `appear_then_click`——第二帧仍在 → 恰一次点击且坐标来自新帧；第二帧消失 → 零点击；reaction 区间来自 profile。
+  - **静态 ownership**：任何函数里 `random_delay(` 之后不得出现带 `policy=` 的 `appear_then_click`；click_pipeline / Control /
+    minitouch / Fatigue 不引用 `interaction_policy`。变异回退（NORMAL 改回立即、FIRE 加 NORMAL、奖励阶段加 policy、去掉 fresh
+    截图、policy 前加 random_delay、navigator 执行器注入 NAVIGATION）必须全部被抓。
+- **FIRE Battle Entry 契约（2026-09-18，L2-3B Batch A，D001 补记 L2-3B；`tests/test_fire_batch_a.py`）—— 长期契约**：把旧式「连点直到按钮消失」入口收口为 FIRE owner 时，必须**真实驱动 owner 方法**（帧序列替身 + 确定性 Timer，不能只靠源码字符串），逐任务覆盖：成功（reaction → fresh 截图 → 新帧上恰一次点击 → 准备 / 战斗页）；reaction 中目标消失零点击；pre-state 变化不点旧帧；按钮消失但无正向状态不算成功；仍在页有界重试且每次重新采样 reaction；过渡帧只等不点；结果 / 奖励页不算成功；次数用尽与总时长用尽都显式失败；caller 只在成功时交接一次 `run_general_battle`、失败不计次。配置：默认 400~800ms、ms→秒、每个任务独立组、复用组的任务读对的组。正向判据只能用窄 detector（`fire_battle_entry.is_new_battle_entry`），不得用 `is_in_battle()`。变异回退（去 reaction / 去 fresh 截图 / 按钮消失即成功 / 结果奖励页当正向 / 去次数上限 / 去总超时 / FIRE 加普通 policy / 忽略任务配置）必须在每个 owner 上都被抓。
+- **FIRE 任务级可配置 reaction（2026-09-18，D001 补记，`docs/AI_CONTEXT.md` §4.77；`tests/test_fire_reaction_task_config.py`）**：`REACTION_FIRE=(0.4,0.8)` 现只是 `fire_reaction_range(None)` 的返回值；RealmRaid（`fire` / `_fire_again`）/ RyouToppa（`attack_area`）/ EvoZone / Orochi（单人 `_fire_*_alone` + 组队 `run_invite` 传参，`run_wild` 排除）/ ActivityShikigami / `GeneralInvite.click_fire` 改读 `fire_reaction_range(self.config.<task>.fire_reaction)`（`click_fire` 读调用方传入的 `fire_reaction` 形参，未传 = `None` = 公共默认）；EternitySea / FallenSun / Sougenbi 从「零 reaction 裸连点」新接入 `appear_then_click(FIRE, interval=0, confirm_delay=fire_reaction_range(<task>.fire_reaction))`（不新建状态机、不改成功判据 / 重试超时契约）。改到这些函数或新增消费者时必须证明：① 8 个任务的 `fire_reaction` 配置组默认 400/800ms 且互相隔离（`default_factory`，改一个不影响另一个）；② 每个 owner 恰一次 reaction 来源（`random_delay(` 或 `confirm_delay=fire_reaction_range(`计数，RyouToppa 的区域 pacing `random_delay(1.0,3.0)` 例外允许 2 处）；③ **真实驱动**（不能只读源码）证明改配置真的改变了实际采样区间，不是恒等于旧硬编码值；④ `min==max` 合法、非法区间在配置层拒绝且旧值保持、运行时不交换 / 钳制；⑤ `ConfigModel.script_task` 展开为 `fire_reaction.fire_reaction_min_ms` /`_max_ms` 两个叶子参数、`script_set_arg` 保存重载回显正确（复用 §4.75 的嵌套字段展开机制，非新逻辑）。
 - **FIRE Action / R-R1 长期规则（2026-09-08，`docs/DECISIONS.md` D001 补记 FIRE 分节 + 增补 + D015 补记 / `docs/AI_CONTEXT.md` §4.52 / §4.53 / §4.56；`tests/test_fire_reaction_fsm.py` + `tests/test_second_batch_fire_fsm.py` + `tests/test_realm_raid_state.py`）**：任何改到 `RealmRaid.fire()` / `RealmRaid._fire_again()`（退四内「再次挑战」，§4.56 已收口）/ `RyouToppa.attack_area()` 的 `I_FIRE` 路径、或 `Orochi._fire_orochi_alone()` / `EvoZone._fire_evozone_alone()` 的 `I_*_FIRE` 路径（`run_alone`，第二批已收口）、或未来收口其它 `*_FIRE` 时，都必须有用例证明：
   1. **旧页面标识消失（`I_RR_PERSON` / 目标列表）既不代表进入战斗、也不代表 immediate failure / retry**——mock 「旧 marker 消失、`I_FIRE` / `I_RR_PERSON` / `I_BACK_RED` 全 False、`is_in_battle()` 全 False」（= transition / unknown 过渡帧）时 `fire()` 既不得立即 `return True`，也不得立即 `return False` / 进入下一 attempt / 点 `C_PARTITION_n` / 点 `I_FIRE`——必须在有界 `Timer(RR_FIRE_POST_CLICK_TIMEOUT)` 内继续 polling，直到出现 `battle` / `retryable` / timeout。再 mock 「过渡帧之后下一帧 `is_in_battle()`=True」→ `fire()` `return True` 且不多点。
   2. **成功判据是正向战斗状态**：`is_in_battle()` / `page_battle_prepare` / `page_battle`（复用 `GeneralBattle.is_in_battle` 或 `get_current_page`，不新造 detector）。FIRE post-click / FIRE 未就绪的状态判定必须是**三态**（`'battle'` / `'retryable'` / `'timeout'`），不能简化成 battle / not-battle。「retryable」的判据是纯只读 helper（如 `_is_realm_raid_retryable_state()` = `appear(I_RR_PERSON) or appear(I_FIRE) or appear(I_BACK_RED)`）——**不截图 / 不点击 / 不 sleep / 不改状态**（有源码扫描护栏）。
@@ -232,3 +262,65 @@
  → 再次 git diff --check
  → 输出报告（含固定的「## 文档同步」段）
 ```
+- **L1 × L2 联动与全仓登记册（2026-09-21，`tests/test_l1_l2_integration.py`）—— 长期契约**：① 联动用**真实** `BaseTask.appear_then_click` + 真实 `Control.click`（假后端）+ 包装采样器计数：
+  一个动作恰一次采样、reaction 之后才在新帧上采样、目标消失零采样零点击、目标移动用新框、IMMEDIATE / 无参调用无 reaction、policy 与 confirm_delay 同给拒绝、Control 不加抖动；
+  ② 登记册汇总与源码扫描对账（`dev_tools.click_callsite_register`，登记册不写行号，无关改动不会让它失效；新增 / 删除点击调用点必须重新分类并 `--write`）；NEEDS_C 按模块钉住；
+  `policy` / `confirm_delay` 只允许出现在 L2-2 人工审计文件；③ Settlement / FIRE owner / Kekkai / Navigator / Orochi 野队的延迟所有权静态守卫（AST，不是字符串）；
+  ④ 真实 `Script.loop` 下 reaction 的耗时不进 next_run。变异验证覆盖「重复采样 / 旧截图 / 目标消失仍点击 / FIRE 双重反应 / 结算叠策略 / FinalPoint 再偏移 / 后端分派丢失 / 旧接口破坏 /
+  近期寄养修复被覆盖」，每项独立超时并逐字节还原。**给旧「朴素循环」写的替身在新状态机下可能挂死**：移植 / 替换 FSM 后必须逐个跑测试模块（带超时）定位挂死用例，不能只看整套 discover。
+- **L1 Stage 1：BaseTask primitive 执行入口统一（2026-09-21，D026 补记；`tests/test_l1_stage1_primitive_execution.py`）—— 长期契约**：改 `BaseTask.appear_then_click` / `click` / `ocr_appear_click` /
+  `wait_until_appear_then_click` 的点击执行时：① 用**真实方法 + 真实 `Control.click`（假后端）+ 真实 BehaviorTrace + 包装采样器与执行器**断言「一次点击 = `sample_target` 一次 = 执行器一次（第一个实参是
+  `FinalPoint`）= 后端一次 = trace 记录同一坐标」，不是只看源码里有没有 `execute_single_click` 字符串；② action 与 target 不同时 `control_name` 必须仍是 `target.name`、落点在 action 的 ROI；
+  ③ L2：NORMAL 在 reaction 后的新帧上采样（旧框从未被采样）、目标消失零采样零点击、IMMEDIATE / 旧 `confirm_delay` 不变、策略冲突拒绝；④ `ocr_appear_click` 带 action 只采样一次、OCR 未命中零点击；
+  ⑤ 长按不进单击执行器（Stage 3A 起长按走独立的 `execute_long_click`，见下条）；⑥ AST 静态守卫：BaseTask 无 `device.click`，每个执行点第一个实参是 `FinalPoint(...)`（防「先 `coord()` 再把 Rule 交给执行器」的双采样），
+  `ocr_appear_click` 只有一次 `coord()`；⑦ 把 primitive 的调用形式从位置实参改成关键字实参会让旧 Mock 断言失败——这类断言要同步改成关键字形式（语义不变），不能删除或改成恒真。
+  变异验证（恢复直接点击 / Rule 双采样 / 旧帧 / 目标消失仍点击 / 错 control_name / FinalPoint 偏移 / 恢复重复采样 / 执行器加等待 / 长按并入单击）每项独立超时并逐字节还原源码。
+- **L2 登记册「技术分类 + 开发状态」对账契约（2026-09-21，D001 补记 C0 收口；`tests/test_l2_c0_registry.py`）—— 长期规则**：① C0 复核的 24 点必须逐点对账，期望值在测试里**独立写死**（不从生成器的归档表推导）：已完成 4（ALREADY_L2 + COMPLETED，且声明的 policy 与预期一致）/ 暂缓 6（decision=DEFERRED，保留 C0 建议）/ KEEP_IMMEDIATE 3 / KEEP_SPECIAL 4 / NEEDS_C + DEFERRED 7；② **暂缓 ≠ 已完成**：DEFERRED / NEEDS_C / KEEP_* 的点位在源码里必须仍是立即点击（无 `policy` / `confirm_delay`），有人偷偷给暂缓点位加 reaction 时生成器直接报错；③ decision 互斥可加总（总数 1092），basis 互斥可加总，`c0_reviewed` 是独立维度不与 basis 相加；④ 登记册由生成器产出，测试要求「重复生成结果一致、且与已提交 Markdown 逐字一致」，归档与源码对不上（点位不存在 / 重复 / NEEDS_C 指错点位）必须失败而不是静默兜底；⑤ L2-2 的 179 点历史审计结论（MIGRATE 7 / NEEDS_C 7）不被改写；⑥ 已有断言的钉住值随分类变化时只更新数值与归属，不能删除或放宽断言。
+- **L2 policy 迁移的 fresh-confirm 验证契约（2026-09-21，D001 补记 C1-A1；`tests/test_l2_stage_c1_a1.py`）—— 长期规则**：给一个调用点加 `policy=` 时，测试必须用**真实业务函数 + 真实 `BaseTask.appear_then_click` + 真实 `Control.click`（假后端）+ 真实 BehaviorTrace**，由帧序列驱动（`frames[n]` = 第 n 次截图之后可见目标，`frames[0]` = reaction 前的当前帧），包装采样器 / L1 执行器 / `random_delay` / `sleep` 记录事件顺序，逐项断言：① reaction 区间等于该 policy 的 profile 且只采样一次，`sleep` 用的就是它；② reaction 之后**一次** fresh 截图；③ 目标仍在 → 恰一次采样（在 fresh 帧的 roi 上）、L1 执行器一次（实参 `FinalPoint`）、后端一次、trace 记录同一坐标；④ **fresh confirm 失败分支**（长期契约）：目标消失 → 零采样零点击零 trace，返回 `False`，reaction 不重试，**不用旧坐标、不改点旧帧里的其它候选**，且业务后续分支符合预期（Pets 仍走 `goto_page`、刷新不误报成功且不进动画等待、岛屿由外层下一轮重扫）；⑤ 目标移动 → 用新帧坐标、旧 roi 从未被采样；⑥ 目标一开始就不在 → 不触发 reaction；⑦ 原 interval / 业务门槛（OCR 次数、`number == 0`）不变且不满足时不 reaction；⑧ 目标在 Navigator 边动作里时，用真实 `GameUi._execute_transition` + **虚拟时钟**（截图 / reaction 推进时钟，替换其 `Timer`）证明 6 秒 action 预算下「fresh 失败后重试成功」与「持续失败仍有界超时」，并在报告里给出成功路径耗时与超时尝试次数，不能宣称「总耗时不变」；⑨ AST 守卫只钉 `policy=InteractionPolicy.X` 关键字、无 `confirm_delay`、无新增直接点击，不替代运行期用例。变异验证同一工作区只能运行**一个**变异任务（脚本用锁文件互斥），每项独立子进程 + 超时，逐字节还原并核对哈希后再跑全量。
+- **L1 Stage 3B：全局静态守卫与「项目排除模块单击迁入」的验证契约（2026-09-21，D026 补记；`dev_tools/click_entry_guard.py` + `tests/test_l1_stage3b_global_guard.py`）—— 长期规则**：
+  ① 守卫失败信息是「文件:行号 函数 违规形式 → 建议的 L1 入口」：**修复 = 迁到 `execute_single_click` / `execute_long_click`，不是往 `ALLOWED_EXITS` 加条目**（新增出口须在 D026 补记理由）；② 守卫扫真实文件（rglob + 根脚本），新增文件天然被扫，含 Python 的顶层目录必须归类（`unclassified_roots`）；③ 识别形式是 AST：设备类接收者的 `click` / `long_click`、任何接收者的 `click_with_backend` / `click_<后端>` / `long_click_<后端>` / `multi_click`、非调用引用、`getattr` 字面量、设备别名传播；无法静态确定的动态调用进 `unresolved` 且视为失败待人工判定；④ 白名单精确到（文件, 函数, 调用形式, 次数），过期条目 / 缺失必需出口同样失败；⑤ **静态守卫 ≠ 运行期证明**：它不证明点击成功或坐标分布，运行期等价用例（迁移前表达式作独立参考、采样函数「一调用就失败」补丁、真实 `Control` + 假后端 + 真实 BehaviorTrace、迁移前源码快照 A/B 对照）必须同时存在；⑥ 验证守卫本身要用「违规注入」（普通任务 / 组件 / Login / DailyTrifles / WeeklyPurchase 的路径 + 真实文件恢复裸点）、「新文件 / 新目录发现」、「删除合法出口后不误报完整」、「整文件 / 整目录放行」类变异，每项独立超时并逐字节还原（含临时新增文件）；⑦ 同一守卫的测试代码里的假设备调用不属于生产，`tests/` `dev_tools/` 不被扫描。
+- **L1 Stage 3A：长按执行入口统一的验证契约（2026-09-21，D026 补记；`tests/test_l1_stage3a_long_click.py`）—— 长期契约**：长按与单击的验证互相独立，任何一边都不能借另一边的断言过关。
+  ① 执行器契约用**只暴露 `long_click` 的假设备**（执行器多碰 `click` / `screenshot` 属性当场失败）+ 包装采样器：`FinalPoint` 零采样、Rule 采样恰一次且等于 `coord()` 的固定随机源参考值、`duration` 用 `is` 断言原样透传、
+  `control_name` 缺省 / 显式（含 `None`、空串）语义、`time.sleep` 从未被调、后端异常是同一对象、非法目标与单击执行器抛同一 `TypeError`；② 用**真实 `Control.long_click` + 假后端表 + 真实 BehaviorTrace** 逐个后端断言
+  「恰一次、参数 `(x, y, duration)` 一致」，未注册的 `control_method` 回退 `long_click_adb`，`Control.click` / `click_with_backend` / 单击后端从未被调，trace 只有一条 `long_click`、后端失败不留 trace 行；
+  ③ 6 个 primitive 点位用真实 BaseTask 方法驱动，事件序列（sample / execute_long / long / reaction / sleep / screenshot）与同一流程的**单击版本逐事件对照**（长按流程 = 单击流程，仅最后动作不同）；
+  ④ 「迁移前表达式」参考（`coord()` + `<ms> / 1000` + 原 `control_name`）在同一 seed 下逐值相等；⑤ 生产真实的 `RuleLongClick` 资产逐个跑一遍；⑥ AST 守卫：BaseTask 无 `device.long_click`，6 个点位第一目标是
+  `FinalPoint(...)`、时长是 `<ms> / 1000`、只有 3 个 primitive 使用长按执行器（`swipe*` / 拖拽不在其中），执行器体内只调 `resolve_click_point` / `getattr` / `device.long_click`，单击执行器不含长按调用；
+  登记册 `scan_long_click_sites()` 锁定「业务消费点直调长按 = 0」。变异验证 21 组（改调 click / 二次采样 / 偏移 / 丢 duration / 毫秒未换算 / 再乘 1000 / 叠加 dwell / 调两次 / 改 control_name / 绕开 Control /
+  吞异常 / 恢复直调 / 滑动误入 / Rule 直接交给执行器 / 降级为单击 / 单击执行器接受长按 / wait 路径改采样 action）每项独立超时并逐字节还原源码、核对哈希。
+- **导航回退循环的真实驱动验证 + 墙钟能力边界的诚实表述（2026-09-22，ActivityShikigami 活动入口导航停滞；`tests/test_activity_shikigami_climb.py::FindActivityEntryFallbackDriverTest`）—— 长期规则**：
+  ① 类似 `find_activity_entry` 这种「次数上限 + 逐帧识别 + 条件点击」的回退循环，只能用**真实驱动的帧序列假体**证明——假体必须显式区分「已经截过的当前帧」与「下一次 screenshot() 才会前进到的新帧」，
+  不能让 `appear()` 提前看到未来帧的状态，否则测出的是假体的 bug 不是被测函数的行为（本轮就踩过一次这个 off-by-one）；
+  ② 断言范围至少覆盖：切换成功后新帧立即生效返回、始终找不到时按次数上限退出、墙钟与次数上限两个独立上限谁先触发就按谁退出、截图 / 识别抛出的异常原样传播不被吞掉、
+  「二次确认失败」不误判成切换成功、**截图调用次数**（不只是点击次数）符合「点击后新帧同时服务本轮确认与下一轮判断」的设计意图；
+  ③ 加了新的第二重墙钟上限时，测试与文档都必须写清楚它的**能力边界**——只约束「正常返回控制权、跑到检查语句」的耗时，不能证明也不能保证中断某一次尚未返回的同步设备调用，
+  不得把「离线测试通过」等同于「真机停滞已修复」；
+  ④ 用到共享的确定性假体（如本文件既有的 `_FakeTimer`）时，凡是靠直接改类属性（如 `.budget`）传参的，测试必须显式保存并在 `finally` 里还原，
+  不能只改不还——本轮就因为漏还原污染了同文件里另一个测试类（`SettlementDrainTest`），属于测试基础设施本身要长期防范的坑，不是一次性修复完就可以忘记的细节。
+- **「已到目的页但子状态未就绪」不能并入盲点兜底分支 + 无界循环墙钟只在连续失败时计时（2026-09-22，ActivityShikigami 战后结算兜底乱点；`tests/test_activity_shikigami_climb.py::SettlementDrainTest` / `ClimbTypeUnknownPageTest`）—— 长期规则**：
+  ① 一个「未命中目标状态就盲点」式的兜底循环，必须先分清楚「已经到了正确的目的页、只是某个子条件（如挑战键）还没就绪」与「压根不在目的页（真正的残留弹窗 / 未知帧）」——前者不该盲点，
+  该复用同一任务已有的窄状态判定（本例是 `_enter_climb_battle` 的三态 `_wait_climb_fire_state`）去等，不能把两种状态合并成同一个「继续点安全区」分支，事故复现测试必须显式断言前者场景下盲点次数为 **0**（不是「更少」，是零），
+  仅断言「点击次数不超过预算」不足以证明修复生效；
+  ② 任何 `while True` / 无外部墙钟的主循环，只要存在「继续在循环体内空转、不落入任何有日志的分支」的路径，就是一个静默挂起隐患——真机上会表现为进程存活但日志长时间零输出，
+  必须补墙钟，且这个计时器只应在**连续**处于该状态时累积，一旦状态变化立刻清零，用测试证明「短暂过渡不误判超时」与「间歇性恢复不会跨间断累加」两种场景都成立，而不是只测「一直失败会超时」这一种；
+  ③ 同一次真机事故的证据可能不止对应一处代码缺陷——本轮任务给出的日志窗口只到「点击预算耗尽」的 WARNING 为止，实际读原始日志文件继续往后看，才发现同一次事故还牵出了下游一个完全独立的无界循环（且是 66 分钟量级的更严重停滞）；核对证据时不能只看用户截取的窗口，要顺着同一个日志文件核实窗口之外是否还有更多信号。
+
+- **task-local 条件穿透 GeneralBattle 共享 handler 的验证契约（2026-09-23，ActivityShikigami 普通爬塔专用结算单击；`tests/test_activity_shikigami_climb.py::ActivitySettlementSingleClickTest`）—— 长期规则**：
+  ① 一个「按 ownership flag 决定 `super()` 还是接管」的覆写（本例 `NormalClimbAct._handle_result`/`_handle_reward` 按 `_climb_owns_settlement_single_click` 二选一），flag 为假的分支必须用**真实 MRO** 驱动证明——`patch.object(GeneralBattle, '_handle_result')` 之类直接打在共享基类上、断言确实被调用到，而不是只读源码字符串确认写了 `return super()...`；MRO 本身也要单独断言一次（`ScriptTask.__mro__` + `ScriptTask._handle_result.__qualname__`），防止未来调整 mixin 顺序时静默改变谁先接管；
+  ② 覆写重新实现共享方法的「周边逻辑」（本例 is_win 判定 / click_record_clear / 特殊弹窗短路 / boss 专属点击）时，必须为每一条周边逻辑单独写回归测试，证明接管分支没有丢失原方法里的既有业务行为——不能因为专注在「新加的单击事务」上就漏掉这些容易被悄悄砍掉的旁支；
+  ③ 「每次都是独立完整事务、不预授权第二击、不跨调用复用 anchor」这类约束，要用**两次独立调用**去驱动（不是一次调用内部循环两次），并断言两次调用各自触发了完整的 reaction/采样/选择流程（如两次 `random_int` 都被真实调用、选中的 region 可能不同）——只测「单次调用最多点一次」不足以证明「连续调用之间也不共享状态」；
+  ④ 改动会新增生产点击调用点（`execute_single_click` / `appear_then_click` 等）时，若目标文件已经在 `tests/test_l2_policy_migration.py` 的人工 `INVENTORY` 名单里，新增点位必须按真实源码出现顺序插入对应行，
+  不能追加到列表末尾——登记册生成器按位置严格对齐，顺序错了会在完全不相关的报错信息里体现（“审计清单第 N 行不一致”），需要照着源码里方法定义的真实先后顺序找准插入点；
+  ⑤ **task-local 事务必须持有自己的 timing 常量，测试要同时钉两头**（2026-09-23 同日收口）：一个已经从公共机制里独立出来的事务，若继续引用原机制的常量当 reaction（本例首版借用了 Micro-Burst 的
+  `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE`），就是把两种不同语义绑在一起、任一方调参都会误伤另一方；测试要**同时**断言「本线常量的精确值」「函数体（`_body()` 去掉 docstring 后）不再出现原机制常量名」
+  「公共常量的值与用途原样未变（含它在原机制里的调用点仍在）」三件事，只测前者不足以证明没有顺手改掉全局；
+  ⑥ 「reaction 必须在采样之前」这类顺序约束，要用**共享事件列表**把 `random_delay` / `sleep` / `screenshot` / 采样 / 点击各打一个标记，断言完整顺序等于预期列表，而不是分别断言各自被调用过——
+  顺序错了（先采样再等待、跨等待复用坐标）在「调用次数」维度上完全看不出来。
+
+- **L1 Stage 2：直接单击迁入执行器的等价性证明（2026-09-21，D026 补记；`tests/test_l1_stage2_direct_clicks.py`）—— 长期契约**：迁移点击执行入口而不改采样时，等价性不能用「当前实现对比当前实现」证明：
+  ① **固定随机源对照**——把 `module.click_sampler._rng` 与 `module.base.utils.random._rng` 换成同一个 `random.Random(seed)`，以「迁移前的采样表达式」（如 `ClickSampler.sample_target(select_area, rule.name)`、`rule.coord()` ×2、
+  `ClickSampler.sample_point(roi, wide_card)`）作独立参考，迁移后真实函数在同 seed 下驱动，后端坐标逐个相等；② 包装采样器与执行器，断言采样种类 / ROI / 身份 / 次数、执行器实参（`FinalPoint`，区域点击是
+  `ClickRegion`）、`control_name`、等待 / 截图 / 识别次数与 BehaviorTrace 坐标；③ 需要时用迁移前源码快照（仓库外）以别名模块加载做一次性 A/B 对照；④ AST 守卫：目标函数无 `device.click`、原采样调用原位保留、
+  没有新增等待 / 识别；⑤ 「源码字符串」型旧断言（如 `ClickSampler.sample_region(...)` 字面、`coord()` 先于 `device.click(`）随实现形态变化时改成结构等价的新形式并补运行期断言，**不能删除或放宽**；
+  ⑥ 爆发式点击（Settlement burst）要单独断言「一个锚点只采样一次、多次点击坐标相同」。变异验证覆盖恢复裸点 / Rule 双采样 / 锚点重采样 / 采样函数产生点击 / 复用同一个点 / 采样模式改变 / 丢 profile / ROI 扩大 /
+  新增等待或识别 / control_name 与后端参数丢失，每项独立超时并逐字节还原。

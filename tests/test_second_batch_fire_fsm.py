@@ -27,6 +27,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from module import reaction_profile as rp
+from tasks.Component.config_fire_reaction import FireReactionConfig
 from tasks.Orochi.script_task import (
     ScriptTask as Orochi,
     OROCHI_FIRE_MAX_TRIES,
@@ -93,6 +94,8 @@ def _mk(task_cls, fire_method, fire_attr, *, in_battle, fire_visible=None):
     """构造一个能驱动 `_fire_*_alone` 的替身，返回 (events, task, bound_fire_method)。"""
     events = []
     t = task_cls.__new__(task_cls)
+    t.config = SimpleNamespace(orochi=SimpleNamespace(fire_reaction=FireReactionConfig()),
+                               evo_zone=SimpleNamespace(fire_reaction=FireReactionConfig()))
     fire_asset = getattr(task_cls, fire_attr)
     t.device = SimpleNamespace(
         image='FRAME',
@@ -280,7 +283,7 @@ class FireFsmSourceShapeTest(TestCase):
             src = _src(getattr(cls, fm))
             with self.subTest(task=name):
                 # 每 attempt 独立 REACTION_FIRE，恰一次，无 confirm_delay / 第二套 delay
-                self.assertIn('random_delay(*REACTION_FIRE)', src)
+                self.assertRegex(src, r'random_delay\(\*fire_reaction_range\(self\.config\.\w+\.fire_reaction\)\)')
                 self.assertEqual(src.count('random_delay('), 1)
                 self.assertNotIn('confirm_delay', src)
                 self.assertNotIn('REACTION_FAST', src)
@@ -424,10 +427,10 @@ class OutOfScopeUnchangedTest(TestCase):
         from tasks.RealmRaid.script_task import ScriptTask as RealmRaid
         from tasks.RyouToppa.script_task import ScriptTask as RyouToppa
         rr = _src(RealmRaid.fire)
-        self.assertIn('random_delay(*REACTION_FIRE)', rr)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.realm_raid.fire_reaction))', rr)
         self.assertEqual(rr.count('random_delay('), 1)
         rt = _src(RyouToppa.attack_area)
-        self.assertIn('random_delay(*REACTION_FIRE)', rt)
+        self.assertIn('random_delay(*fire_reaction_range(self.config.ryou_toppa.fire_reaction))', rt)
         self.assertIn('random_delay(1.0, 3.0)', rt)
 
     def test_exploration_fire_untouched(self):

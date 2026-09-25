@@ -34,12 +34,15 @@
 
 ## 2. 当前 Git 状态
 
-以下状态核对时间为 2026-09-02。后续维护本文档时必须用实际 Git 状态替换，不要永久保留过时分支或提交信息。
+以下状态核对时间为 2026-09-14。
 
 - 当前分支：`master`
-- 当前 HEAD：`2cdf3a0571b0449748aabef259da5cbd2378536c`
-- 当前 `origin/master`：`2cdf3a0571b0449748aabef259da5cbd2378536c`
-- 工作区当前非干净：疲劳 / 发呆 / 休息系统、KekkaiUtilize 阈值、随机源一致性修复、机械性审查文档与 AI 交接文档体系均在工作区，未 commit、未 push。`M` = 已修改（对 HEAD），`??` = 未跟踪新文件。
+- 当前 HEAD / `origin/master`：`a5e2d7e6b84f3545994d9bd15ca6d0ff0bcb755b`。
+- 工作区当前非干净：仅有 GeneralBattle Settlement Micro-Burst v1.2 本轮 9 个授权文件的未提交修改；无 staged 文件，未 commit / push。
+
+### 2.1 已失效的 2026-09-02 工作区清单（历史记录）
+
+以下清单中的“当前”均指 2026-09-02 当时状态，只保留用于追溯，不覆盖上方 2026-09-14 当前事实。
   - 当前**无任何 staged 文件**（用户已把此前 staged 的 `docs/AI_CONTEXT.md` / `docs/DEVELOP_LOG.md` 取消暂存；两者现与其余 `docs/*.md` 一样是未跟踪新文件，见下方「未跟踪」）。
   - 未 staged：`script.py`、`tasks/base_task.py`、`tasks/GlobalGame/config.py`、`tasks/RyouToppa/config.py`、`tasks/RyouToppa/script_task.py`、`tasks/KekkaiUtilize/config.py`、`tasks/KekkaiUtilize/script_task.py`、`tasks/Chess/runtime/press_and_drag.py`、`tasks/Script/config_optimization.py`、`module/atom/swipe.py`、`module/atom/click.py`、`module/atom/image.py`、`module/atom/ocr.py`、`module/atom/gif.py`、`module/base/protect.py`、`module/base/utils/random.py`、`module/device/control.py`、`module/server/script_process.py`、`module/server/script_router.py`、`module/server/stats_router.py`、`tasks/Component/GeneralBattle/general_battle.py`、`tasks/Component/GeneralBattle/assets.py`（+ `gb/click.json`、`gb/gb_reward.png`、`gb/image.json`）、`tasks/RyouToppa/assets.py`（+ `dev/click.json`）、`tests/test_general_battle_timing.py`、`tasks/RealmRaid/script_task.py`、`tasks/KekkaiActivation/script_task.py`（后两个 2026-09-02 cleanup 批次 1 起，纯死代码删除，见 §4.36）。（`assets.py` / `gb/*` / `RyouToppa/*` 是**用户 2026-09-02 手动重新框选**：`C_RANDOM_LEFT` 55×370→192×506、`C_RANDOM_RIGHT` 79×388→191×518，新增 `C_RANDOM_RD` 574×314 与 `C_RANDOM_RD2` 198×425，`I_REWARD` 重新框 `(558,508,166,106)` + 重截 `gb_reward.png`，另加两条 `S_BATTLE_RANDOM_*` swipe。**2026-09-03 用户又把 `assets.py` 里的 RD/RD2 换成三个新安全区 `C_RANDOM_DEFAULT` / `C_RANDOM_SAVE_RIGHT` / `C_RANDOM_SAVE_BOTTOM` + 两个奖励布局判别标志 `I_GET_BATTLE_REWARD` / `_2`（+ 两个新 PNG），`C_RANDOM_RIGHT`/`C_RANDOM_BOTTOM` 也重框**。`general_battle.py` / `test_general_battle_timing.py` 当前状态是 **SETTLEMENT CONTRACT V3（§4.3.1 / §4.39，2026-09-03）**——强制两次推进点击 + 奖励布局感知区域策略，RD/RD2 与 HABIT profile 已从生产移除（V2 §4.28 已 Superseded）。`module/atom/{click,image,ocr,gif}.py` 的 `coord()` / `coord_more()` 现在走 `ClickSampler.sample_target(roi, name)`（T7-5，§4.44：按目标 preferred 热点 + 偏移模型，未标定 → CENTER_FALLBACK；`ocr.py` 仍先经 `_normalize_ocr_click_area()` 把 FULL 模式浮点 bbox 整数化，见 §4.43）；新增 `module/click_preference.py`（`??`）；`module/base/utils/random.py` 2026-09-02 只新增了一个 `random_normal(mu, sigma)` helper——见 §4.25。）
   - 未跟踪（`git status` 的 `??`，即新增、尚未 `git add` 的文件）：`module/fatigue.py`、`module/behavior_trace.py`、`module/atom/frame_state.py`、`module/base/frame_wait.py`、`module/server/behavior_stats.py`、`tests/test_fatigue.py`、`tests/test_kekkai_utilize_threshold.py`、`tests/test_base_task_wait_until_appear.py`、`tests/test_behavior_trace.py`、`tests/test_swipe_duration_cleanup.py`、`tests/test_rule_swipe_trace_removed.py`、`tests/test_frame_state.py`、`tests/test_frame_wait.py`、`tests/test_list_find.py`、`tests/test_manual_click_recorder.py`、`tests/test_manual_click_analyze.py`、`tests/test_runtime_roi_probe.py`、`tests/test_click_sampler.py`、`tests/test_click_profile.py`、`tests/test_click_roi_inventory.py`、`tests/test_large_click_roi_review.py`、`tests/test_general_battle_settlement.py`、`tests/test_settlement_trace_check.py`、`tests/test_ryoutoppa_c_area_1_point_opt_in.py`、`tests/test_kekkai_activation_state.py`、`tests/test_kekkai_utilize_state.py`、`tests/test_realm_raid_state.py`、`tests/test_exploration_state.py`、`tests/test_behavior_click_stats.py`、`module/click_sampler.py`、`module/click_profile.py`、`dev_tools/manual_click_recorder.py`、`dev_tools/manual_click_analyze.py`、`dev_tools/runtime_roi_probe.py`、`dev_tools/click_roi_inventory.py`、`dev_tools/large_click_roi_review.py`、`dev_tools/settlement_trace_check.py`、`docs/AI_CONTEXT.md`、`docs/DEVELOP_LOG.md`、`docs/机械性审查报告.md`、`docs/机械性修改清单.md`、`docs/Kekkai状态机静态收口.md`、`docs/RealmRaid状态机静态收口.md`、`docs/Exploration状态机静态收口.md`、`docs/状态验证与重试模式归纳.md`、`docs/ROADMAP.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/TESTING.md`、`CLAUDE.md`、`AGENTS.md`。以上均为**未跟踪的新文件**，不是「已跟踪」。
@@ -100,7 +103,7 @@ appear_then_click(..., confirm_delay=None)
 - **fresh frame 状态**：`confirm_delay` 路径满足 Fresh Frame Contract（模式 A）；默认路径（`confirm_delay is None`）不涉及非零等待、命中即点当帧，也无 stale。
 - **是否新增 `reaction_delay` API？→ 否。** `confirm_delay` 就是该 primitive；再起同义名字正是 D008 禁止的（`reaction_delay` / `CLICK_REACTION_DELAY` 已有前科被删）。
 - **timing 分层**：`confirm_delay`（micro，单 Action 内）/ `interval`（throttle，跨轮次）/ `wait_until_*` · `frame_wait`（state wait）/ `FatigueManager` idle·rest（macro，仅 task-cycle 安全节点、RyouToppa + Orochi/EvoZone 单人 + RealmRaid + Exploration solo + ActivityShikigami 爬塔线）—— owner 不同，不互相替代、不在同一 Action 上叠加。FatigueManager `try_break` 不进入 Action transaction（当前由构造保证）。**ActivityShikigami 爬塔线接入后，`prepare_next_action` 的旧 `random_sleep` 由 `_fatigue_owns_macro_idle` gate 关掉——同一 cycle 只有 Fatigue 一个 macro-idle owner（§4.62）。**
-- **不适合 `confirm_delay` 的 Action**：Static Region（`C_AREA_*` / 九宫格 `C_PARTITION_*`）、Settlement Region（`C_RANDOM_DEFAULT` / `C_RANDOM_SAVE_RIGHT` / `C_RANDOM_SAVE_BOTTOM`，GeneralBattle 自有 `SETTLEMENT_CLICK_INTERVAL_RANGE` + 强制双击序列）、Dynamic Search Result（`find_anyone` / `search_up_fight` `match_all`）、短生命周期按钮、poll 循环、Navigation / FSM handler、Swipe / Drag。
+- **不适合 `confirm_delay` 的 Action**：Static Region（`C_AREA_*` / 九宫格 `C_PARTITION_*`）、Settlement Region（`C_RANDOM_DEFAULT` / `C_RANDOM_SAVE_RIGHT` / `C_RANDOM_SAVE_BOTTOM`，GeneralBattle 自有跨 burst 节流 + Micro-Burst fresh semantic gate）、Dynamic Search Result（`find_anyone` / `search_up_fight` `match_all`）、短生命周期按钮、poll 循环、Navigation / FSM handler、Swipe / Drag。
 - **下一步**：只固化职责文档（D001 扩写 + ARCHITECTURE timing 分层，已完成），**不加任何 opt-in**；首个真实 opt-in 待 Level C，随 RealmRaid `fire()` 的 bounded 改造（R-R1）一起，`I_FIRE` 的 `confirm_delay` 参数用 manual click / BehaviorTrace 数据标定。
 - **生产影响 0**，未新增测试（`tests/test_base_task_confirm_click.py` 5 用例已充分），完整回归 741/741 未变。
 
@@ -163,6 +166,10 @@ else:
 不要重新加入 `reaction_delay`、`CLICK_REACTION_DELAY` 或 BaseTask 全局自动等待。
 
 #### 4.3.1 通用结算点击 SETTLEMENT CONTRACT V3（2026-09-03，正式生产迁移）
+
+> **历史基线**：本节记录 V3 初始迁移；其中 Generic Result 固定双击实现已先后被 §4.66 v1、
+> §4.67 v1.1 与 §4.70 v1.2 取代。当前有效结算控制流以 §4.70 / D025 v1.2 修订为准；三区域与
+> Reward layout-aware policy 继续有效。
 
 旧 `C_RANDOM_RD` / `C_RANDOM_RD2` 区域、`_SETTLEMENT_PRIMARY_PROFILE` /
 `_SETTLEMENT_FALLBACK_PROFILE`（HABIT profile）**已彻底移除，不再恢复、不做兼容 alias**。
@@ -2777,7 +2784,7 @@ RealmRaid；**OASX 全仓 0 修改**
   terminal 就立即停手，剩余预算作废。
 - **一次 blind micro-burst 硬上限 2 次、必须复用同一 anchor**：`_sample_settlement_burst_size()`
   从 `{1,2}` 均匀二选一并夹到剩余预算；burst 内连续点击坐标完全相同，中间只隔新常量
-  `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE = (0.10, 0.30)`（与跨 burst 节流的
+  `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE = (0.10, 0.30)`（**该值已于 2026-09-23 调整为 `(0.30, 0.60)`，见 §4.92**；下文数值是当轮记录，不回改）（与跨 burst 节流的
   `SETTLEMENT_CLICK_INTERVAL_RANGE = (0.7, 1.0)` 是不同 timing owner）。burst 后不做任何页面
   探测，下一次机会等外层 `run_general_battle()` 主循环下一帧 fresh screenshot +
   `detect_page_in`（既有机制，未新增探测逻辑）。
@@ -2887,7 +2894,7 @@ prepare），第二下盲点仍可能在状态机尚未重新截图/分类之前
   「同一 anchor 连点」这个人类行为特征变成完全看运气，偏离用户想要的「原位置多半会补一下，只是
   补之前先看一眼」语感。
 - **timing 不叠加新 owner**：mid-burst 观察复用的 `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE =
-  (0.10, 0.30)` 是 v1 就存在的常量，本轮只是把它的语义从「两次盲点之间的间隔」收紧为「点击 →
+  (0.10, 0.30)`（**该值已于 2026-09-23 调整为 `(0.30, 0.60)`，见 §4.92**；下文数值是当轮记录，不回改） 是 v1 就存在的常量，本轮只是把它的语义从「两次盲点之间的间隔」收紧为「点击 →
   观察前的等待」，数值和归属都没变；第二下点击完成后立即回到跨 burst 节流
   `_next_settlement_click_interval()`（未改），不会和 reaction/Fatigue 堆叠出第三个 owner。
 - **teardown 现在有两个入口，复用同一个 helper**：v1 只有「主循环每帧 fresh classify 之后」一个
@@ -2920,7 +2927,7 @@ Reward，只点 1 次）、CASE E 链式（紧接 CASE B 的同一 session，下
 ③Reward 第一次点击直接切到下一场 terminal 时是否不残留任何 settlement 点击；④进入
 Challenge/FIRE 前是否总是先经过 Settlement teardown、再由 FIRE 契约独立接管，视觉上没有交叠；
 ⑤连续点击在肉眼观感上是否仍然自然，不会因为多了一次 mid-burst 截图/识别而出现明显停顿；
-⑥`SETTLEMENT_BURST_CLICK_INTERVAL_RANGE = (0.10, 0.30)` 的观察间隔是否足够看到真实页面更新；
+⑥`SETTLEMENT_BURST_CLICK_INTERVAL_RANGE = (0.10, 0.30)`（**该值已于 2026-09-23 调整为 `(0.30, 0.60)`，见 §4.92**；下文数值是当轮记录，不回改） 的观察间隔是否足够看到真实页面更新；
 ⑦若真机页面响应慢于 300ms，是否会出现「仍识别到旧 state → 补第二下」但该点击仍落在安全的
 结算区域内（不应该出现的坏情况：识别慢导致误点到已经切换的新页面）；⑧anchor keep/resample 在
 真机上的实际观感是否自然。
@@ -3018,6 +3025,467 @@ CASE1/CASE2 在修复前失败、CASE4 在修复前直接 `AttributeError`，确
 `tasks/ActivityShikigami/assets.py` 本轮新增的 3 处 trailing whitespace。回归
 **1489 → 1494**（+5，0 regression）。
 
+### 4.70 GeneralBattle Settlement Micro-Burst v1.2：Level C budget 卡死修复
+
+**Level C 失败证据**：2026-09-14，master 普通副本第三场日志为
+`Settlement session: budget=2` → Generic Result `used=1/2` → fresh classify `page_reward` → Reward
+`used=2/2` → `Settlement terminal budget exhausted ... stop early`；下一帧仍为 `page_reward`，真实
+画面停在“点击屏幕继续”。这排除了识别、Reward asset、anchor、FIRE、账号轮换与 synevo merge；
+根因是 v1.1 把随机 2~4 budget 错当成整个 Settlement lifecycle 的硬上限，合法结算尚未完成时
+永久撤销了 click owner。
+
+**v1.2 修复**（`tasks/Component/GeneralBattle/general_battle.py`，详见 D025 v1.2 修订）：
+
+- Settlement 拆成 lifecycle + click segment。兼容保留的 `settlement_click_budget/clicks_used` 语义
+  改为当前 segment；新增 `settlement_total_clicks` 仅作 observability 与固定 safety cap。
+- 2/3/4 继续按 50%/30%/20% 分桶，但只在首个 known settlement state、state advance 或 fresh
+  classify 确认同 state 且旧 segment 耗尽时生成。segment exhaustion 不再是 terminal。
+- 采用方案 B：Generic Result → Reward 结束 Result segment，Reward 获得独立 2~4 segment；anchor
+  生命周期保持独立，仍按安全区域交集 keep/resample，同 state 续段不强制换点。
+- semantic state 决定 lifecycle 完成：same result/reward 可续段；Unknown 不续段、不盲补；known
+  non-settlement 立即记录 `Settlement terminal reached` 并 teardown。
+- 保留 Click → Observe → Decide、0.10~0.30s（**该值已于 2026-09-23 调整为 `(0.30, 0.60)`，见 §4.92**；下文数值是当轮记录，不回改） mid-burst fresh classify、same-state second-click gate、
+  terminal teardown、Reward layout-aware region 与 FIRE isolation。
+- 现有 `battle_timer` 不覆盖 settlement，连续点击又会重置底层 stuck timer；因此新增明确的
+  `SETTLEMENT_MAX_TOTAL_CLICKS=9`，与 Device 对同 target 第 10 次调用前抛错的既有有效上限对齐，
+  让 Settlement 层先停止续段。它是 provisional 故障安全帽，不是随机节奏预算；Device
+  click/stuck guard 仍是第二层保护。
+
+**测试**：`tests/test_general_battle_settlement.py` 新增 11 项（CASE 1~10 + 第二 Reward segment
+端到端返回），覆盖真机 budget=2 链、segment renew、semantic terminal 优先、Unknown 不续段、
+state 独立预算、anchor 跨 segment 保持、固定安全帽与至少 3 个 segment 仍有界、second-click gate
+不回归。focused：Settlement **83/83 OK**；GeneralBattle timing **17/17 OK**；RealmRaid
+**107/107 OK**；ActivityShikigami **63/63 OK**；reaction + RyouToppa **59/59 OK**。完整回归数字见
+§7。
+
+**状态**：Micro-Burst v1.1 Level C = **FAIL**；v1.2 = **Level A/B PASS / Level C RE-TEST
+PENDING**。下一轮真机重点：budget=2 不再卡 Reward、Reward 可跨 segment 继续、正常 terminal 后无
+残留点击、永久 Reward 不无限 renew、FIRE 不受影响，并观察 safety cap 9 是否合适。
+
+### 4.71 L1 Global Click Pipeline 公共层移植到 master 基线（L2-1 前置）
+
+2026-09-15。L2-1 要求在 master 公共能力上开发，但 master（`a5e2d7e6`）**没有 L1**——L1 / L1.2 只存在于 synevo
+基线的未提交 worktree（`feature/l1-global-click-pipeline-v1`）。判断可以最小、干净地移植：L1 触及的公共文件在 master
+工作区与 synevo `e9c8123c` 逐字节一致（含本工作区未提交的 Settlement v1.2 三个文件），仅 GeneralRoom / EvoZone /
+navigator 三处有 synevo 业务差异，L1 hunk 用 3-way 干净套上。
+
+新 worktree `D:/oas_xy/wt-l2-interaction-reaction`（分支 `feature/l2-interaction-reaction-layer`，精确基于 master
+`a5e2d7e6`），先逐字节复制 master 工作区的 9 个未提交文件（Settlement v1.2 + 六份文档），再移植 L1 公共层：
+`module/click_pipeline.py`、`RuleList.last_ocr_hit`、`Control.click_with_backend` / `_dispatch_click`、全部公共 task
+点位与 `tests/test_l1_click_pipeline.py`。**未带入任何 synevo 业务代码**：master 没有网易原生控件 / MultiAccountEvo；
+Login `_app_handle_login` 与 DailyTrifles `summon_recall` 属小号轮换业务，保留直接 `device.click`，在 L1 静态白名单里标为
+显式排除项（因此 master 的 L1 **不是 0 bypass**：业务绕过 = 这 2 处排除项）。L1 测试 67 → 66（删除 synevo 专属网易控件
+用例）。回归 master 基线 1505 → **1571/1571 OK**。L1 设计与点位见 D026（含 master 移植说明）、
+`docs/T7_TARGET_PREFERENCE_MAP.md` §9 / §10。Level C 仍 PENDING。
+
+### 4.72 L2-1 Interaction Reaction Layer（Reaction Profile + Fresh Confirm + FIRE 可配置延迟）
+
+2026-09-15，同一 worktree，叠加在 §4.71 之上，**未提交**。设计见 D001「L2-1」补记、`docs/ARCHITECTURE.md` L2 小节。
+
+- **L2 公共层**：新增 `module/interaction_policy.py`——`InteractionPolicy`（IMMEDIATE / FAST / NORMAL / NORMAL_HIGH / CONFIRM /
+  NAVIGATION / DELIBERATE / FIRE_SPECIAL / SPECIAL）、`resolve_reaction_range(policy, confirm_delay)`、`fire_reaction_range(cfg)`；
+  只做语义 → 区间，不 sleep / 不采样 / 不点。`BaseTask.appear_then_click` 新增 `policy=`（不加新方法、不造第二套 API），
+  复用既有 reaction → fresh screenshot → 再识别 → 新帧 `coord()` 路径；`policy` 与 `confirm_delay` 同时给 → `ValueError`；
+  不传 / IMMEDIATE = 旧立即点击。`GeneralBattle.check_lock` 透传 `policy`。
+- **普通 consumer 迁移（语义等价，区间逐值相同）**：28 个 `confirm_delay=REACTION_*` → `policy=InteractionPolicy.*`
+  （EvoZone 4 / Orochi 5 / RealmRaid 6 / RyouToppa 3 / Exploration 8 / ActivityShikigami 入口 2）。未迁：RealmRaid
+  `RR_AGAIN_CONFIRM_DELAY=(0.3,0.6)`（非 profile legacy 区间）；Navigator 通用 `_execute_action`（保持 IMMEDIATE）；
+  GeneralInvite / GeneralBattle 其它立即点击（未经逐点分析不改 NORMAL）。`NORMAL_HIGH` 0 consumer。
+- **FIRE 可配置**：共享 schema `tasks/Component/config_fire_reaction.py::FireReactionConfig`（`fire_reaction_min_ms` /
+  `fire_reaction_max_ms`，默认 400 / 800 ms，`0<=min<=max<=5000`，`min==max` 合法，字段级校验 + `validate_assignment`，非法
+  单字段修改被拒且旧值保持），作为 `fire_reaction` 组加到 RealmRaid / RyouToppa / EvoZone / Orochi / ActivityShikigami；
+  `config/template.json` 与 `assets/i18n/zh-CN.json`（FIRE 点击前最小 / 最大延迟）同步；OASX 为 schema-driven，0 修改。
+  7 个 FIRE owner FSM 不重写，只把 `random_delay(*REACTION_FIRE)` 换成 `random_delay(*fire_reaction_range(<task>.fire_reaction))`；
+  GeneralInvite 由 `run_invite(fire_reaction=)` → `click_fire(fire_reaction=)` 沿配置传入（Orochi / EvoZone 已传，其它
+  consumer 用公共默认），不读 `self.config` / 不猜 script_name。
+- **排除**：Settlement Micro-Burst、Fatigue、FrameWait、Swipe、L1 空间模型、FIRE post-click FSM / retry / recovery 零改动；
+  AccountRotation / SwitchAccount / Login / DailyTrifles 不纳入。
+- **状态**：Level A/B **PASS**（新增 `tests/test_l2_interaction_reaction.py` 26 项；8 组变异回退全部被抓；为源码形态变化
+  同步修改 9 个既有测试文件的正向断言 / 替身配置，删除 0；全量 1571 → **1597/1597 OK**）；Level C **PENDING**——真机看
+  reaction 是否符合任务配置、fresh confirm 避免旧坐标、FIRE 启动正常且不明显变慢、无 double reaction、Settlement timing 不受影响、
+  导航不被过度延迟。
+
+### 4.73 L2-2 Interaction Policy Migration（master 主线普通 UI 点击逐点分类）
+
+2026-09-15，同一 worktree，叠加在 §4.72 之上，**未提交**。规则见 D001「L2-2」补记，逐点清单见
+`docs/L2_INTERACTION_POLICY_MAP.md`。
+
+- **审计覆盖**：10 个高频公共模块 18 个文件 179 个点击调用点逐点分类——ALREADY_L2 33 / **MIGRATE 7** / KEEP_IMMEDIATE 94 /
+  KEEP_SPECIAL 38 / NEEDS_C 7。`base_task.py` 19 处为 primitive 自身；AccountRotation / SwitchAccount / Login /
+  DailyTrifles / MultiAccountEvo 排除；其余 51 个模块约 720 处点击本轮未逐点审计。
+- **迁移**：GeneralInvite `_open_invite_panel_if_needed` 的 `I_ADD_*` ×4 → NORMAL；GeneralBattle `switch_preset_team` 的
+  `I_PRESET` / `I_PRESET_WIT_NUMBER` → NORMAL、`I_PRESET_ENSURE` → CONFIRM。只用 `appear_then_click(policy=)`。
+- **刻意不迁**：`check_and_invite`（在 `_handle_reward` 奖励阶段调用，归 Settlement 生命周期）、`I_PREPARE_HIGHLIGHT`
+  （准备 = Battle Entry 语义）、房间表情（防挂机节拍）、exit_room / exit_battle（recovery / 中止）、`ui_click*` helper
+  （无 policy 参数，本轮不扩 API）、OCR / 区域 / 颜色状态目标、KekkaiUtilize 全部（受保护路径）、Navigator 通用执行器。
+- **NEEDS_C**：GeneralInvite `check_then_accept` ×5、准备页「不同御魂」弹窗 ×2。
+- **状态**：Level A/B **PASS**（新增 `tests/test_l2_policy_migration.py` 14 项；修改 `test_l2_interaction_reaction.py`
+  consumer 计数与 `test_general_invite_challenge_reaction.py` import 断言各 1 处，删除 0；6 组变异全部被抓；全量
+  1597 → **1611/1611 OK**）；Level C **PENDING**。
+
+### 4.74 L2-3B FIRE Batch A：Orochi 野队 / EternitySea / FallenSun / Sougenbi 战斗入口统一
+
+> **master 集成说明（2026-09-21）**：Orochi 野队 `_fire_orochi_wild` 按项目决定**未集成**（野队 `run_wild` 保持原内联点击，不启用 / 不扩展）；EternitySea / FallenSun / Sougenbi 三条已集成。下文关于 Orochi 野队的叙述是 worktree 历史，以本说明为准。
+
+2026-09-18，同一 worktree，叠加在 §4.73 之上，**未提交**。规则见 D001「L2-3B」补记。
+
+- **改造前**：四条路径都是 `while 1` 里 `appear_then_click(FIRE, interval=1)` 连点，**「FIRE 按钮消失」即交接
+  `run_general_battle`**，无 reaction、无 fresh confirm、无次数 / 总时长上限；loading 帧、结果 / 奖励页残留都会被当成已进战斗。
+  Orochi `run_wild` 另用宽 `is_in_battle()` 跳过点击（含 WIN / REWARD）。
+- **新 owner**（各任务私有，不进 BaseTask）：Orochi `_fire_orochi_wild`（`I_OROCHI_WILD_FIRE`）、EternitySea
+  `_fire_eternity_sea_alone`（`I_ETERNITY_SEA_FIRE`）、FallenSun `_fire_fallen_sun_alone`（`I_FALLEN_SUN_FIRE`）、Sougenbi
+  `_fire_sougenbi`（`I_S_FIRE`），各配只读 `_classify_*_fire_state` + 有界 `_wait_*_fire_state`。每 attempt：分类当前帧 →
+  unknown 只等不点 → 采样本任务 `fire_reaction` → `sleep` → fresh screenshot → 重新确认 ready → `appear_then_click(FIRE,
+  interval=0)`（不带 policy）→ 有界等点击后状态。`*_FIRE_MAX_TRIES=4` / `*_FIRE_TIMEOUT=10` / `*_FIRE_POST_CLICK_TIMEOUT=3`
+  （对齐 Orochi / RealmRaid，engineering baseline）。
+- **正向 Battle Entry**：新增只读 `tasks/Component/fire_battle_entry.py`——`is_new_battle_entry` = `I_PREPARE_HIGHLIGHT` /
+  `I_PREPARE_DARK` / `I_BATTLE_INFO`（进入准备页即算 FIRE 成功，交接既有 GeneralBattle）；`is_battle_result_residue` = WIN /
+  DE_WIN / FALSE / REWARD / REWARD_GOLD → `abnormal`，不算新战斗。不用宽 `is_in_battle()`，也不用含 `I_BUFF` / `I_PRESET`
+  的 `is_in_prepare()`（这两个图标是否也出现在挑战 / 房间页未经真机确认）。
+- **ready 判定**：Orochi 野队 = 在房间 + FIRE（threshold 0.8），另有 `room_failed`（复用 `_room_entry_failed`）；Sougenbi =
+  `I_S_CHECK_SOUGENBI` + `I_S_FIRE`；EternitySea / FallenSun = FIRE 在。
+- **caller 契约**：返回成功才调用一次 `run_general_battle`（config / battle_key / exit_matcher 与改造前逐字相同）；失败回外层循环顶
+  重新截图判页，不计次数。Orochi 返回 `'battle' / 'room_failed' / 'abnormal' / 'timeout'`，房间死亡仍由外层 `is_room_dead`
+  处理。不调用 `click_record_clear`，连续失败仍受 `GameTooManyClickError` 兜底。
+- **配置**：EternitySea / FallenSun / Sougenbi 新增 `fire_reaction` 组（共享 `FireReactionConfig`，默认 400 / 800ms），
+  `config/template.json` 同步，i18n 键共用无需改；Orochi 野队复用 `orochi.fire_reaction`。EternitySea / FallenSun 的组队路径
+  也把本任务 `fire_reaction` 传给 `run_invite`（与 Orochi / EvoZone 一致，GeneralInvite 本体未改）。
+- **已知断链不变**：`I_OROCHI_WILD_FIRE` 全仓仍无 `RuleImage`（§4.53），野队 FIRE 运行时仍会 `AttributeError`；补资产需
+  ROI 标定（Level C）。本轮只把状态机收口，测试用同名替身注入。
+- **状态**：Level A/B **PASS**（新增 `tests/test_fire_batch_a.py` 19 项；修改 `test_l2_interaction_reaction.py` FIRE owner 清单与
+  `test_l2_policy_migration.py` 清单 1 行（L2M-084 KEEP_SPECIAL → ALREADY_L2），删除 0；8 类变异 × 4 个文件 = 32 次全部被抓；
+  全量 1611 → **1630/1630 OK**）；Level C **PENDING**。
+### 4.77 FIRE 点击前延迟配置最小范围接入 master（RealmRaid / RyouToppa / EvoZone / Orochi / ActivityShikigami / EternitySea / FallenSun / Sougenbi）
+
+2026-09-18。从 L2 worktree `wt-l2-interaction-reaction`（未合并、未提交）按「最小范围移植」搬运 FIRE reaction
+配置能力到本工作树，**不带入**该 worktree 里混杂的 L1 Global Click Pipeline / L2-2 普通点击 `appear_then_click
+(policy=)` 迁移（master 的 `appear_then_click` 未改签名，`InteractionPolicy` 枚举本轮不落地）。规则见
+`docs/DECISIONS.md` D001 补记「FIRE 分节 增补 —— 任务级可配置 reaction」。
+
+- **移植依赖审查**：`tasks/Component/config_fire_reaction.py`（`FireReactionConfig`）与
+  `module/interaction_policy.py::fire_reaction_range()` 从 L2 worktree 逐字节复制（两文件自包含，只依赖已在
+  master 的 `module/reaction_profile.py::REACTION_FIRE`，不依赖 L1 `click_pipeline` / L2-2 迁移）；
+  `module/interaction_policy.py` 里未使用的 `InteractionPolicy` 枚举 / `resolve_reaction_range()` 保持原样但
+  本轮**零消费者**——不改 `appear_then_click`，不新增 `policy=` 调用点。
+- **8 个任务的 `config.py`** 各加 `fire_reaction: FireReactionConfig = Field(default_factory=FireReactionConfig)`
+  （默认 400/800ms），`config/template.json` 同步 8 组，`assets/i18n/zh-CN.json` 追加 5 个共享翻译键（`fire_reaction`
+  组名 + `fire_reaction_min_ms` / `_max_ms` 标签与说明，8 个任务共用同一组键，不按任务重复）。
+- **已有 FIRE FSM（RealmRaid.fire / RealmRaid._fire_again / RyouToppa.attack_area / EvoZone._fire_evozone_alone /
+  Orochi._fire_orochi_alone / ActivityShikigami._enter_climb_battle / GeneralInvite.click_fire）**：FSM 形状、正向
+  战斗判据、有限 attempt / `Timer` 总超时**一律不动**，只把 `random_delay(*REACTION_FIRE)` 换成
+  `random_delay(*fire_reaction_range(<task>.fire_reaction))`；`GeneralInvite.run_invite` / `click_fire` 新增可选
+  形参 `fire_reaction=None`（未传 = 公共默认，`ExperienceYoukai` / `GoldYoukai` / `Hunt` / `Tako` 等未接入的
+  consumer 行为不变），`Orochi` / `EvoZone` 的 `run_leader` 沿配置传入本任务 `fire_reaction`。**Orochi `run_wild`
+  按要求排除**，不碰、不修复其既有 `I_OROCHI_WILD_FIRE` 资产断链。
+- **EternitySea.run_alone / FallenSun.run_alone / Sougenbi.run**：这三个任务此前 FIRE 点击**完全没有 reaction**
+  （`appear_then_click(FIRE, interval=1)` 裸连点，`interval=1` 只是节流不是人为反应时间）。本轮**不新建三态状态机**
+  （不改成功判据 / 不改重试超时契约），只在原有点击处改用 primitive 既有的 `confirm_delay=` 机制（D001 原始
+  reaction 通道，早于 L2 的 `policy=` 迁移）：`appear_then_click(FIRE, interval=0,
+  confirm_delay=fire_reaction_range(<task>.fire_reaction))`——`interval` 改 0 是因为 reaction 本身已是这次点击
+  唯一的 timing owner，避免和旧 `interval=1` 节流叠成两个 owner。
+- **测试**：新增 `tests/test_fire_reaction_task_config.py`（30 项）——8 任务配置组 + 隔离 + 默认值；`min==max`
+  合法、非法区间拒绝且旧值保持；6 个既有 FSM owner 用自定义区间（非默认 111/333ms）**真实驱动**到点击分支，
+  证明 `random_delay` 收到的确实是任务配置而不是恒定 0.4/0.8（复用 `tests/test_fire_reaction_fsm.py` /
+  `tests/test_second_batch_fire_fsm.py` / `tests/test_general_invite_challenge_reaction.py` 里已验证过的替身
+  构造，只换配置值）；EternitySea / FallenSun / Sougenbi 三个新接入点同样真实驱动 `run_alone` / `run`，断言
+  `appear_then_click` 收到的 `confirm_delay` 参数；无双重 reaction（逐 owner 扫描 `random_delay(` / `confirm_delay=`
+  次数）；`ConfigModel.script_task` / `script_set_arg` 保存重载回显；OASX 翻译键；GlobalGame / 疲劳翻译不回归。
+  同步改 7 个既有测试文件的 `REACTION_FIRE` 断言为 `fire_reaction_range(...)`（选择性套用 L2 worktree 里对应
+  hunk，跳过其中混杂的 `policy=` 迁移断言）。10 类变异（6 个 FSM owner 改回硬编码 + 3 个新接入点去掉
+  `confirm_delay` + 1 个配置校验失效）全部被抓，文件逐字节还原。全量 1530 → **1560/1560 OK（0 skipped，
+  此前 1 个 skip 的 CASE10 现真实命中 8 个任务）**。实际隔离 HTTP（`127.0.0.1:22395`，临时配置副本）验证 8 个
+  任务 `GET .../args` 均 200、`fire_reaction` 组默认 400/800，真实 `PUT` 改 `RealmRaid.fire_reaction_min_ms=250`
+  后 `GET` 回显正确，`config/oas1.json` / `oas2.json` 全程哈希与 mtime 不变。未启动 MuMu / 游戏 / OCR，非
+  Level C。
+
+### 4.82 L1 + L2 公共点击与反应策略集成进 master（Level A/B）
+
+2026-09-21。把 worktree `feature/l1-global-click-pipeline-v1`（L1 / L1.2）与 `feature/l2-interaction-reaction-layer`（含 L1 公共层选择性移植、
+L2-1 / L2-2 / L2-3B Batch A）**选择性**并入当前 master 工作区。**未 commit / push**；§4.71~§4.74 是这些 worktree 当时的记录（编号预留），本节是落到
+master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
+
+- **基线差异审查**：master HEAD 已含 L1-1 的执行层（BehaviorTrace / `Control` minitouch dwell 45~130ms·mode 65 / 点击热点与采样器 / `reaction_profile`）；
+  master 工作区在本轮前已单独移植过 `module/interaction_policy.py` 与 `FireReactionConfig`（8 任务 FIRE 延迟配置，字节级与 L2 一致）。缺的是：
+  `module/click_pipeline.py`、`Control.click_with_backend` / `_dispatch_click`、`RuleList.last_ocr_hit`、`BaseTask.appear_then_click(policy=)`、L1 各 consumer、
+  L2 迁移点位、FIRE Batch A owner 与它们的测试 / 文档。L2 worktree 的 HEAD 与 master 相同（`a5e2d7e6`），改动全部未提交，所以对 master 未改动的文件直接取用其版本，
+  与 master 已改动的文件做 3-way 合并（FIRE 8 任务、GeneralBattle / GeneralInvite 只冲突在「master 的最小 FIRE 移植 vs L2 的 Batch A」，取 L2 侧且逐行核对 master
+  独有行全是被取代的旧写法）。Settlement 的真实版本是 **SETTLEMENT CONTRACT V3 + Micro-Burst v1.2**（`SETTLEMENT_MAX_TOTAL_CLICKS=9`），GeneralBattle 主流程零改动。
+- **Stage B（L1）**：新增 `module/click_pipeline.py`（`FinalPoint` / `ClickRegion` / `ClickBounds` / Rule 目标 → `execute_single_click`）；`Control` 增
+  `click_with_backend`（百鬼夜行 window_message fast 后端保留，`_dispatch_click` 与 `click` 共用一段：取整 / 日志 / BehaviorTrace）；`RuleList.last_ocr_hit`；
+  Stage B 结束时显式调用 `execute_single_click` 的调用点 25 处（**这是「显式声明非 Rule 坐标语义」的调用点数，不是享受 ROI 采样的点击数**——约 900 个 Rule / helper 点击早在 `Rule*.coord()` 里按 ROI 采样，见 §4.83；这 25 处由原裸 `device.click` / 后端直调迁入：GeneralBattle 绿标 ×2、GeneralRoom、Dokan ×2、EternitySea / FallenSun / Orochi / EvoZone 层数、Chess 发现卡、QuickLoadout ×4、
+  SwitchSoul、SixRealms 购买区、WantedQuests、WeeklyTrifles ×2、RichMan、Navigator 保底点、百鬼夜行、`list_appear_click`）。**一次点击一个最终坐标**：L1 决定落点，
+  `Control` 只执行已定坐标，BehaviorTrace 记录实际执行坐标，L2 只决定 reaction 时机、不再偏移。
+  **例外（静态白名单逐条给理由，`tests/test_l1_click_pipeline.py::CANONICAL_DIRECT_CLICKS`）**：BaseTask primitive 自身（`coord()` 已采样一次后 `device.click`）、Settlement
+  两个采样 / 执行点、GeneralInvite `_detect_select`、Navigator `_execute_action`、Kekkai `switch_friend_list`、RyouToppa `_click_toppa_area`、Secret / SixRealms peacock / Chess
+  `_refresh_grigri_option`（已是 L1 合规的构造 Rule / 紧邻 canonical 采样器）；**项目排除**：WeeklyPurchase navbar（直点 `list_find` 已采样点，语义无歧义）、
+  Login `_app_handle_login` / DailyTrifles `summon_recall`（synevo 小号轮换业务）。
+- **Stage C（L2）**：`BaseTask.appear_then_click` 增 `policy=`（**不新增方法**；`policy` 与 `confirm_delay` 同时给 → `ValueError`；IMMEDIATE / 不传 = 旧立即点击；FIRE_SPECIAL / SPECIAL 被通用点击拒绝）；
+  reaction → sleep → **新截图** → 同目标再识别 → 用新帧 `coord()` → 一次点击，目标消失零点击、不重试。28 个 `confirm_delay=REACTION_*` 迁成等价 `policy=`；L2-2 的 7 个 MIGRATE
+  （GeneralInvite `I_ADD_*` ×4 NORMAL、GeneralBattle `I_PRESET` / `I_PRESET_WIT_NUMBER` NORMAL、`I_PRESET_ENSURE` CONFIRM）；FIRE Batch A：新增 `tasks/Component/fire_battle_entry.py`（`is_new_battle_entry` /
+  `is_battle_result_residue`）与 EternitySea `_fire_eternity_sea_alone` / FallenSun `_fire_fallen_sun_alone` / Sougenbi `_fire_sougenbi`（分类 → 采样任务 `fire_reaction` → sleep → 新截图重确认 → 点一次 →
+  有界等正向进入准备 / 战斗页）。**Orochi 野队 `run_wild` 按项目决定不带入**（保持原状，测试里删除对应用例并把清单行改回 KEEP_SPECIAL）。同一个 FIRE 事件只有一个 reaction owner
+  （任务 `fire_reaction`），不叠 `policy` / `confirm_delay` / 普通策略；Settlement 与 KekkaiUtilize 没有任何 policy / confirm_delay。
+- **Stage D（全仓调用点）**：新增 `dev_tools/click_callsite_register.py` + 生成的 `docs/L2_CALLSITE_REGISTER.md`：`tasks/` + `module/` 共 **1092** 个点击调用点（AST；不含 tests）。
+  **basis=human 179**（L2-2 逐点人工审计，沿用结论）、**basis=rule 913**（保守规则分类，**不是逐点人工审计**）。decision（Stage 2 之后重排规则：受保护模块里的执行器点击仍按 R3 归 KEEP_SPECIAL，现值 KEEP_IMMEDIATE 627 / KEEP_SPECIAL 228，其余不变；此处为当时口径）：MIGRATE 7 / ALREADY_L2 33 / KEEP_IMMEDIATE 637 / KEEP_SPECIAL 218 /
+  NEEDS_C 24 / PRIMITIVE 35 / EXCLUDED 138（WeeklyPurchase 55 + DailyTrifles 38 + SwitchAccount 25 + Login 20，互斥可加总）。L1：显式 `execute_single_click` 调用点 25 处（Stage B 口径，Stage 1 之后为 33，见 §4.83）；`policy=` 32 处；legacy `confirm_delay=` 3 处
+  （`check_lock` 透传 ×2 + RealmRaid 再次挑战确认 ×1）。**规则分类后没有任何新增点位满足「无需真机证据即可迁移」**：剩余 NEEDS_C 24 处（Buy 2 / GeneralBattle 准备页弹窗 2 / GeneralInvite 队员接受 5 /
+  DemonRetreat 1 / Dokan 1 / Duel 2 / Pets 1 / Quiz 1 / SixRealms 9）都是「可能适合 reaction、时效 / 协作节奏无法静态判断」，等 Level C；不为提高迁移率强行加延迟。
+  `ui_click*` / `ocr_appear_click` / `self.click(Rule)` 无 policy 参数，本轮不扩公共 API（KEEP_IMMEDIATE）。
+- **测试**：新增 `tests/test_l1_l2_integration.py` 22 项（真实 `BaseTask.appear_then_click` + 真实 `Control.click` + 采样器计数：一个动作一次采样 / reaction 之后才用新帧采样 / 目标消失零采样零点击 / 目标移动用新框 /
+  IMMEDIATE·旧接口不变 / policy+confirm_delay 拒绝 / Control 不加抖动；Settlement / FIRE owner / Kekkai / Navigator / Orochi 野队的延迟所有权静态守卫；登记册与源码对账与 NEEDS_C 钉住；真实 `Script.loop` 下 reaction 耗时不进 next_run）；
+  移植 `tests/test_l1_click_pipeline.py`（去掉 WeeklyPurchase 用例、白名单加项目排除项）、`test_l2_interaction_reaction.py`、`test_l2_policy_migration.py`、`test_fire_batch_a.py`（删 Orochi 野队用例 / 清单行）及 9 个既有测试文件的
+  L2 断言；`tests/test_fire_reaction_task_config.py` 对 EternitySea / FallenSun / Sougenbi 改为驱动 Batch A 真实 owner（旧的「朴素 FIRE 循环」替身在新 owner 下会挂死，已替换）。
+  16 组变异全部被抓（L1 重复采样 / L2 用旧截图 / 目标消失仍点击 / FIRE 双重反应 / 结算叠普通策略 / FinalPoint 再偏移 / 后端分派丢失 / 旧接口破坏 / 三处近期寄养修复被覆盖 / 野队被扩展 /
+  列表点击退回裸点 / 百鬼夜行绕过执行器 / 未审计模块偷带 reaction / Kekkai 带 reaction），源码逐字节还原。全量 1668 → **1809/1809 OK**。
+- **数据**：真实 `config/oas1.json` / `oas2.json` 本轮开始前已被外部（OAS 服务 / 用户）在 11:55 写过一次（与上一轮哈希不同），本轮全程哈希与修改时间不变。
+- **未做 / 待真机（Level C）**：NEEDS_C 24 处；Batch B（AreaBoss / Secret / DemonEncounter）仍待逐项审查；Orochi 野队（项目排除，且 `I_OROCHI_WILD_FIRE` 无 RuleImage 断链）；
+  `ui_click*` 透传 policy 的设计；Navigator 逐 edge NAVIGATION 元数据；`RR_AGAIN_CONFIRM_DELAY` 是否归入 CONFIRM；全部 L1 consumer 的落点分布与 L2 reaction 数值都是 PROVISIONAL。
+  **不能报告「全阶段正式验收完成」**。
+
+### 4.83 L1 Stage 1：BaseTask 公共单击 primitive 的执行入口统一到 `execute_single_click`
+
+2026-09-21。依据只读的《L1 全仓 ROI 与点击落点专项审查》。**只换执行入口，不改 ROI / 采样 / 落点分布**。**未 commit / push**。
+
+- **审查结论（纠正此前表述）**：`Rule*.coord()`（`RuleClick` / `RuleImage` / `RuleOcr` / `RuleGif`）早已统一走 `ClickSampler.sample_target(roi_front, name)`，所以约 887 个 Rule / helper
+  生产消费点本来就在 ROI 内采样一次；此前「25 处」只是显式调用 `execute_single_click` 的调用点（要为非 Rule 坐标显式声明语义），**不是**能享受 L1 的点击数。真正缺的是
+  **执行入口未统一**：BaseTask primitive 采样后直接 `device.click`。
+- **改了什么（`tasks/base_task.py` 的 8 个执行点，均为「保持原时机的 `coord()` 采样一次 → `FinalPoint` → `execute_single_click`」）**：`appear_then_click` 4 处（reaction 路径无 action /
+  RuleClick action，立即路径无 action / RuleClick action）、`wait_until_appear_then_click` 2 处（无生产调用方，保持原语义：始终用 `target.coord()`）、`click` 1 处、`ocr_appear_click` 1 处
+  （无 action 分支）。**没有**把 Rule 直接交给执行器（那会 `coord()` 之后再采一次）；`control_name` 逐点保持（`appear_then_click` 传 action 时仍是 `target.name`）；返回值、点击 / 截图次数、
+  识别顺序、L2 的 reaction → 新截图 → 再识别 → 新帧 `coord()` 顺序、异常传播、Control 后端分派全部不变。长按（6 处 `device.long_click`）本阶段不动。调用形式由位置实参变为
+  `x=… y=… control_name=…` 关键字实参（执行器统一约定），3 个既有测试的 Mock 断言同步改成关键字形式（语义不变）。
+- **修复**：`ocr_appear_click` 的 action 分支原先 `x, y = action.coord()`（采样后丢弃）再 `self.click(action, interval)`（内部又采一次）——一次点击采样两次。`action.coord()` 只是纯采样（无识别 /
+  状态副作用），已移除，最终仍只采样一次（`self.click` 内）。副作用：随机数序列位移一位（分布不变）。
+- **覆盖统计（AST，`dev_tools.click_callsite_register`）**：BaseTask 直接 `device.click` 8 → **0**；BaseTask 内 `execute_single_click` 1 → **9**（8 + 既有 `list_appear_click`）；显式执行器调用点 25 → **33**；
+  仍是裸点 24 → **16** = 底层与非点击 4（执行器自身 2、minitouch `__main__` 1、`scroll_window_message` 1）+ 生产消费 9 + 项目排除 3。经 primitive 汇入执行器的
+  Rule / helper 生产消费点 887（另有 135 个在项目排除模块里，同样经过 primitive）。**不是 100% 全仓 L1**：剩余 9 个直接点击（已在 §4.84 迁完）、长按、项目排除项留待后续阶段。
+- **测试**：新增 `tests/test_l1_stage1_primitive_execution.py` 27 项（真实 `BaseTask` 方法 + 真实 `Control.click`（假后端）+ 真实 BehaviorTrace + 包装采样器 / 执行器：一次点击 = `sample_target` 1 次 = 执行器 1 次（实参是
+  `FinalPoint`）= 后端 1 次；action 与 target 不同时 `control_name` 仍是 `target.name`；L2 NORMAL 在 reaction 后的新帧采样、旧框从未被采样、目标消失零采样零点击；IMMEDIATE / 旧 `confirm_delay` 不变；
+  策略冲突拒绝；`ocr_appear_click` 一次采样；OCR 未命中零点击；长按不进单击执行器；`ui_*` helper 经执行器；连续点击各自独立采样；后端异常原样传播；AST 静态守卫）；更新
+  `tests/test_l1_click_pipeline.py` 的静态白名单（去掉 8 个 base_task 项，`ConvertedSitesGuardTest` 加入 4 个函数）与 `test_l1_l2_integration.py` 的统计断言。12 组变异全部被抓。全量 1809 → **1836/1836 OK**。
+- **未做（后续阶段，待用户确认）**：9 个生产直接点击（Chess / Settlement ×2 / GeneralInvite / Navigator / Kekkai / RyouToppa / Secret / 孔雀国）、长按执行入口、全局静态守卫收紧、BehaviorTrace 补 ROI / 来源字段、
+  ROI 质量审计（Level C）。WeeklyPurchase / synevo 模块仍是项目排除项。
+
+### 4.84 L1 Stage 2：剩余 9 个生产直接单击迁入 `execute_single_click`（生产直接单击归零）
+
+2026-09-21。**只迁执行入口，采样保持在原位置、用原采样函数与原参数**。**未 commit / push**。
+
+- **复核**：迁移前重新 AST 扫描，生产直接 `device.click` 仍恰为这 9 处（Chess `_refresh_grigri_option`、Settlement `_sample_settlement_click` / `_click_settlement_point`、GeneralInvite
+  `_detect_select`、Navigator `_execute_action`、Kekkai `switch_friend_list`、RyouToppa `_click_toppa_area`、Secret `find_battle`、孔雀国 `_mark_peacock_boss`），无新增；**没有统计误分类**——
+  `_sample_settlement_click` 是「采样并立即点击」（`sample_region` 后 `device.click`），`_click_settlement_point` 是 burst 内执行已采样锚点，两者都是真实点击。
+- **改法（逐点）**：坐标仍由原表达式产出一次，已确定的坐标以 `FinalPoint` 交给执行器（执行器对它零采样）——Chess（两次点击各自 `refresh_rule.coord()`，不复用）、GeneralInvite
+  （保留 `ClickSampler.sample_target(select_area, rule.name)`，**没有**改 `ClickBounds`：它对退化框取中心、对浮点框取整，与原采样在边界上不等价）、Navigator（`action.coord()`，无 interval 的即时点击，不加等待）、
+  Kekkai（目标图片未出现时沿用资产 ROI 的 `check_image.coord()`，不新增识别 / 重试）、RyouToppa（保留 `sample_point(roi, wide_card)` 显式 opt-in，不换成 `sample_target`）、Secret（人工 `click_roi` 不变，
+  两次点击各自 `click_rule.coord()`）、孔雀国（`C_PK_GREEN_MAIN.coord()` 一次）、Settlement 锚点点击（`FinalPoint`，burst 内复用同一个点，零采样）。**唯一用 `ClickRegion` 的是
+  `_sample_settlement_click`**：它的解析就是同一个 `ClickSampler.sample_region(roi, name)`，同 ROI、同身份、一次采样，逐字等价。结算状态机、点击次数与节奏、Reward / Result 安全区域没有改动。
+- **等价性证据**：(1) 迁移前源码快照以别名模块加载，与迁移后真实模块在**同一 seed、同一 fake 输入**下对照：12 个场景 × 3 个 seed，`device.click` 的 (x, y, control_name) 序列与截图 / 识别 / 等待次数逐项相等
+  （一次性对照，仓库外）；(2) 新增 `tests/test_l1_stage2_direct_clicks.py` 18 项，用固定随机源（`module.click_sampler._rng` 与 `module.base.utils.random._rng` 同一个 `random.Random`）把
+  「迁移前的采样表达式」作为独立参考，断言后端坐标逐个相等，并包装采样器 / 执行器断言采样种类、ROI、身份、次数、`FinalPoint` / `ClickRegion`、`control_name`、等待 / 截图 / 识别次数与 BehaviorTrace 坐标；
+  另有 AST 静态守卫（9 个函数无 `device.click`、采样调用原位保留、Navigator 无 sleep、Kekkai 仍只有一次 `appear`）。
+- **既有测试的同步**：4 个「源码字符串」断言（Chess / Secret 的 `coord()` 先于 `device.click(`、GeneralInvite / Secret 在 `t7_5_stage2`、Settlement 的 `ClickSampler.sample_region(...)` 字面）改成新的结构形式并补运行期断言
+  （`sample_region` 恰一次、参数是选定 region 的 roi_front 与名字、`sample_target` 从未被调用），没有删除或放宽；`test_l1_click_pipeline.py` 白名单去掉 9 项、`ConvertedSitesGuardTest` 加入 9 个函数。
+- **覆盖统计（AST）**：生产直接单击 9 → **0**；显式执行器调用点 33 → **42**；裸点 16 → **7** = 底层与非点击 4 + 项目排除 3（Login / DailyTrifles / WeeklyPurchase）；长按 `device.long_click` 仍 6 处。
+  登记册规则调整：受保护模块（Settlement / Kekkai / FIRE 任务 / Chess 等）里已走执行器的点击仍按 R3 归 KEEP_SPECIAL（执行器只是执行入口，不改变「由状态机拥有 timing」），
+  decision 变为 KEEP_IMMEDIATE 627 / KEEP_SPECIAL 228，其余不变。
+- **测试**：新增 1 个文件 18 项；修改既有测试文件 5 个（`test_l1_click_pipeline.py`、`test_t7_5_stage2.py`、`test_general_battle_settlement.py`、`test_l1_l2_integration.py`，另 `dev_tools` 登记册规则），删除 0；
+  15 组变异（恢复裸点 / Rule 双采样 / 锚点重采样 / 采样函数产生点击 / Chess 复用同一个点 / GeneralInvite 采样模式改变 / RyouToppa 丢 wide_card / Secret ROI 扩大 / Navigator 加等待 /
+  Kekkai 多一次识别 / control_name 改变 / 执行器丢 control_name 与后端参数）全部被抓。全量 1836 → **1854/1854 OK**。
+- **未做（后续阶段，待用户确认）**：长按独立执行入口、把静态守卫收紧为「执行器之外零直接点击」的正式规则（目前白名单只剩执行器自身与项目排除项）、BehaviorTrace 补 ROI / 来源字段、ROI 质量审计（Level C）；
+  WeeklyPurchase / Login / DailyTrifles 仍是项目排除项。
+
+### 4.85 L1 Stage 3A：长按执行入口统一到独立的 `execute_long_click`
+
+2026-09-21。**只换执行入口，不改采样 / 时长 / 后端分发 / 等待**。**未 commit / push**。
+
+- **审计（只读，先于改动）**：生产里 `device.long_click` 恰 6 处，全部是 BaseTask primitive（`appear_then_click` ×4：立即 / reaction 路径各「`action.duration` / 显式 `duration`」两支，
+  `wait_until_appear_then_click` ×1，`click` ×1）；没有其它生产旁路——`long_click_<后端>` 直调只有 `windows_impl.py` 的 `__main__` 演示，`u2.long_click` 只在 uiautomator2 后端内部。
+  生产真实的 `RuleLongClick` 资产共 10 个（CollectiveMissions `L_FEED_CLICK_1~4` / `L_SL_LONG`、Exploration `L_ROTATE_1~4`、SoulsTidy `L_ONE`，时长都是 1500ms），**全部经 `BaseTask.click`**；
+  另 5 个点位（`appear_then_click` / `wait_until_appear_then_click` 带长按 action）当前没有生产调用者（潜在路径，`SwitchSoul` 只是透传 `action` 形参）。`RuleLongClick` 自带 `duration`（毫秒），
+  调用方 `/ 1000` 成秒后交给 `Control.long_click(x, y, duration, control_name)`。没有用「多次单击 / 滑动」模拟长按的生产写法；Chess `press_and_drag`（minitouch 按住拖拽）与 `swipe*` 属手势，不在范围。
+- **改法**：`module/click_pipeline.py` 新增 `execute_long_click(device, target, duration, control_name=<缺省哨兵>)`——目标经既有 `resolve_click_point`（`FinalPoint` 零采样；直接传 Rule 才采样一次），
+  然后**恰一次**调用 `device.long_click(x=, y=, duration=, control_name=)` 并返回落点。`duration` 原样透传（秒 / 区间 / `None` 都不加工，不叠加单击 dwell，不重新随机）；`control_name` 显式传入
+  （含 `None` / 空串）一律原样透传，仅在完全不传时回退 `target.name or 'LongClick'`。执行器不 sleep、不截图、不重试、不吞异常；后端选择 / `handle_control_check` / BehaviorTrace 仍全在 `Control.long_click`。
+  6 个 BaseTask 点位保持 `x, y = <target/action>.coord()` 在原位置一次采样，再 `execute_long_click(self.device, FinalPoint(x, y), <ms> / 1000, control_name=<原名字>)`；
+  `wait_until_appear_then_click` 的长按点位仍取 `target.coord()`（不是 action 的 ROI）——既有行为原样保留，没有顺手「修正」。单击执行器依旧拒绝 `RuleLongClick`，长按执行器不接管任何单击。
+- **后端矩阵（不改变）**：`Control.long_click_methods` = ADB / uiautomator2 / minitouch / scrcpy（+ Windows 上 window_message）；未配置的 `control_method`（含 `nemu_ipc`，虽有 `long_click_nemu_ipc` 但没注册）
+  仍回退 `long_click_adb`；`long_click_adb` 里「0<duration<3 之外按毫秒处理」等历史启发式原样不动。BehaviorTrace 仍由 `Control.long_click` 记 `action=long_click`、`extra={x, y}`（不含 duration，未扩 schema）。
+- **等价性证据**：(1) 迁移前 `base_task.py` 源码快照以别名模块加载，与迁移后真实模块在**同 seed、同假后端**下对照：7 个场景（4 个 `appear_then_click` 变体 / `wait_until_appear_then_click` / `click` ×2）×
+  6 种 control_method（含未注册回退）× 3 个 seed × 正常 / 后端抛异常，共 252 组，后端收到的 (后端, x, y, duration)、sleep / reaction / 截图序列、返回值、BehaviorTrace 行、异常类型与消息逐项相等，且从未出现单击后端调用
+  （一次性对照，仓库外）；(2) 新增 `tests/test_l1_stage3a_long_click.py` 40 项：执行器契约（`FinalPoint` 零采样 / Rule 采样恰一次且等于 `coord()` 参考值 / `duration` 原样 `is` 透传 / `control_name` 哨兵语义 /
+  无 sleep 无截图 / 异常同一对象 / 非法目标与单击执行器同一 `TypeError`）、真实 `Control.long_click` 链路（5 种后端各自恰一次且参数一致、未注册回退 adb、`Control.click` 与单击后端从未被调、trace 一条 `long_click`
+  无 `click`、后端失败无 trace 行、control_check 异常先于后端）、6 个点位的真实 primitive 链路（一次长按 = 采样 1 次 = 执行器 1 次（`FinalPoint`）= 后端 1 次；L2 长按流程与同一流程的单击版本逐事件相同，仅最后动作不同）、
+  固定随机源下与「迁移前表达式」（`coord()` + `duration / 1000` + 原 `control_name`）逐值相等、10 个真实生产资产逐个覆盖、AST 静态守卫。
+- **覆盖统计（AST，`dev_tools.click_callsite_register.scan_long_click_sites`，登记册新增 §2.2）**：BaseTask 直接 `device.long_click` 6 → **0**；BaseTask 内 `execute_long_click` 0 → **6**；生产消费点直调长按 **0**；
+  执行器自身 1 个直调出口（`device.long_click`）+ `module/device/` 后端内部 2 处（u2 / windows 演示）；拖拽 / 滑动未误入长按执行器。单击统计不变（生产直接单击 0、显式单击执行器 42、裸点 7 = 底层 4 + 项目排除 3）。
+- **测试**：新增 1 个文件 40 项；修改既有测试文件 1 个（`test_l1_stage1_primitive_execution.py`：把「长按 6 处未变」的静态断言改为「直调 0 / 执行器 6」，并更新文档字符串与注释，未删除任何用例）；删除 0；
+  21 组变异（长按执行器改调 click / 落点二次采样 / 落点被偏移 / 丢 duration / 毫秒未换算（3 个 primitive 各一）/ 执行器内再乘 1000 / 叠加单击 dwell / 调用两次 / control_name 改写与空值回退 / 绕开 `Control.long_click`
+  直调 adb 后端 / 吞异常 / 两个点位恢复直调 / 滑动误入长按执行器 / Rule 直接交给执行器 / 长按降级为单击 / 单击执行器接受长按 / wait 路径改采样 action）全部被抓，源码逐字节还原（哈希一致）。全量 1854 → **1894/1894 OK**。
+- **未做（Stage 3B，待用户确认）**：把静态守卫收紧为「执行器之外零直接点击 / 长按」的正式全局规则（目前白名单只剩执行器自身、`module/device/` 内部与项目排除项）；BehaviorTrace 补 ROI / 来源 / duration 字段；ROI 质量审计（Level C）；
+  `nemu_ipc` 长按未注册是否补齐（既有行为，本轮不动）。WeeklyPurchase / Login / DailyTrifles 仍是项目排除项。
+
+### 4.86 L1 Stage 3B：原项目排除模块的最后 3 处单击迁入 L1 + 全局静态守卫
+
+2026-09-21。**决定：项目业务排除 ≠ 点击架构豁免**——只要代码真实存在于当前 master 并属于生产点击，就必须走 L1 执行器。WeeklyPurchase 仍**不做** L2 Reaction Policy / FIRE 改造
+（这是 L2 的排除，未变）；这里只统一「执行入口」。**未 commit / push**。
+
+- **复核**：迁移前用 AST（含别名 / 非调用引用 / `getattr`）重新扫描 `tasks/` + `module/` + 仓库根脚本，生产直接单击恰剩 3 处（无新增、无别名漏报）：WeeklyPurchase `MallNavbar.click_and_check`、
+  DailyTrifles `ScriptTask.summon_recall`、Login `LoginService._app_handle_login`；SwitchAccount / AccountRotation / MultiAccountEvo 没有直接点击。未带入任何 synevo 独有功能。
+- **改法（等价迁移：原坐标表达式不变，已定坐标 → `FinalPoint` → `execute_single_click`）**：
+  - WeeklyPurchase：`pos` 是 `list_find`（图片列表）已 `coord()` 采样的最终坐标，循环内同一个 `pos` 最多点 6 次，以 `FinalPoint(pos[0], pos[1])` 原样执行，`control_name` 逐值保留；不重新识别 / 采样、无新增等待。
+    `list_find` 未命中返回 `False` 时仍零点击零截图。
+  - DailyTrifles：`list[i].coord()`（`RuleOcr.coord()`，每次点击恰采样一次）→ `FinalPoint`；原写法没传 `control_name`（Control 默认 `'Click'`），迁移后保持不传，日志 / trace 名字不变；OCR 识别调用次数不变、不点 `(0,0)`。
+  - Login：固定坐标 `(106, 535)`（误入区服设置的兜底点）→ `FinalPoint(106, 535)`，**不随机化、不猜 ROI**，`control_name` 仍是默认 `'Click'`。统一执行入口 ≠ 改落点；若要改善这个点，必须先有可靠 ROI 证据，另行实施。
+- **等价性证据**：(1) 迁移前源码快照以别名模块加载，与迁移后真实模块在**同 seed、同假后端**下对照：8 个场景（WeeklyPurchase 命中 / 一直不出现 / list_find 未命中 / 浮点坐标，DailyTrifles 首次 / 第二次命中 / 从不命中，
+  Login 误入区服点击）× 5 种 control_method（含未注册回退）× 3 个 seed × 正常 / 后端抛异常，共 240 组，后端 (后端, x, y)、截图 / sleep / 识别序列、返回值、BehaviorTrace 行、异常类型与消息逐项相等（一次性对照，仓库外）；
+  (2) `tests/test_l1_stage3b_global_guard.py` 的运行期用例以「迁移前表达式」（`coord()` 固定随机源结果、原坐标字面量、原 control_name）为独立参考，并用采样函数「一调用就失败」的补丁证明已采样坐标不再采样。
+- **全局静态守卫（`dev_tools/click_entry_guard.py`，测试 `tests/test_l1_stage3b_global_guard.py`）**：
+  - **范围**：`tasks/` `module/` `deploy/` 与仓库根 `*.py` 的**实际文件**（rglob，新建文件自动被扫；另有测试要求「含 Python 的顶层目录必须显式归类为生产或非生产」）。tests / dev_tools / toolkit 等是非生产。
+  - **识别（AST，不是单一正则）**：设备类接收者（`.device` 链、`device` 参数、`dev = self.device` 别名传播、`Control.` / `Device.` 类限定）上的 `click` / `long_click`；任何接收者上的 `click_with_backend` / `multi_click` /
+    `click_<后端>` / `long_click_<后端>`（后端名取自 `module/device/method` 的真实定义）；对这些方法的**非调用引用**（赋值 / `partial` / 字典）；`getattr(x, 'click')` 字面量；`getattr(设备, 变量)` 无法静态确定，单独列 `unresolved`（当前 0，出现即失败待人工判定）。
+    `click_record_*`、`self.click(rule)`、`click_and_check`、`swipe` / 拖动、无关对象的 `.click()` 不误报。
+  - **默认禁止 + 精确白名单**：`ALLOWED_EXITS` 共 22 条，逐条精确到（文件, 函数, 调用形式, 次数）并写明层与原因——执行器 3（`execute_single_click` 的 `device.click` / `click_with_backend`、`execute_long_click` 的 `device.long_click`）、
+    Control 13（后端注册表 / 兜底后端引用）、后端 3（uiautomator2 单击 / 长按、window_message 滚动内部点击）、演示入口 2（`__main__`）、死代码 1（`Control.multi_click`，此前发现其实现有误，只登记不修改）。
+    **不按文件 / 目录豁免**；Login / DailyTrifles / WeeklyPurchase 没有任何条目。白名单条目在源码里找不到或次数不符 → 同样失败（防止删了合法出口仍报「覆盖完整」），必需出口缺失也失败。
+  - **失败信息**：`文件:行号 函数 违规形式 → 建议使用的 L1 入口`。失败时**必须迁移到执行器，不得靠新增白名单消除**。
+  - **边界**：静态守卫只证明「没有绕过执行器的直接调用」，不证明业务点击执行成功，也不证明坐标分布；这些由运行期等价测试负责。动态构造的调用（如 `getattr` 变量名、运行期拼装的方法名）、业务类继承 Control 后用 `self.click` 等超出静态可证范围的情形是剩余风险，靠 `unresolved` 单列与运行期测试兜底。
+- **覆盖统计（AST）**：BaseTask 直接单击 0 → 0；生产直接单击 0 → 0；项目排除模块直接单击 **3 → 0**；BaseTask 直接长按 0 → 0；生产长按旁路 0 → 0；显式单击执行器调用点 42 → **45**；显式长按执行器调用点 6 → 6。
+  登记册裸点 7 → **4** = 全部是底层 / 非点击（执行器自身 2、minitouch `__main__` 1、`scroll_window_message` 1）。项目排除模块的 138 个登记点位仍按 L2 口径标 EXCLUDED，其中 `self.click` / `appear_then_click` 等本来就经 BaseTask primitive 进入 L1，
+  剩余 3 个直接点击已迁移，模块里没有别的直接点击。登记册新增 §2.3 汇总守卫结果。
+- **测试**：新增 1 个文件 54 项（3 个调用点的运行期等价 + 全局不变量 + 守卫对真实仓库 / 违规注入 / 新文件发现 / 过期白名单的检验）；修改既有测试文件 2 个（`test_l1_click_pipeline.py`：`CANONICAL_DIRECT_CLICKS` 去掉 3 个排除项；
+  `test_l1_l2_integration.py`：执行器调用点 42 → 45、裸点 (4,0,3) → (4,0,0)、生产裸点断言不再豁免排除模块），删除 0；21 组变异（恢复三个裸点 / BaseTask 新增裸单击与裸长按 / 新建任务文件带裸点 / 组件调 `click_with_backend` /
+  任务直调后端 / 单击改长按与长按改单击 / `FinalPoint` 偏移 / Rule 双采样 / Login 落点随机化 / 守卫豁免 Login 目录 / 守卫漏扫嵌套新文件 / 守卫不核对过期与必需出口 / 守卫整文件放行 / 忽略非调用引用 / 不传播别名 /
+  忽略动态 getattr / 删除合法长按出口）全部被抓，源码逐字节还原、临时新增文件已删除（哈希一致）。全量 1894 → **1948/1948 OK**。
+- **未做（Level C / 后续，待用户确认）**：ROI 质量审计（Login 固定坐标是否落在真实可点击区域、小目标 / 退化 ROI、大随机区域 Point 与 Region 语义）需真机或离线标定；BehaviorTrace 补 ROI / 来源 / duration 字段；`nemu_ipc` 长按未注册（既有行为）；
+  L2 对 WeeklyPurchase 的 Reaction Policy 仍不做。
+
+### 4.87 L2 Stage C1-A1：C0 复核后首批 4 处 Reaction Policy 迁移
+
+2026-09-21。依据外部 C0 审查（Remaining Reaction Audit：原 24 个 NEEDS_C 全部仍在、均未迁移；建议 MIGRATE 10 / KEEP_IMMEDIATE 3 / KEEP_SPECIAL 4 / NEEDS_C 7）只实施 MIGRATE 里确认的**前 4 处**，
+其余不动。**未 commit / push**。C0 报告本身不在仓库里，登记册只记录本轮实际迁移的点位，其余 C0 建议**不提前改判**。
+
+- **复核（迁移前）**：4 处都是单次 `appear_then_click`，均在有界外层里，且没有别的 reaction owner；目标都最终经 L1 `execute_single_click`。真实 `appear_then_click(policy=)` 链路 = interval 闸门 → 当前帧识别 →
+  reaction 采样一次 → `sleep` → fresh 截图 → 同一目标重识别 → 新帧 `coord()` 一次 → `FinalPoint` → L1；目标消失零点击返回 `False`。
+- **改法（每处只加 `policy=`，无重构，不改 L1 / `interaction_policy` / `Control` / `base_task`）**：
+
+  | 模块 | 函数 | 目标 | Policy | reaction |
+  | --- | --- | --- | --- | --- |
+  | Dokan | `priority_enter_dokan` | 动态 `target_priority`（`interval=1.2` 不变） | NORMAL | 0.45~0.85s |
+  | Pets | `_feed`（仅「已投喂」分支） | `I_UI_BACK_CIRCLE` | NAVIGATION | 0.55~1.10s |
+  | SixRealms | `refresh_store` | 动态 `refresh_rule` | CONFIRM | 0.55~1.20s |
+  | SixRealms | `choose_and_enter_island`（`interval=0.8` 不变） | 动态 `target_land` | NORMAL | 0.45~0.85s |
+
+- **业务兼容性（逐项查证，无需额外代码修复）**：
+  - **Dokan**：`priority_enter_dokan` 是 `page_dokan_priority → page_dokan` 边的 callable 动作，由 Navigator `_execute_transition` 在 `Timer(6.0)` **墙钟**预算里循环调用；页面到达等待 `_wait_for_destination` 默认 4.0s 不变。
+    reaction 现在计入这 6 秒：一次成功 attempt = 循环顶截图 + reaction + fresh 截图，约 0.95~1.35s；fresh confirm 持续失败时 Navigator 仍正常超时（`add_penalty` 分支）——虚拟时钟实测 reaction 取下限 / 上限时分别
+    尝试 7 / 5 次、约 6.65 / 6.75s 退出（最多超出预算一次 attempt），零点击。**不能说「总耗时不变」**：成功路径多耗约 1s，预算内可重试次数变少。另一个细微变化：policy 路径的 interval 计时器只在点击后重置
+    （立即路径在识别成功时就重置），fresh 失败后下一轮可立即重试，但仍受 6 秒预算约束。失败由原 Navigator 重试路径接管，没有新增业务重试。
+  - **Pets**：仅 `number == 0`（已投喂）时才识别返回按钮并 reaction；成功 → 点一次 → `goto_page(page_main)`；fresh confirm 失败 → 不点，仍走 `goto_page(page_main)` 收口；没有重复导航 / 无界循环，`_feed` 返回值仍是 `None`。
+  - **SixRealms 刷新**：`refresh_store` **原本就**用 `if not self.appear_then_click(...): return False`，False 分支不进入 `wait_animate_stable(timeout=1.5)` 与「刷新成功」，所以**不需要控制流修复**。刷新次数 OCR 判断不变（读的是 reaction 前那帧）。
+    调用方 `buy_skill` 遇到 `False` 会 `break` 结束本次购买（既有行为）；现在多了一种触发路径：刷新图标在 reaction 期间消失也会让本次购买提前收口，不会误刷新、不会无界重试。
+  - **SixRealms 岛屿**：同一帧「识别全部 → 过滤 → 取第一个」的规则不变；reaction 后只 fresh confirm **原选定**的岛屿——移动则用新帧坐标，消失则零点击，不点旧坐标，也不改点旧帧里的其它岛屿；由外层
+    `run_on_*` 下一轮重新扫描。fresh 帧是新截图，批量匹配缓存按 `frame_id` 失效，不会拿旧 ROI。
+- **测试**：新增 `tests/test_l2_stage_c1_a1.py` 32 项（真实业务函数 + 真实 `BaseTask.appear_then_click` + 真实 `Control.click`（假后端）+ 真实 BehaviorTrace，帧序列驱动；每处覆盖 policy 区间 / reaction 一次 / fresh 截图 /
+  新帧坐标 / 采样一次 / L1 一次 / 目标消失零点击 / 目标未出现不 reaction，外加 Dokan 用真实 `GameUi._execute_transition` + 虚拟时钟的 6 秒预算与重试 / 超时场景、Pets 真实 `run()` 的后续导航、
+  SixRealms `buy_skill` 刷新失败收敛、岛屿过滤策略与「不改选」）；修改既有测试 2 个：`test_l1_l2_integration.py`（`policy` 声明允许 basis=c0 且必须在 `C1_MIGRATED` 逐点登记、policy 点位 32 → 36、
+  NEEDS_C 按模块钉住 Dokan 1 / Pets 1 / SixRealms 9 → 0 / 0 / 7）与 `test_l2_interaction_reaction.py::test_case35_ordinary_reaction_consumers_use_policy`（policy consumer 按文件钉住，加入 Dokan 1 / Pets 1 / SixRealms 2；首次全量回归时它因此失败，属预期的有意更新），删除 0；变异验证 19 组（去掉 / 改错 policy、interval 改变、policy 与 confirm_delay 并用、新增直接点击、Pets 未投喂分支误触发 / 重复导航、
+  refresh 忽略 False 返回值 / 动画超时改变 / 次数判断改变、岛屿消失后改选 / 选择规则改变、Navigator 预算被改）全部被抓，源码逐字节还原。全量 1948 → **1980/1980 OK**。
+- **登记册**：`dev_tools/click_callsite_register.py` 新增 `C1_MIGRATED`（逐点：文件 / 函数 / 目标 / policy，对不上源码直接抛错）与 basis=`c0` / reason=`C1`；这 4 处 NEEDS_C → ALREADY_L2；policy 点位 32 → 36；
+  NEEDS_C 24 → 20；basis human 179 / c0 4 / rule 909；登记册新增 §2.4 区分 1092 / 179 / 24 / 4 四个口径。
+- **仍待办（未在 C1-A1；当时评估为可继续迁，用户随后决定暂缓，最终状态见 §4.88）**：MIGRATE 候选 Duel 两处练习入口、SixRealms 四处商店调用；NEEDS_C GeneralInvite `check_then_accept` ×5、GeneralBattle 准备页弹窗 ×2（等真机）；C0 建议的 KEEP_* 7 处
+  暂在登记册里仍按原分类。**Level C 待验**：reaction 区间仍是 PROVISIONAL；Dokan 6 秒预算够不够、Pets / SixRealms 的 reaction 手感需真机看，未启动 MuMu / 游戏 / OCR。
+
+### 4.88 L2 C0 分类与文档收口（当前 L2 状态快照）
+
+2026-09-21。**只改文档与登记册元数据，不改任何生产业务行为、不调整 reaction 区间**。未 commit / push。用户已明确决定：Duel、SixRealms 剩余商店事务、GeneralInvite 接受邀请、GeneralBattle 准备弹窗
+**全部暂缓，不继续开发**。**当前没有获批的 L2 功能开发任务**；接手的 AI 不得自动继续迁移，也不得把「可以开发」当成「必须开发」。
+
+- **L2 已完成什么**：L1 Stage 1～3B（生产单击 / 长按执行入口统一 + 全局静态守卫）；L2 公共 Reaction Policy / fresh screenshot / 二次确认；FIRE 独立反应机制（任务配置 `fire_reaction`）；GeneralBattle 独立结算 FSM；
+  C0 全仓剩余 24 点专项复核；C1-A1 四处实际迁移（§4.87）。**不是「全部 L2 点位已迁移」**——见下方分类。
+- **C0 24 点的最终状态**（逐点在 `docs/L2_CALLSITE_REGISTER.md` §2.4 与 `docs/L2_INTERACTION_POLICY_MAP.md` §4；技术分类 `decision` 与开发排期 `dev_status` 是两个维度，不能相加）：
+
+  | 状态 | 数量 | 点位 | decision | dev_status |
+  | --- | ---: | --- | --- | --- |
+  | 已完成迁移（C1-A1） | 4 | Dokan `priority_enter_dokan` NORMAL / Pets `_feed` NAVIGATION / SixRealms `refresh_store` CONFIRM / `choose_and_enter_island` NORMAL | ALREADY_L2 | COMPLETED |
+  | C0 建议 MIGRATE、用户暂缓 | 6 | Duel `enter_practice_ban_mode` ×2；SixRealms 商店 `_summon_store` ×2 / `_use_breath` / `_confirm_store_entry` | DEFERRED（原建议保存在 C0 表） | DEFERRED |
+  | 保持即时（已有结论，非积压） | 3 | DemonRetreat `run`（失败恢复）/ Quiz `_deal_quiz`（倒计时敏感）/ SixRealms `open_shop`（超时恢复） | KEEP_IMMEDIATE | NOT_APPLICABLE |
+  | 保持专用时序（已有 timing owner） | 4 | Buy `buy_more` ×2（连续加量节奏，两次间 0.5s 保留）/ `switch_moon_sea_shikigami`（Navigator hook）/ `_mark_peacock_boss`（首领标记事务，0.3s settle 保留） | KEEP_SPECIAL | NOT_APPLICABLE |
+  | 技术上需 Level C 依据、用户暂缓 | 7 | GeneralInvite `check_then_accept` ×5（共享接受邀请事务，逐按钮加 reaction 会重复等待；队长秒开有时效风险；接受循环缺墙钟上限）；GeneralBattle `_handle_prepare` ×2（准备页 FSM，受倒计时影响，不能套普通 CONFIRM） | NEEDS_C（沿用 L2-2 人工审计来源） | DEFERRED |
+
+- **登记册统计（互斥、可加总，1092 = 7 + 37 + 630 + 232 + 7 + 6 + 35 + 138）**：MIGRATE 7（L2-2 已迁）/ ALREADY_L2 37 / KEEP_IMMEDIATE 630 / KEEP_SPECIAL 232 / NEEDS_C 7 / DEFERRED 6 / PRIMITIVE 35 / EXCLUDED 138；
+  显式 policy 点位 36；basis：human 179 / c0 17 / rule 896。**`c0_reviewed`（24）是另一个维度，不与 basis 相加**——GeneralInvite / GeneralBattle 的 7 点决定来源仍是 L2-2 人工审计（human），
+  所以 c0 basis = 4 + 6 + 3 + 4 = 17。四个口径务必区分：全仓 1092 点 / 最初人工审计 179 点 / C0 复核 24 点 / C1-A1 实施 4 点。
+- **generator**：`dev_tools/click_callsite_register.py` 新增 `C0_TRIAGE`（其余 20 点的逐点归档：文件 / 函数 / 目标 / 第几次出现 / decision / dev_status / C0 建议 / 说明）、`decision=DEFERRED`、
+  reason `C0K` / `C0S` / `C0D`、每点位 `dev_status` / `c0_reviewed` / `c0_advice` 元数据与登记册 §2.4 的 24 点表；对不上源码、归档点位已带 reaction、NEEDS_C 归档没指向 L2-2 的 NEEDS_C 点位都直接抛错。
+- **测试**：新增 `tests/test_l2_c0_registry.py` 16 项（24 点逐项独立对账、暂缓点位仍是立即点击、统计口径与 basis 对账、生成结果可重复且与 Markdown 逐字一致、L2-2 历史审计不被改写、
+  归档漂移 / 暂缓点位偷偷加 policy / NEEDS_C 指错点位会失败）；修改既有测试 2 个的钉住值（`test_l1_l2_integration.py` 的 NEEDS_C 按模块钉住改为 GeneralInvite 5 / GeneralBattle 2；
+  `test_l2_stage_c1_a1.py` 的「已完成」以 reason=C1 判定），删除 0，无放宽。全量 1980 → **1996/1996 OK**。
+- **仍未完成 / 待验**：L1 / L2 真机（Level C）验收未做，reaction 区间仍是 PROVISIONAL，Dokan 6 秒预算够不够、各 policy 手感需真机；Swipe / Drag 是另外的开发方向；ROI 质量审计、BehaviorTrace 元数据等见 ROADMAP。
+  **DEFERRED 是用户排期，不是技术完成，也不是永久禁止**：日后若用户重新启动，须重新按 C0 建议与真机依据评估（GeneralInvite 应先设计事务级 reaction 与有界状态确认）。
+
+### 4.89 ActivityShikigami 活动入口导航停滞：定位与最小修复（`find_activity_entry` 回退加固）
+
+2026-09-22。真机事故追加发现 + 最小修复，**只改 `tasks/ActivityShikigami/page.py`**，未碰 GeneralBattle / Settlement V3 / Micro-Burst / FIRE / L1 空间模型 / L2 Reaction 区间 / Navigator 全局状态机 / RightActivity 资产。未 commit / push。
+
+**背景**：§4.62 落地的新入口 `goto_activity_entry`（`page_main → page_act` 边动作，优先当期图标 `I_MAIN_GOTO_ACT_2`、旧图标 `I_MAIN_GOTO_ACT` 回退）落地后从未有过 Level C 记录（§4.62 原文写的是「Level C 待验」，此后全仓再无补充验证记录）。真机 2026-09-22 15:46 日志显示：`goto_activity_entry` 在 6 秒 `action_timer` 窗口内两个入口图标全程零点击 → 落入 `page_act.on_enter_failure` 的旧回退 `find_activity_entry`（庭院右侧栏目切换）→ 5 次 `AS_TOGGLE_BUTTON`（即 `RightActivityAssets.I_TOGGLE_BUTTON`，`roi_front≈(1206,540)`）点击后，进程再无任何日志输出，直至约 35 分钟后被外部重启（`log/2026-09-22_oas1.txt` 出现完整的 `Log cleanup finished / Start scheduler loop` 重启横幅，中间无一行日志，非优雅超时退出）。
+
+- **已确认（有直接日志时间线证据）**：这次是「入口点击失败」（识别不到目标、从未点击），不是「点了但页面没变化」——`_execute_transition` 的失败分支在 6 秒 action_timer 到期时直接触发，从未先跑 `_wait_for_destination`。`find_activity_entry` 的旧回退随后确实在跑（5 次点击节奏与其 `_settle_activity_auxiliary`(1.0s)+点击+`sleep(0.5)` 的预期耗时吻合），随后停滞。
+- **已确认（排除一类猜测）**：`screenshot_method=nemu_ipc`（oas1 实际配置）的截图调用链本身已有独立的 `asyncio.wait_for(timeout=0.15)` + `@retry`（`module/device/method/nemu_ipc.py`）与耗尽后 `raise RequestHumanTakeover` 的既有机制，会产生日志；`module/image/rpc.py` 的 `ImageClient` 也有 `zerorpc.Client(timeout=10)`。这两层如果是卡点，理应在数秒到数十秒内产生 warning/critical 日志，而事故期间**完全没有**——所以"设备截图 IO 硬阻塞"不是最可能的解释，但受限于只读审查，**没有进一步确认真正卡在哪一次调用**，仍是证据缺口。
+- **未确认（明确标记，不假装已定位）**：真正阻塞发生在哪一行、这次两个入口图标为什么本帧都没被识别到（本期活动图标皮肤/位置变化？庭院右侧栏目当时停在别的活动列？截图时机与页面动画没对齐？）——均需真机连线诊断，本轮不猜测。
+- **最小修复**（`tasks/ActivityShikigami/page.py`，只加固旧回退 `find_activity_entry` 与 `goto_activity_entry` 的诊断，业务判定顺序/图标优先级/`InteractionPolicy.NAVIGATION` 一律不动）：
+  1. **点击后新帧复用**：`find_activity_entry` 每轮循环只截一次真正需要的新图——点击栏目切换按钮后立即取一次新帧，这张帧既确认这次点击是否已经带出活动入口（命中则立即返回，不必等下一轮），也直接充当下一轮循环顶部的判断画面，不再对同一状态重复截图。`_settle_activity_auxiliary`（点击前重新确认按钮仍在）语义不变。
+  2. **双重独立上限**：保留原有次数上限 `ACTIVITY_COLUMN_SWITCH_MAX_TRIES=8`，新增并列的墙钟上限 `ACTIVITY_ENTRY_FALLBACK_TIMEOUT=20`（秒），任一先到都走同一条「未找到→`GamePageUnknownError`」退出路径，不吞异常、不伪造成功。**能力边界必须记住**：这个 `Timer` 只在循环重新拿到控制权、跑到循环顶部判断语句时才会被检查；如果某一次 `screenshot()`/`appear()` 本身在更底层同步阻塞、迟迟不返回，这个 Timer 不会被执行到，也无法中断那一次调用——它只保证「正常往返于循环体」的耗时有界，**不能替代设备层自身的超时**（这正是本次 35 分钟停滞更可能发生的地方，且不在本轮修复范围内）。
+  3. **最小诊断日志（中文）**：`goto_activity_entry` 在两个入口图标都未命中时记一行 info；`find_activity_entry` 记录「进入回退」「第 N 次切换栏目」「切换后是否立即找到」「墙钟超时」「循环次数耗尽」；不新增覆盖异常的 try/except，`screenshot()`/`appear()` 抛出的异常原样向上传播。`goto_activity_entry`「初次识别成功但二次确认失败」这一状态无法从现有 `appear_then_click` 返回值单独区分，明确标记为**未确认**，不强行拆分 `appear_then_click` 本体。
+- **测试**：`tests/test_activity_shikigami_climb.py` 新增 `FindActivityEntryFallbackDriverTest`（8 项，真实驱动而非只读源码字符串）：切换后立即找到入口且截图次数符合预期（3 次）、入口始终不出现按次数上限抛出、toggle 全程不可见同样有界、墙钟先于次数上限触发、截图异常原样传播不被吞掉、点击前二次确认失败不误判成功、无额外重复截图、点击仍经 `appear_then_click`（不引入裸 `device.click`）。**发现并修复了测试假体自身的一个帧序索引 off-by-one**（`screenshot()` 语义应为「调用后才前进到下一帧」，不是「调用时已经代表下一帧」）与 `_FakeTimer.budget` 跨测试类共享状态未还原导致 `SettlementDrainTest` 被污染的问题，两处均已修正且不影响生产代码。
+- **登记册**：本轮改动影响了 `find_activity_entry` 函数体里出现的辅助调用集合（新增 `Timer`），`docs/L2_CALLSITE_REGISTER.md` 已重新生成（`total=1092` 不变，`l1_pipeline_sites=45` 不变，只有该函数的登记行辅助字段从 `sleep` 变为 `Timer,sleep`）。
+- **验收**：`compileall -q tasks tests` OK；`unittest tests.test_activity_shikigami_climb` 71/71 OK；全量 `unittest discover -s tests` **1996 → 2004（+8），0 失败 0 错误 0 跳过**；静态点击守卫 `check_repo().ok = True`（未新增裸点击）；`git diff --check` 干净。
+- **仍未完成 / Level C 待验**：本次真机停滞的具体阻塞调用点仍未定位（只做到排除设备截图层大概率不是主因），需要用户连线设备实测复现并观察是否停在 `find_activity_entry` 内部某次调用；墙钟超时值 `20s` 是工程经验值，未经真机标定；`goto_activity_entry`「初次识别 vs 二次确认」区分能力缺口仍待评估是否值得改造 `appear_then_click` 本体（本轮不做）。
+- **文档核对说明**：上一轮《ActivityShikigami 活动入口导航问题审查报告》结尾声称已更新本文件、`ROADMAP.md`、`DEVELOP_LOG.md`，但本轮核实**这三份文档当时实际并未写入任何相关内容**（`git status` 计数不变只是因为这些文件本就在 98 项 WIP 之内，不代表内容确实被追加）——本节 §4.89 与下方 `ROADMAP.md`/`DEVELOP_LOG.md` 的更新是本轮才真正落地的记录。
+
+### 4.90 ActivityShikigami 战后结算兜底乱点：`page_climb_pass` 误判为弹窗的最小修复
+
+2026-09-22。真机事故追加发现 + 最小修复，**只改 `tasks/ActivityShikigami/activities/normal.py`**，未碰 GeneralBattle / Settlement V3 / Micro-Burst / L1 / L2 / Navigator。未 commit / push。
+
+**背景**：真机日志（`log/2026-09-22_oas1.txt` 16:38:06～16:38:15）显示：`GeneralBattle` Settlement 正常完成两次 `random_save_right` 点击、`Exit matcher hit`、`Battle result: Win`，随后 `_drain_activity_settlement('pass', page_climb_pass)` 连续 6 帧都把当前页识别为 `[UI] page_climb_pass`，却依然连点 6 次 `random_default`，直到点击预算耗尽产生 `Activity settlement drain bounded out` 警告。**追加发现（比用户给出的日志窗口更靠后）**：这条警告之后，`log/2026-09-22_oas1.txt` 与 `log/behavior/oas1_2026-09-22.jsonl` 再无任何输出，直至约 **66 分钟**后被外部重启（完整 `Log cleanup finished / Start scheduler loop` 横幅，`DETECT DEVICE` 全套重连）——与上一轮 §4.89 记录的「静默停滞直至外部重启」是同一症状，但这次的触发点在 `_drain_activity_settlement` 之后，而不是 `find_activity_entry`。
+
+- **`page_climb_pass` 的真实语义（已用源码 + 日志证据确认，不是猜测）**：这就是 [page.py:193-209](tasks/ActivityShikigami/page.py#L193-L209) 定义的**真实普通爬塔·门票模式挑战页**（`all_of(any_of(I_CHECK_BATTLE_PASS_2, I_CHECK_BATTLE_PASS), I_CLIMB_MODE_PASS)`），**不是**通用 Result/Reward 弹窗，也不是 `_drain_activity_settlement` 文档注释里说的「活动专用结算弹窗」。它正是 `_run_climb_type` 里 `destination = getattr(pages, f'page_climb_{action_type}')` 的那个 `destination` 本身。
+- **根因**：`_drain_activity_settlement` 原代码把 `get_current_page() == destination and appear(fire_rule)` 当成唯一的「成功」条件，任何其它状态（包括「已经结构性落在 `destination` 页、只是挑战键 `I_ACT_FIRE` 还没渲染完成」）都无差别地当成「还有残留弹窗」去点 `C_RANDOM_DEFAULT`。日志里连续 6 帧都识别到 `page_climb_pass` 恰恰证明我们**已经在正确的挑战页上**，缺的只是挑战键的进场动画还没走完——这不是弹窗，点了没有意义（且可能干扰挑战键渲染）。
+- **最小修复**：把「`current_page == destination`」与「`appear(fire_rule)`」拆成两层判断——命中 `destination` 但挑战键未就绪时，复用 FIRE 契约已有的 `_wait_climb_fire_state`（`_enter_climb_battle` 同款三态有界轮询）**等待**而不是盲点；只有 `current_page != destination`（真正的其它页面 / 未知帧）才继续走原有的盲点兜底，行为完全不变。不新增点击路径、不新增裸 `device.click`、不改既有的 `ACTIVITY_SETTLEMENT_MAX_CLICKS=6` / `ACTIVITY_SETTLEMENT_TIMEOUT=15` 上限语义。
+- **追加发现的第二个缺口（同一文件、`_run_climb_type` 主循环）**：`_drain_activity_settlement` 返回值被调用方忽略，回到 `_run_climb_type` 的 `while True` 循环顶部重新截图判页；若此后 `get_current_page()` 持续返回 `None`（例如前述的连续盲点干扰了页面状态），原代码该分支只有 `time.sleep(0.5); continue`，**没有任何上限**——这正是 66 分钟零日志静默停滞的直接代码原因（该分支没有一行日志，`screenshot()`/`sleep()` 本身也不产生日志）。已加固：新增 `ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT=20`（秒）墙钟，只在**连续**识别不到已知页面时计时（识别到任意已知页面立即清空，不惩罚偶发过渡帧），超时后 `raise GamePageUnknownError`（复用既有异常类型，不新发明契约），交给外层既有的异常处理，不在本层猜测恢复动作。
+- **能力边界（与 §4.89 相同性质，必须同样写清楚）**：这个墙钟同样只能约束「代码正常执行到判断语句」的耗时，不能中断某一次尚未返回的同步 `screenshot()`/`get_current_page()` 调用。本轮无法确认这次 66 分钟停滞是「持续 None 但每次都正常返回、只是一直没能等到已知页面」（这种情况新墙钟能生效拦住）还是「某一次调用本身同步卡死不返回」（这种情况新墙钟同样无能为力）——**证据缺口**，需要用户真机复现观察加固后是否还会静默挂起。
+- **测试**：`tests/test_activity_shikigami_climb.py` 新增 11 项真实驱动测试（`SettlementDrainTest` +6、新增 `ClimbTypeUnknownPageTest` 5 项）。核心事故复现用例 `test_incident_destination_recognized_but_fire_never_ready_zero_blind_clicks`：`page_climb_pass` 连续命中、`I_ACT_FIRE` 全程不可见，断言 `random_default` 点击次数为 **0**（修复前会产生 6 次）；`test_persistent_unknown_page_raises_after_bounded_wait` 验证 `_run_climb_type` 对持续未知页面有界抛出；`test_recovery_resets_the_unknown_page_budget` 验证未知页计时在恢复后正确清零、不跨间断累加；`test_screenshot_exception_*` 两处均验证截图异常原样传播不被吞掉；既有 71 项测试全部不改断言、全部保持通过。
+- **登记册**：本轮新增 `Timer` / `GamePageUnknownError` 调用改变了 `_run_climb_type` 登记行的辅助字段，`docs/L2_CALLSITE_REGISTER.md` 已重新生成（`total=1092` 不变）。
+- **验收**：`compileall -q tasks tests` OK；`unittest tests.test_activity_shikigami_climb` 82/82 OK；`unittest tests.test_general_battle_settlement tests.test_general_battle_timing tests.test_settlement_trace_check` 117/117 OK（确认 GeneralBattle Settlement V3 未受影响）；全量 `unittest discover -s tests` **2004 → 2015（+11），0 失败 0 错误 0 跳过**；静态点击守卫 `check_repo().ok = True`；`git diff --check` 干净。
+- **仍未完成 / Level C 待验**：这次 66 分钟停滞的具体阻塞调用点仍未定位（只确认了代码逻辑上此前没有任何上限，加固后是否真的能生效拦住需要真机验证）；`_drain_activity_settlement` 的 `_wait_climb_fire_state` 等待分支在真机上等待时长是否合适（PROVISIONAL，沿用既有 `ACTIVITY_FIRE_POST_CLICK_TIMEOUT=4s`，未单独标定）；`ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT=20s` 未经真机标定；`fake_god.py`/`normal.py` 里与 §4.89 提到的 `page_reward` 外层分支同款的其它潜在无界循环未逐一排查（本轮只加固了本次事故实际触发的两处）。
+
+### 4.91 ActivityShikigami 普通爬塔专用结算单击：取消 Micro-Burst 连击，70/30 activity region
+
+2026-09-23。用户主动发起的架构改造（非真机事故追加发现），**只改 `tasks/ActivityShikigami/` 内 4 个文件**（`activities/normal.py` 主体 + `base_act.py`/`activities/rich_man.py`/`activities/fake_god.py` 的 ownership 声明），未碰 `tasks/Component/GeneralBattle/general_battle.py`、L1、L2 通用层、Navigator、Swipe/Drag、结界蹭卡。未 commit / push。详见 `docs/DECISIONS.md` D025 补记（2026-09-23）。
+
+- **背景**：§4.89 / §4.90 两次真机事故都指向同一类风险——Settlement Micro-Burst 的 anchor 跨调用复用模型，在「弹窗刚消失、真实挑战页正好出现」这个窗口期容易打出多余的第二击。用户据此要求 ActivityShikigami 普通爬塔线（仅 `NormalClimbAct`）彻底退出 Micro-Burst，换成每次只点一次、每次都重新走完整确认流程的专属机制。
+- **资产**：`C_RANDOM_ACTIVITY_1`（roi_front `937,431,296,248`）/ `C_RANDOM_ACTIVITY_2`（roi_front `659,522,406,171`），用户已放入 `GeneralBattleAssets` + `gb/click.json`（本轮开始前已存在，AI 未生成，本轮予以确认）。
+- **机制**（`NormalClimbAct` 新增方法）：
+  - `_climb_owns_settlement_single_click`：新的 ownership flag，与 `_fatigue_owns_macro_idle` 同款契约——`run_climb()` 声明 True，`run_rich_man()` / `run_fakegod()` 声明 False，防止跨玩法线残留（声明位置在 `base_act.__init__` 默认 False + 三条 `run_*` 各自显式覆盖）。
+  - `_handle_result` / `_handle_reward`：MRO 上排在 `RichManAct` 之后、`FakeGodAct`/`BaseAct` 之前（`class ScriptTask(RichManAct, NormalClimbAct, FakeGodAct, BaseAct)`），flag 为假时 `return super()._handle_result/_handle_reward(...)` 原样回落到 `BaseAct`/`GeneralBattle` 的既有实现（大富翁/伪神降临零影响，已用真实 MRO 驱动测试验证）；flag 为真时接管——逐字保留 `GeneralBattle._handle_result`/`_handle_reward` 的周边逻辑（`is_win` 判定、`click_record_clear`、`I_OVER_GHOST`/`I_GB_SKIN_CONFIRM` 特殊弹窗短路、boss 专属 `I_UI_BACK_RED` 点击），只把 `_settlement_burst_step(...)` 换成 `_activity_settlement_single_click(...)`。
+  - `_activity_settlement_single_click(context, current_page)`：reaction（`random_delay(*ACTIVITY_SETTLEMENT_REACTION)` = **本线自己持有的 `(0.45, 0.85)`**，`InteractionPolicy.SPECIAL` 语义，不经过 `appear_then_click(policy=)` / `confirm_delay`，整条链路只有这一层 reaction）→ `sleep` → `self.screenshot()` → `_climb_settlement_should_stop()`（命中 `page_climb_<type>` 或挑战键即放弃）→ `_classify_general_battle_page() != current_page` 即放弃（结算状态已变化）→ `_select_activity_settlement_region()`（70/30）→ `_sample_settlement_point(region)`（复用 GeneralBattle 现有 region 采样）→ `execute_single_click(FinalPoint(...))`。**全程至多 1 次点击，不预授权第二击，不跨调用保留 anchor**——下一次仍需处理结算由外层 `run_general_battle` 主循环下一帧重新调用本方法，形成全新一轮事务。
+  - `_climb_settlement_should_stop()`：复用已有的 `page_climb_<type>`（`get_current_page() == destination`）与 `_climb_fire_rule(action_type)`（`appear(fire_rule)`），不新造判据——直接吸收 §4.90 的教训（`page_climb_pass` 是真实挑战页，不是弹窗）。
+  - `_select_activity_settlement_region()`：`random_int(1, 100) <= 70` 选 `C_RANDOM_ACTIVITY_1`，否则 `C_RANDOM_ACTIVITY_2`；`random_int` 来自 `module.base.utils.random`（模块级 `SystemRandom`，与 `GeneralBattle._select_reward_region` 同一随机源），未新建 `random.Random`。
+- **登记册**：新增 1 处 `execute_single_click`（`KEEP_IMMEDIATE`/R10）+ 3 处 `appear_then_click`（`normal.py` 里对 `base_act.py`/`general_battle.py` 既有登记点位的逐字复制：`I_UI_BACK_RED`/`I_OVER_GHOST`/`I_GB_SKIN_CONFIRM`，均沿用原分类 `KEEP_SPECIAL`）。`total` 1092 → **1096**；`human` 179 → **182**（`tests/test_l2_policy_migration.py` 的 `INVENTORY` 按真实源码顺序插入 3 行，位置在 `_run_climb_type` 与 `_sync_climb_penta_pass` 之间，与文件里 `_handle_result`/`_handle_reward` 的真实物理位置一致）；`l1_pipeline_sites` 45 → **46**。`docs/L2_CALLSITE_REGISTER.md` 已重新生成。
+- **测试**：`tests/test_activity_shikigami_climb.py` 新增 `ActivitySettlementSingleClickTest`（17 项，真实驱动）：70/30 分支分别选中对应区域、且从不落回 `random_default`/`random_save_right`/`random_save_bottom`；单次事务至多 1 次 `execute_single_click`；两次独立调用各自重新 70/30 选择 + 重新采样（不复用 anchor）；`page_climb_pass` 出现 / 挑战键出现均零点击；结算状态不明确（分类已变化）不点击；`owns=False` 时真实走到 `GeneralBattle._handle_result`（用 `patch.object(GeneralBattle, '_handle_result')` 验证确实调用到父类，不是伪装）；`owns=True` 时 boss 专属弹窗点击与 `I_OVER_GHOST` 短路分支均未丢失（回归防护）；复现用户描述的「Reward → 点击 → 弹窗消失 → 第二击穿透」场景，验证第二次独立调用发现真实挑战页已出现后放弃、不产生第二次点击；源码级护栏确认三处新方法都不含裸 `device.click`、不调用 `_settlement_burst_step`/`_fire_settlement_burst`。既有 82 项测试断言零改动、全部保持通过。
+- **验收**：`compileall -q tasks tests` OK；`unittest tests.test_activity_shikigami_climb` **99/99** OK；`unittest tests.test_general_battle_settlement` **83/83** OK（GeneralBattle Settlement V3 未受影响）；全量 `unittest discover -s tests` **2015 → 2032（+17），0 失败 0 错误 0 跳过**；静态点击守卫 `check_repo().ok = True`；`git diff --check` 对本轮实际改动的文件干净（`tasks/Component/GeneralBattle/assets.py`/`gb/click.json`/`tasks/ActivityShikigami/assets.py` 等用户自己此前用资产工具生成的文件存在预先就有的行尾空格，与本轮改动无关，本轮未触碰这些文件）。
+- **reaction owner 收口（同日补完，2026-09-23）**：首版实现借用了 `GeneralBattle.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE`（0.10~0.30s）当 reaction，但那个常量的语义是「Micro-Burst 同一 burst 内两击之间的观察间隔」，既不是「点击前反应」、又属于通用 Settlement V3 的 timing——本线已经退出 Micro-Burst，继续借用会把两种语义混在一起，且任何一方调参都会误伤另一方。已改为本线自己持有的 **`ACTIVITY_SETTLEMENT_REACTION = (0.45, 0.85)`**（`normal.py` 常量区，PROVISIONAL，量级对齐 `REACTION_NORMAL` 但不走 `InteractionPolicy`）。`GeneralBattle.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE` 数值与用途在**本条改动里**一字未改，其它任务的 Micro-Burst 不受影响（该常量已在同日后续一轮单独调整为 `(0.30, 0.60)`，见 §4.92——那是独立的通用层调参，本线 `(0.45, 0.85)` 不受牵连）。新增 6 项测试锁定：区间精确为 `(0.45, 0.85)`、函数体不再引用 burst 常量、运行期确实按本线常量采样、调用顺序严格是 `random_delay → sleep → screenshot → 确认 → 选区采样 → 单击`（证明坐标一定在等待之后才采、不跨等待复用）、单次事务只有一层 reaction（`random_delay` / `sleep` 各一次，无 `policy=` / `confirm_delay` / `appear_then_click`）、GeneralBattle 的 burst 间隔当时仍是 `(0.10, 0.30)` 且仍被 `_fire_settlement_burst` 使用（该断言已随 §4.92 的调参同步更新为 `(0.30, 0.60)`）。
+- **仍未完成 / Level C 待验**：70/30 权重与新的 reaction 区间 `(0.45, 0.85)` 均未经真机标定；两处新区域 `C_RANDOM_ACTIVITY_1`/`C_RANDOM_ACTIVITY_2` 的真机点击安全性（是否会误触活动结算页上的其它控件）需要用户自行确认；改造只覆盖普通爬塔（4 种 `action_type`），未评估是否需要扩展到大富翁/伪神降临（用户本轮未要求）。
+
+### 4.92 GeneralBattle Micro-Burst observe 间隔：`(0.10, 0.30)` → `(0.30, 0.60)`
+
+2026-09-23。用户按真机体感提出的通用层调参，**只改一个常量值**，未重新设计 Settlement 状态机。详见 `docs/DECISIONS.md` D025 末尾补记（2026-09-23）。
+
+- **改了什么**：`tasks/Component/GeneralBattle/general_battle.py` 的 `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE` 由 `(0.10, 0.30)` 改为 **`(0.30, 0.60)`**（含模块头注释与常量注释同步）。动机：原 0.10~0.30s 在页面响应稍慢时，fresh 观察容易落在页面尚未更新的旧帧上，从而把「其实已经推进」误判成「还是同一 state」而补了第二下。
+- **没改什么**：`_fire_settlement_burst` 的判定逻辑一行未动——仍是 `time.sleep(self._sample_interval(SETTLEMENT_BURST_CLICK_INTERVAL_RANGE))` 之后 fresh screenshot + 同一 classifier 重新分类，**第二下仍必须由观察结果重新授权**（same state 才补；state advance / Unknown / known non-settlement 分别取消第二下 / 交回 recovery / 立即 teardown）。segment 2~4 预算、`SETTLEMENT_MAX_TOTAL_CLICKS=9`、anchor 复用与安全区域交集、Result / Reward region 策略、L1 `execute_single_click` 链路全部原样；FIRE、L2 policy、Minitouch dwell、ClickSampler、Swipe / Drag 未动。
+- **两套 timing 各自独立（本轮的直接验证）**：ActivityShikigami 普通爬塔专用结算的 `ACTIVITY_SETTLEMENT_REACTION = (0.45, 0.85)`（§4.91）**完全不受影响**——这正是把两个常量拆开的价值：通用层调参不再牵连 task-local 事务。已有测试显式钉住两者不相等。
+- **测试**：`tests/test_general_battle_settlement.py` 新增 `SettlementBurstIntervalValueTest`（6 项，用真实 `_sample_interval`、只 patch `random_delay` / `time.sleep`）：常量精确为 `(0.30, 0.60)`；`_fire_settlement_burst` 确实读这个常量；运行期 `random_delay` 以该区间被调用且 `sleep` 睡的就是采样值；两次 burst **各自独立采样一次**（不是开局抽一次后固定复用）；**放宽间隔后第二下仍需重新授权**（观察到推进 → 只点 1 次；观察仍同页 → 才点第 2 次，且第二下之前确实重新截图 + 重新分类）；ActivityShikigami 的 `(0.45, 0.85)` 仍是独立常量。同步更新 2 处原本钉住旧值的断言（`test_l2_interaction_reaction.py` / `test_activity_shikigami_climb.py`），**只改数值，未放宽任何状态机断言**。
+- **验收**：`compileall -q tasks tests dev_tools` OK；`tests.test_general_battle_settlement` **89/89** OK；`tests.test_activity_shikigami_climb` **105/105** OK；全量 `unittest discover -s tests` **2038 → 2044（+6）**，0 失败 0 错误 0 跳过；L1 静态点击守卫 `ok=True`；L2 登记册与上一轮完全一致（total 1096 / human 182 / l1_pipeline 46 / policy 36——本轮没有增删任何点击调用点，无需重新生成）；`git diff --check` 对本轮改动的 4 个文件干净。
+- **Level C 待验**：`0.30~0.60s` 是否足够覆盖真机页面更新（是否还会出现「在旧帧上判定 same state 而补第二下」）；放慢之后连点观感是否仍自然、整体结算耗时是否可接受。**本轮只做离线验证，未做任何真机验证。**
+
 ## 5. 已确认保留的 upstream 修改
 
 ### 5.1 NemuIPC 与 scrcpy
@@ -3082,9 +3550,29 @@ Easy Install 当前主要预置 medium OCR 模型；small 模型可能首次自�
 
 ## 7. 测试与验证状态
 
-**当前基线（2026-09-14，§4.69 Pre-Push Blocker Fix：ActivityShikigami macro idle ownership）**：
+**当前基线（2026-09-21，§4.88 L2 C0 分类与文档收口）**：
 `toolkit/python.exe -m compileall module tasks tests dev_tools` 通过；
-`toolkit/python.exe -m unittest discover -s tests` = **1494/1494 OK**（`1489 → 1494` = §4.69
+`toolkit/python.exe -m unittest discover -s tests` = **1996/1996 OK**（`1980 → 1996` = §4.88 新增
+`tests/test_l2_c0_registry.py` 16 项，改 2 个既有测试的钉住值，删除 0；`1948 → 1980` = §4.87 新增
+`tests/test_l2_stage_c1_a1.py` 32 项，改 2 个既有测试文件（登记册锁 / policy consumer 钉住），删除 0；`1894 → 1948` = §4.86 新增
+`tests/test_l1_stage3b_global_guard.py` 54 项，改 2 个既有测试文件（白名单 / 登记册锁），删除 0；`1854 → 1894` = §4.85 新增
+`tests/test_l1_stage3a_long_click.py` 40 项，改 1 个既有测试文件（stage1 静态断言），删除 0；`1836 → 1854` = §4.84 新增
+`tests/test_l1_stage2_direct_clicks.py` 18 项，删除 0；`1809 → 1836` = §4.83 新增
+`tests/test_l1_stage1_primitive_execution.py` 27 项，删除 0；`1668 → 1809` = §4.82：移植 L1 / L2 测试 + 新增
+`tests/test_l1_l2_integration.py` 22 项，删除 0（Orochi 野队相关用例按项目决定不移植；`test_fire_reaction_task_config.py` 30 → 27 项：
+4 个朴素 FIRE 循环用例改为驱动 Batch A 真实 owner）；`1645 → 1668` = §4.81 新增
+`tests/test_shikigami_class_switch_bound.py` 23 项，删除 0；`1600 → 1645` = §4.80 新增
+`tests/test_kekkai_utilize_success_jitter.py` 45 项，改 1 个既有测试文件的替身，删除 0；`1583 → 1600` = §4.79 新增
+`tests/test_kekkai_utilize_convergence.py` 17 项，并把 `tests/test_kekkai_utilize_retry_scheduler.py` 的调度层驱动抽成可复用
+`SchedulerHarness`，删除 0；`1560 → 1583` = §4.78 新增
+`tests/test_kekkai_utilize_retry_scheduler.py` 23 项，改 1 个既有测试文件的替身，删除 0；`1530 → 1560` = §4.77 新增
+`tests/test_fire_reaction_task_config.py` 30 项，改 7 个既有测试文件的 `REACTION_FIRE` 断言，删除 0，
+此前 CASE10 的 1 个 skip 现真实命中，总数不变、skip 计数归零；`1521 → 1530` = §4.76 新增
+`tests/test_global_game_fatigue_i18n.py` 9 项；`1505 → 1521` = §4.75 新增
+`tests/test_config_model_script_task.py` 16 项，skip 1 = CASE 10 本基线无 FIRE 配置组，0 regression）。历史增量：
+`1494 → 1505` = §4.70
+新增 10 项指定 CASE + 1 项第二 Reward segment 端到端返回测试，0 regression；focused 结果见
+§4.70）。历史增量：`1489 → 1494` = §4.69
 2026-09-14 推送前审查发现并修复唯一 BLOCKER：`_fatigue_owns_macro_idle` 在同一个 `ScriptTask`
 实例连跑多条活动线时不会恢复，导致「爬塔 → 伪神降临 / 大富翁」出现零 macro-idle owner；修法是
 让每条玩法线在自己的 `run_*` 入口显式声明 owner；新增 `MacroIdleOwnershipLifecycleTest`（5，

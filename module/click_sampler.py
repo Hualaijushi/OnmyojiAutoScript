@@ -6,12 +6,17 @@
 `Control` / minitouch / scrcpy / window_message **不得再对坐标做任何空间 jitter**——
 最终点击 x/y 的空间随机化只在本层发生（见 `docs/DECISIONS.md` D014）。
 
+生产入口（2026-09-15 起，L1，见 D026）：业务通过 `module/click_pipeline.py` 显式声明坐标语义
+（Rule 目标 / `ClickBounds` / `ClickRegion` / `FinalPoint`），由它决定调本层的哪个方法；
+`FinalPoint` 不进本层。`Rule*.coord()` 的默认路径是 `sample_target`（T7-5，EMPIRICAL 热点
+优先，否则 RULE_FALLBACK），**不是**下面的 `LEGACY_UNIFORM`。
+
 策略（`strategy=`）：
 
-- `LEGACY_UNIFORM`（**默认**，唯一在生产链上被调用的策略）：与既有
+- `LEGACY_UNIFORM`（`sample()` 的参数默认值，兼容旧行为）：与既有
   `module.base.utils.random.random_point_in_roi` **逐字等价**（直接调它，共用同一个
   模块级 `SystemRandom`）。极轻：不 resolve profile、不算 Safe ROI、不构造任何状态。
-  `Rule*.coord()` 全部走这一条，引入本层不改变任何生产点击分布。
+  T7-5 之后 `Rule*.coord()` 已不再走这一条。
 - `UNIFORM`：在 Safe ROI 内均匀。语义上是「该目标本来就应该全区域均匀」的显式声明
   （区别于 `LEGACY_UNIFORM` 这个「兼容旧行为」的 fallback）。
 - `HABIT`：三成分 mixture（core / medium / tail），每次点击先按权重选一个成分再采样一次；
@@ -24,13 +29,12 @@
 参数在 `module/click_profile.py`（`ClickProfile` / `ClickProfileManager`），本层只负责
 「怎么采样」，不在 if/else 里写死热点 / spread / margin。
 
-`Rule*.coord()` 只传 `LEGACY_UNIFORM`（默认），默认生产点击分布不受本层其它策略影响。
-非 LEGACY 策略只有**逐调用点显式 opt-in**才会走到：
-- `HABIT`：GeneralBattle Settlement RD（`_settlement_click`，Contract v2）；`RyouToppa.C_AREA_1`
-  目标卡片（经 `ClickSampler.sample_point` + `wide_card` profile，T7-3.2 首个普通 Point Target
-  生产 opt-in）。
-- `STRICT` / `UNIFORM`：当前没有任何生产消费者。
-启用某个具体目标是显式 opt-in + 真机验证，不按 ROI 尺寸自动切换策略。
+当前生产消费关系：
+- `HABIT`：`sample_target`（`Rule*.coord()` 默认 + `ClickBounds` 游戏内动态矩形）、
+  `sample_region`（GeneralBattle Settlement 安全区 + `ClickRegion` + 原生控件 `ClickBounds`）、
+  `sample_point`（`RyouToppa.C_AREA_1` 的 `wide_card` 显式 opt-in，T7-3.2）。
+- `STRICT` / `UNIFORM` / `LEGACY_UNIFORM`：当前没有生产消费者。
+热点 / profile 的选择按目标身份查表（EMPIRICAL > RULE_FALLBACK），不按 ROI 尺寸切换策略。
 """
 
 from __future__ import annotations

@@ -59,9 +59,9 @@ class ActivityShikigamiAssets:
 	I_BATTLE_MAIN_TO_RECORDS = RuleImage(roi_front=(1015,560,39,42), roi_back=(674,539,439,157), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb/as_battle_main_to_records.png")
 	# 爬塔主界面标志 
 	I_CHECK_BATTLE_PASS = RuleImage(roi_front=(151,18,134,40), roi_back=(141,0,157,67), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb/as_check_battle_pass.png")
-	# 进入爬塔主页面的第二层入口
+	# 进入爬塔主页面的第二层入口 
 	I_TO_BATTLE_MAIN_2 = RuleImage(roi_front=(11,92,252,80), roi_back=(0,74,281,105), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb/climb_to_battle_main_2.png")
-	# 爬塔主页面2
+	# 爬塔主页面2 
 	I_CHECK_BATTLE_PASS_2 = RuleImage(roi_front=(151,18,134,40), roi_back=(141,0,157,67), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/climb/climb_check_battle_pass_2.png")
 
 
@@ -139,7 +139,7 @@ class ActivityShikigamiAssets:
 
 	# Image Rule Assets
 	# 庭院进入活动 
-	I_MAIN_GOTO_ACT = RuleImage(roi_front=(1188,304,35,28), roi_back=(1164,134,83,393), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_main_goto_act.png")
+	I_MAIN_GOTO_ACT = RuleImage(roi_front=(1189,388,35,28), roi_back=(1164,134,83,393), threshold=0.7, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_main_goto_act.png")
 	# 右上跳过按钮 
 	I_SKIP_BUTTON = RuleImage(roi_front=(1159,37,51,22), roi_back=(1141,27,86,43), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_skip_button.png")
 	# 活动主界面标志 
@@ -150,7 +150,7 @@ class ActivityShikigamiAssets:
 	I_ACTIVITY_AWARD = RuleImage(roi_front=(475,234,324,40), roi_back=(448,169,372,114), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_activity_award.png")
 	# 活动签到附属页面关闭按钮 
 	I_ACTIVITY_SIGNIN_CLOSE = RuleImage(roi_front=(1100,186,40,32), roi_back=(1072,160,94,85), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_activity_signin_close.png")
-	# 庭院直接进入活动页面
+	# 庭院直接进入活动页面 
 	I_MAIN_GOTO_ACT_2 = RuleImage(roi_front=(726,280,38,35), roi_back=(694,256,99,94), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/page/page_main_goto_act_2.png")
 
 

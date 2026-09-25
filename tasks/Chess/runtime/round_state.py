@@ -9,6 +9,7 @@ from functools import cached_property
 from pathlib import Path
 
 import cv2
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.logger import logger
 from tasks.Chess.strategy.grigri import (
     grigri_category,
@@ -172,10 +173,11 @@ class ChessRoundStateMixin:
         )
         refresh_rule = getattr(self, f'C_GRIGRI_REFRESH_{index}')
         for click_index in range(1, 3):
+            # 两次点击各自独立采样（不复用同一个点），已定坐标以 FinalPoint 交给统一执行器
             click_x, click_y = refresh_rule.coord()
-            self.device.click(
-                x=click_x,
-                y=click_y,
+            execute_single_click(
+                self.device,
+                FinalPoint(click_x, click_y),
                 control_name=(
                     f'{refresh_rule.name}_{click_index}'
                 ),

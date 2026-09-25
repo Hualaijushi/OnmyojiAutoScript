@@ -204,7 +204,7 @@ class GeneralInviteMigrationTest(unittest.TestCase):
         from tasks.Component.GeneralInvite import general_invite as gi
         src = inspect.getsource(gi)
         i = src.index("ClickSampler.sample_target(select_area, rule.name)")
-        j = src.index("self.device.click(x=click_x, y=click_y", i)
+        j = src.index("execute_single_click(self.device, FinalPoint(click_x, click_y)", i)
         between = src[i:j]
         for tok in ("randint", "random_int", "np.random", "random.", "+ random"):
             self.assertNotIn(tok, between)
@@ -223,7 +223,7 @@ class SecretLayerCardMigrationTest(unittest.TestCase):
         loop_at = src.index("for click_index in range(1, 3):")
         coord_at = src.index("click_rule.coord()")
         self.assertLess(loop_at, coord_at)                         # coord() 在循环体内 → range(1,3) 两次独立采样
-        click_at = src.index("self.device.click(", coord_at)
+        click_at = src.index("execute_single_click(", coord_at)
         self.assertLess(coord_at, click_at)                        # 该次 coord() → 该次 click
         # 安全 ROI 原样保留（§3：不扩大、不改 card_x/card_y/LAYER_CARD_HEIGHT/右侧状态文字避让）
         self.assertIn("click_rule = RuleClick(", src)

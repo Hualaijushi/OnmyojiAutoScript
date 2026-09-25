@@ -26,6 +26,7 @@ from tasks.GameUi.page import page_main, page_guild
 from module.base.utils import point2str
 from module.base.utils.random import random_delay, random_int
 from module.base.frame_wait import wait_for_changed_and_stable
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.device.touch_swipe_model import TouchSwipeModel
 from tasks.KekkaiUtilize.selected_anchor import detect_selected_anchor
 from tasks.KekkaiUtilize.frame_projection import actual_scroll_dy_px, dedup_by_projection
@@ -581,7 +582,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             if timer_click.reached():
                 timer_click.reset()
                 x, y = check_image.coord()
-                self.device.click(x=x, y=y, control_name=check_image.name)
+                execute_single_click(self.device, FinalPoint(x, y), control_name=check_image.name)
         if friend == SelectFriendList.DIFFERENT_SERVER:
             time.sleep(1)
         time.sleep(0.5)

@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 from module.base.timer import Timer
+from module.click_pipeline import FinalPoint, execute_single_click
 from module.exception import RequestHumanTakeover, GameTooManyClickError, GameStuckError
 from module.logger import logger
 from tasks.GameUi.assets import GameUiAssets
@@ -130,7 +131,8 @@ class LoginService(
                 raise GameStuckError('Appear create account')
             if self.appear(self.I_CHARACTARS, interval=1):
                 logger.info('误入区服设置')
-                self.device.click(x=106, y=535)
+                # 固定坐标缺少可靠 ROI 证据：只统一执行入口，原样点击 (106, 535)，不随机化、不猜 ROI
+                execute_single_click(self.device, FinalPoint(106, 535))
                 continue
             if self.appear(self.I_EARLY_SERVER) and self.appear_then_click(self.I_EARLY_SERVER_CANCEL):
                 logger.info('Cancel switch from early server to normal server')

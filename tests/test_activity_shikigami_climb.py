@@ -24,10 +24,16 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from module.atom.image import RuleImage
+from module.click_pipeline import FinalPoint
+from module.exception import GamePageUnknownError
+from tasks.Component.config_fire_reaction import FireReactionConfig
+from tasks.Component.GeneralBattle.general_battle import BattleAction, GeneralBattle
 from module.reaction_profile import REACTION_FIRE, REACTION_NAVIGATION
 from tasks.ActivityShikigami import page as as_page
 from tasks.ActivityShikigami.activities import normal as normal_mod
 from tasks.ActivityShikigami.activities.normal import (
+    ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT,
+    ACTIVITY_SETTLEMENT_REACTION,
     ACTIVITY_FIRE_MAX_TRIES,
     ACTIVITY_FIRE_POST_CLICK_TIMEOUT,
     ACTIVITY_FIRE_TIMEOUT,
@@ -103,7 +109,7 @@ class EntrySourceTest(TestCase):
         i_old = src.index('I_MAIN_GOTO_ACT,')
         self.assertLess(i_new, i_old)
         # 有 navigation reaction（fresh 二次确认再点）
-        self.assertIn('confirm_delay=REACTION_NAVIGATION', src)
+        self.assertIn('policy=InteractionPolicy.NAVIGATION', src)
 
     def test_page_main_edge_uses_callable_not_bare_legacy_image(self):
         src = _src(as_page)
@@ -305,6 +311,156 @@ class EntryBehaviorTest(TestCase):
 
 
 # --------------------------------------------------------------------------------------
+# 1.1 find_activity_entry 旧栏目切换回退：真实驱动（2026-09-22 导航停滞事故收尾）
+# --------------------------------------------------------------------------------------
+
+
+class _EntryFallbackTask:
+    """驱动 `find_activity_entry` 的最小假体：只有调用 `screenshot()` 才会前进到脚本里的
+    下一帧，`appear()` / `appear_then_click()` 都读「当前帧」——不使用真实设备，帧序列由测试
+    显式给出，用来精确验证「点击后复用同一帧、不额外截图」这条语义。"""
+
+    def __init__(self, frames, screenshot_side_effect=None):
+        # frames: 每帧一个 dict，键 'main' / 'toggle' / 'entry' 分别对应
+        # I_CHECK_MAIN / I_TOGGLE_BUTTON / 新旧入口图标任一，缺省为 False（main 缺省 True）。
+        self.frames = frames
+        self.frame_index = -1  # 尚未截过图；第一次 screenshot() 才推进到 frames[0]
+        self.screenshot_calls = 0
+        self.click_calls = 0
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
+        self.I_CHECK_MAIN = _img('I_CHECK_MAIN')
+        self._entry_names = {ActivityShikigamiAssets.I_MAIN_GOTO_ACT_2.name,
+                             ActivityShikigamiAssets.I_MAIN_GOTO_ACT.name}
+        from tasks.Component.RightActivity.assets import RightActivityAssets
+        self._toggle_name = RightActivityAssets.I_TOGGLE_BUTTON.name
+        self._screenshot_side_effect = screenshot_side_effect
+
+    def _frame(self):
+        idx = max(0, min(self.frame_index, len(self.frames) - 1))
+        return self.frames[idx]
+
+    def screenshot(self):
+        self.screenshot_calls += 1
+        if self._screenshot_side_effect is not None:
+            self._screenshot_side_effect(self.screenshot_calls)
+        if self.frame_index < len(self.frames) - 1:
+            self.frame_index += 1
+
+    def appear(self, target, **kw):
+        frame = self._frame()
+        if target is self.I_CHECK_MAIN:
+            return frame.get('main', True)
+        if target.name == self._toggle_name:
+            return frame.get('toggle', False)
+        if target.name in self._entry_names:
+            return frame.get('entry', False)
+        return False
+
+    def appear_then_click(self, target, **kw):
+        if self.appear(target, **kw):
+            self.click_calls += 1
+            return True
+        return False
+
+
+def _drive_find_activity_entry(frames, screenshot_side_effect=None, timeout_budget=None):
+    """在打了 `time.sleep` / `Timer` 补丁的环境下驱动一次 `find_activity_entry`，
+    返回 (结果或异常, task 假体)。`_FakeTimer.budget` 是跨测试共享的类属性（其它测试类，
+    如 `SettlementDrainTest`，也复用同一个假体并依赖默认值 6），这里必须显式保存 / 还原，
+    不能只改不还，否则会污染同一进程里其它测试的结果。"""
+    task = _EntryFallbackTask(frames, screenshot_side_effect)
+    original_budget = _FakeTimer.budget
+    _FakeTimer.budget = timeout_budget if timeout_budget is not None else 10_000  # 默认不触发墙钟
+    try:
+        with patch.object(as_page, 'time') as fake_time, patch.object(as_page, 'Timer', _FakeTimer):
+            fake_time.sleep = Mock()
+            try:
+                result = as_page.find_activity_entry(task)
+            except Exception as exc:  # noqa: BLE001 —— 测试需要拿到异常本身
+                return exc, task
+            return result, task
+    finally:
+        _FakeTimer.budget = original_budget
+
+
+class FindActivityEntryFallbackDriverTest(TestCase):
+    """真实驱动 `find_activity_entry`（不是只读源码字符串），覆盖切换成功 / 始终找不到 /
+    墙钟超时 / 截图异常 / 二次确认失败 / 截图次数这几类场景。"""
+
+    def test_toggle_appears_and_entry_shows_up_immediately_after_click(self):
+        # 第 1 帧：main 可见、entry 不可见、toggle 可见；点击后取的新帧（第 2 帧）entry 已出现。
+        frames = [
+            {'main': True, 'toggle': True, 'entry': False},
+            {'main': True, 'toggle': True, 'entry': True},
+        ]
+        result, task = _drive_find_activity_entry(frames)
+        self.assertIs(result, True)
+        self.assertEqual(task.click_calls, 1)
+        # 截图次数：循环顶 1 次 + settle 前置确认 1 次 + 点击后新帧 1 次 = 3 次，
+        # 不会再等下一轮循环顶部又截一次图。
+        self.assertEqual(task.screenshot_calls, 3)
+
+    def test_entry_never_appears_raises_after_max_tries(self):
+        frames = [{'main': True, 'toggle': True, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        # 8 次循环上限，每次都点一次（toggle 一直可见、点击一直成功）
+        self.assertEqual(task.click_calls, as_page.ACTIVITY_COLUMN_SWITCH_MAX_TRIES)
+
+    def test_toggle_never_visible_still_bounded_and_raises(self):
+        frames = [{'main': True, 'toggle': False, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        self.assertEqual(task.click_calls, 0)
+
+    def test_wall_clock_budget_exhausted_exits_without_reaching_max_tries(self):
+        # 墙钟只给 2 次「reached() 检查」的预算（第 3 次调用即到期），
+        # 循环上限是 8 次——必须是墙钟先生效，而不是等到数第 8 次。
+        frames = [{'main': True, 'toggle': True, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames, timeout_budget=2)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        self.assertIn('fallback timeout', str(result))
+        self.assertLess(task.click_calls, as_page.ACTIVITY_COLUMN_SWITCH_MAX_TRIES)
+
+    def test_screenshot_exception_propagates_not_swallowed(self):
+        # 截图本身抛异常：不得被吞掉伪装成「未找到」，也不能在这里被重试成死循环。
+        def boom(n):
+            if n == 1:
+                raise RuntimeError('device screenshot failed')
+
+        frames = [{'main': True, 'toggle': True, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames, screenshot_side_effect=boom)
+        self.assertIsInstance(result, RuntimeError)
+        self.assertEqual(task.screenshot_calls, 1)
+
+    def test_toggle_disappears_during_settle_no_click_no_false_success(self):
+        # 第 1 帧 toggle 可见触发 settle；settle 内部会再截一次图，那张帧（第 2 帧）toggle 已消失，
+        # `appear_then_click` 因此返回 False——不能点旧坐标，也不能把这一轮算成切换成功。
+        frames = [
+            {'main': True, 'toggle': True, 'entry': False},
+            {'main': True, 'toggle': False, 'entry': False},
+        ]
+        result, task = _drive_find_activity_entry(frames, timeout_budget=3)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        self.assertEqual(task.click_calls, 0)
+
+    def test_no_click_path_does_not_take_the_post_click_screenshot(self):
+        # toggle 全程不可见：每轮只在循环顶截一次图，没有 settle、也没有点击后的额外截图。
+        # `_FakeTimer(budget=3)` 前 3 次 reached() 为 False、第 4 次才 True，
+        # 对应恰好跑满 3 轮循环顶截图后墙钟生效。
+        frames = [{'main': True, 'toggle': False, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames, timeout_budget=3)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        self.assertEqual(task.screenshot_calls, 3)
+        self.assertEqual(task.click_calls, 0)
+
+    def test_click_still_goes_through_appear_then_click_not_bare_device_click(self):
+        body = _body(as_page.find_activity_entry)
+        self.assertIn('appear_then_click(RightActivityAssets.I_TOGGLE_BUTTON', body)
+        self.assertNotIn('device.click(', body)
+
+
+# --------------------------------------------------------------------------------------
 # 2. 窄 New Battle Entry Detector
 # --------------------------------------------------------------------------------------
 
@@ -391,6 +547,7 @@ class EnterClimbBattleTest(TestCase):
         t = ScriptTask.__new__(ScriptTask)
         events = []
         t.device = SimpleNamespace(image='F', click_record_clear=Mock())
+        t.conf = SimpleNamespace(fire_reaction=FireReactionConfig())
         t.screenshot = Mock(side_effect=lambda: events.append('screenshot'))
         t.I_ACT_FIRE = _img('I_ACT_FIRE')
         t.I_AS_BOSS_FIRE = _img('I_AS_BOSS_FIRE')
@@ -454,7 +611,7 @@ class EnterClimbBattleTest(TestCase):
         src = _src(NormalClimbAct._enter_climb_battle)
         self.assertIn('Timer(ACTIVITY_FIRE_TIMEOUT)', src)
         self.assertIn('range(1, ACTIVITY_FIRE_MAX_TRIES + 1)', src)
-        self.assertIn('random_delay(*REACTION_FIRE)', src)
+        self.assertIn('random_delay(*fire_reaction_range(self.conf.fire_reaction))', src)
         self.assertEqual((ACTIVITY_FIRE_MAX_TRIES, ACTIVITY_FIRE_TIMEOUT,
                           ACTIVITY_FIRE_POST_CLICK_TIMEOUT), (4, 12, 4))
 
@@ -736,6 +893,399 @@ class SettlementDrainTest(TestCase):
         self.assertNotIn('random.randint', src)
         self.assertNotIn('RuleClick(', src)
         self.assertEqual((ACTIVITY_SETTLEMENT_MAX_CLICKS, ACTIVITY_SETTLEMENT_TIMEOUT), (6, 15))
+
+    # ------------------------------------------------------------------------------------
+    # 2026-09-22 真机事故复现：page_climb_pass（真实挑战页）持续被识别到，但挑战键还没渲染
+    # 出来——旧代码把这当成「还有残留弹窗」连点 6 次 random_default；新代码必须改为有界等待，
+    # 不盲点。
+    # ------------------------------------------------------------------------------------
+
+    def test_incident_destination_recognized_but_fire_never_ready_zero_blind_clicks(self):
+        """复现真机日志：`[UI] page_climb_pass` 连续出现、`I_ACT_FIRE` 全程不可见。
+        修复前会产生 6 次 `random_default` 点击；修复后必须是 0 次——因为一旦确认已经在
+        `destination` 结构页面上，就不再进入盲点分支，只反复有界等待挑战键。"""
+        t, events = self._t(page_seq=['DEST'], fire_seq=[False])  # 全程即 destination，fire 恒 False
+        result = t._drain_activity_settlement('ap', 'DEST')
+        samples = [e for e in events if e[0] == 'sample']
+        self.assertEqual(samples, [])  # 事故复现的核心断言：零次盲点
+        self.assertIs(result, False)   # 有界超时后仍未 ready，如实返回 False（不伪造成功）
+
+    def test_destination_recognized_fire_not_ready_waits_not_clicks_immediately(self):
+        """`page_climb_pass` 已经命中但挑战键第一帧还没出来：必须先等（`_wait_climb_fire_state`），
+        不能立即当成弹窗点 random_default。"""
+        t, events = self._t(page_seq=['DEST'], fire_seq=[False, False, True])
+        result = t._drain_activity_settlement('ap', 'DEST')
+        self.assertIs(result, True)
+        self.assertEqual([e for e in events if e[0] == 'sample'], [])
+
+    def test_battle_re_entered_while_waiting_for_fire_defers_without_click(self):
+        """在「已到 destination、等挑战键」期间又被判定成重新进入战斗：按既有约定交回外层，
+        不在这里点 random_default。"""
+        t, events = self._t(page_seq=['DEST'], fire_seq=[False],
+                            active_seq=[False, False, True])
+        result = t._drain_activity_settlement('ap', 'DEST')
+        self.assertIs(result, False)
+        self.assertEqual([e for e in events if e[0] == 'sample'], [])
+
+    def test_genuine_lingering_popup_still_uses_bounded_blind_click(self):
+        """真正的残留弹窗场景（未到 destination）行为不变：仍然有界盲点，不因本轮修复被误伤。"""
+        t, events = self._t(page_seq=[None, None, 'DEST'], fire_seq=[False, False, True])
+        result = t._drain_activity_settlement('ap', 'DEST')
+        self.assertIs(result, True)
+        samples = [e for e in events if e[0] == 'sample']
+        self.assertGreaterEqual(len(samples), 1)
+        self.assertLessEqual(len(samples), ACTIVITY_SETTLEMENT_MAX_CLICKS)
+
+    def test_screenshot_exception_during_drain_propagates(self):
+        """截图异常不能被吞掉、也不能触发无限重试。"""
+        t, events = self._t(page_seq=['DEST'], fire_seq=[False])
+        t.screenshot = Mock(side_effect=RuntimeError('device screenshot failed'))
+        with self.assertRaises(RuntimeError):
+            t._drain_activity_settlement('ap', 'DEST')
+
+    def test_wait_branch_reuses_existing_fire_state_helper_not_new_click_path(self):
+        """源码级护栏：等待分支必须复用既有的 `_wait_climb_fire_state`，不引入新的点击方式、
+        不新增裸 `device.click`。"""
+        src = _src(NormalClimbAct._drain_activity_settlement)
+        self.assertIn('self._wait_climb_fire_state(fire_rule)', src)
+        self.assertNotIn('device.click(', src)
+        # 盲点分支只有一处 _sample_settlement_click 调用，等待分支不额外叠加点击
+        self.assertEqual(src.count('self._sample_settlement_click('), 1)
+
+
+# --------------------------------------------------------------------------------------
+# 6.1 `_run_climb_type` 主循环：持续无法识别页面时的有界退出（2026-09-22 真机事故）
+#
+# 事故复现里 `_drain_activity_settlement` 的兜底点击耗尽后返回 False，外层 `_run_climb_type`
+# 忽略返回值、回到循环顶部重新截图判页；若页面此后持续无法归类（`get_current_page()` 一直
+# None），旧代码在这里只有 `sleep(0.5); continue`，没有任何上限——真机日志显示这之后进程
+# 静默运行了数十分钟没有一行输出，直至被外部重启。
+# --------------------------------------------------------------------------------------
+
+
+class ClimbTypeUnknownPageTest(TestCase):
+    def _t(self, *, page_seq, timeout_budget=None):
+        original_budget = _FakeTimer.budget
+        _FakeTimer.budget = timeout_budget if timeout_budget is not None else 10_000
+        self.addCleanup(lambda: setattr(_FakeTimer, 'budget', original_budget))
+        patch.object(normal_mod, 'Timer', _FakeTimer).start()
+        self.addCleanup(patch.stopall)
+        patch.object(normal_mod.time, 'sleep', Mock()).start()
+
+        t = ScriptTask.__new__(ScriptTask)
+        page_it = _tail(page_seq)
+        t.get_current_page = Mock(side_effect=lambda: next(page_it))
+        t.screenshot = Mock()
+        t.current_action_type = ''
+        t.goto_page = Mock()
+        t._sync_climb_team_lock = Mock()
+        t.click = Mock()
+        return t
+
+    def test_persistent_unknown_page_raises_after_bounded_wait(self):
+        """事故复现：页面持续无法识别，必须有界抛出 `GamePageUnknownError`，
+        不能静默空转。"""
+        t = self._t(page_seq=[None], timeout_budget=3)
+        with self.assertRaises(GamePageUnknownError):
+            t._run_climb_type('pass')
+        # 有界：截图次数不会无限增长
+        self.assertLess(t.screenshot.call_count, 20)
+
+    def test_recovery_resets_the_unknown_page_budget(self):
+        """每次 None 后紧跟着识别到已知页面（这里用 page_reward 作最轻量的已知页分支），
+        未知页计时必须被清空——不能把多次分散的短暂 None 累加成一次超时。"""
+        t = self._t(page_seq=[None, as_page.page_reward] * 20, timeout_budget=1)
+        calls = {'n': 0}
+
+        def _click(*a, **kw):
+            calls['n'] += 1
+            if calls['n'] >= 5:
+                raise StopIteration('probe stop: reached here without GamePageUnknownError')
+
+        t.click = Mock(side_effect=_click)
+        with self.assertRaises(StopIteration):
+            t._run_climb_type('pass')
+
+    def test_brief_single_unknown_frame_does_not_raise_immediately(self):
+        """只出现一次 None 就立即恢复：不能因为一帧过渡就误判超时。"""
+        t = self._t(page_seq=[None, as_page.page_reward], timeout_budget=1)
+        calls = {'n': 0}
+
+        def _click(*a, **kw):
+            calls['n'] += 1
+            raise StopIteration('probe stop: single None frame did not raise')
+
+        t.click = Mock(side_effect=_click)
+        with self.assertRaises(StopIteration):
+            t._run_climb_type('pass')
+
+    def test_screenshot_exception_in_climb_type_propagates(self):
+        t = self._t(page_seq=[None])
+        t.screenshot = Mock(side_effect=RuntimeError('device screenshot failed'))
+        with self.assertRaises(RuntimeError):
+            t._run_climb_type('pass')
+
+    def test_source_uses_bounded_timer_not_bare_sleep_loop(self):
+        src = _src(NormalClimbAct._run_climb_type)
+        self.assertIn('Timer(ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT)', src)
+        self.assertIn('raise GamePageUnknownError', src)
+        self.assertEqual(ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT, 20)
+
+
+# --------------------------------------------------------------------------------------
+# 6.2 爬塔线专用结算单击（2026-09-23）：取消 Micro-Burst 连击，70/30 activity region，
+# reaction + fresh confirm + 单击，不预授权第二击、不复用上一击 anchor。
+# --------------------------------------------------------------------------------------
+
+
+class ActivitySettlementSingleClickTest(TestCase):
+    def _t(self, *, owns=True, action_type='pass', generic_result=True,
+           classify_seq=None, current_page_seq=None, fire_seq=None,
+           over_ghost=False, skin_confirm=False, is_false=False):
+        patch.object(normal_mod.time, 'sleep', Mock()).start()
+        self.addCleanup(patch.stopall)
+
+        t = ScriptTask.__new__(ScriptTask)
+        events = []
+        t._climb_owns_settlement_single_click = owns
+        t.current_action_type = action_type
+        t.device = SimpleNamespace(image='F', click_record_clear=Mock(side_effect=lambda: events.append('clear')))
+        t.I_FALSE = _img('I_FALSE')
+        t.I_OVER_GHOST = _img('I_OVER_GHOST')
+        t.I_GB_SKIN_CONFIRM = _img('I_GB_SKIN_CONFIRM')
+        t.I_ACT_FIRE = _img('I_ACT_FIRE')
+        t.I_AS_BOSS_FIRE = _img('I_AS_BOSS_FIRE')
+        t.I_UI_BACK_RED = _img('I_UI_BACK_RED')
+        t.screenshot = Mock(side_effect=lambda: events.append('screenshot'))
+        t.appear = Mock(side_effect=lambda tg, **kw: {
+            'I_FALSE': is_false,
+        }.get(tg.name, next(_tail(fire_seq or [False]))
+              if tg.name in ('I_ACT_FIRE', 'I_AS_BOSS_FIRE') else False))
+        t.appear_then_click = Mock(side_effect=lambda tg, **kw: {
+            'I_OVER_GHOST': over_ghost, 'I_GB_SKIN_CONFIRM': skin_confirm,
+        }.get(tg.name, False))
+        t._is_generic_result_context = Mock(return_value=generic_result)
+        classify_it = _tail(classify_seq if classify_seq is not None else [as_page.page_reward])
+        t._classify_general_battle_page = Mock(side_effect=lambda: next(classify_it))
+        page_it = _tail(current_page_seq if current_page_seq is not None else [None])
+        t.get_current_page = Mock(side_effect=lambda: next(page_it))
+        t._sample_settlement_point = Mock(
+            side_effect=lambda region: (events.append(('sample', region.name)), (321, 654))[1])
+        t.events = events
+        return t
+
+    # ---- 70/30 region 选择 ----
+
+    def test_seventy_percent_branch_picks_activity_1(self):
+        from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
+        t = self._t()
+        with patch.object(normal_mod, 'random_int', return_value=70):  # <=70 命中
+            region = t._select_activity_settlement_region()
+        self.assertIs(region, GeneralBattleAssets.C_RANDOM_ACTIVITY_1)
+
+    def test_thirty_percent_branch_picks_activity_2(self):
+        from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
+        t = self._t()
+        with patch.object(normal_mod, 'random_int', return_value=71):  # >70 命中
+            region = t._select_activity_settlement_region()
+        self.assertIs(region, GeneralBattleAssets.C_RANDOM_ACTIVITY_2)
+
+    def test_never_falls_back_to_default_or_save_regions(self):
+        from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
+        t = self._t()
+        seen = set()
+        for roll in (1, 50, 70, 71, 99, 100):
+            with patch.object(normal_mod, 'random_int', return_value=roll):
+                seen.add(t._select_activity_settlement_region().name)
+        self.assertEqual(seen, {'random_activity_1', 'random_activity_2'})
+        forbidden = {GeneralBattleAssets.C_RANDOM_DEFAULT.name,
+                    GeneralBattleAssets.C_RANDOM_SAVE_RIGHT.name,
+                    GeneralBattleAssets.C_RANDOM_SAVE_BOTTOM.name}
+        self.assertFalse(seen & forbidden)
+
+    def test_region_selection_uses_project_system_random_not_new_rng(self):
+        src = _src(NormalClimbAct._select_activity_settlement_region)
+        self.assertIn('random_int(1, 100)', src)
+        self.assertNotIn('random.Random(', src)
+        self.assertNotIn('import random', src)
+
+    # ---- reaction owner：本线独立常量，不借用 Micro-Burst 的 observe 间隔 ----
+
+    def test_reaction_range_is_task_local_and_exactly_0_45_to_0_85(self):
+        self.assertEqual(ACTIVITY_SETTLEMENT_REACTION, (0.45, 0.85))
+
+    def test_transaction_reads_task_local_reaction_not_general_battle_burst_interval(self):
+        body = _body(NormalClimbAct._activity_settlement_single_click)
+        self.assertIn('random_delay(*ACTIVITY_SETTLEMENT_REACTION)', body)
+        # 代码体（不含解释用的 docstring）里不得再引用 Micro-Burst 的 observe 间隔
+        self.assertNotIn('SETTLEMENT_BURST_CLICK_INTERVAL_RANGE', body)
+
+    def test_reaction_is_sampled_from_the_task_local_range_at_runtime(self):
+        t = self._t(classify_seq=[as_page.page_reward])
+        with patch.object(normal_mod, 'execute_single_click'), \
+                patch.object(normal_mod, 'random_delay', return_value=0.5) as delay:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        delay.assert_called_once_with(*ACTIVITY_SETTLEMENT_REACTION)
+
+    def test_call_order_is_reaction_sleep_screenshot_confirm_then_sample_then_click(self):
+        """顺序必须是 reaction → sleep → fresh screenshot → 确认 → 选区采样 → 单击；
+        绝不能先采样坐标再跨等待复用（那样等于回到 anchor 预授权的老毛病）。"""
+        t = self._t(classify_seq=[as_page.page_reward])
+        ev = t.events
+        with patch.object(normal_mod, 'random_delay',
+                          side_effect=lambda *a: ev.append(('random_delay', a)) or 0.5), \
+                patch.object(normal_mod.time, 'sleep',
+                             side_effect=lambda s: ev.append(('sleep', s))), \
+                patch.object(normal_mod, 'execute_single_click',
+                             side_effect=lambda *a, **kw: ev.append('click')):
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        kinds = [e[0] if isinstance(e, tuple) else e for e in ev]
+        self.assertEqual(kinds, ['random_delay', 'sleep', 'screenshot', 'sample', 'click'])
+        # sleep 睡的就是本层 reaction 采样出来的值，不是另一个来源
+        self.assertEqual([e for e in ev if e[0] == 'sleep'], [('sleep', 0.5)])
+        self.assertEqual([e[1] for e in ev if e[0] == 'random_delay'],
+                         [ACTIVITY_SETTLEMENT_REACTION])
+
+    def test_single_reaction_layer_no_policy_no_confirm_delay(self):
+        t = self._t(classify_seq=[as_page.page_reward])
+        with patch.object(normal_mod, 'execute_single_click'), \
+                patch.object(normal_mod, 'random_delay', return_value=0.5) as delay, \
+                patch.object(normal_mod.time, 'sleep') as slept:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        self.assertEqual(delay.call_count, 1)   # 整条链路只有一层 reaction
+        self.assertEqual(slept.call_count, 1)
+        body = _body(NormalClimbAct._activity_settlement_single_click)
+        for forbidden in ('policy=', 'InteractionPolicy', 'confirm_delay', 'appear_then_click'):
+            self.assertNotIn(forbidden, body)
+
+    def test_general_battle_micro_burst_interval_is_independent_of_this_line(self):
+        """两套 timing 完全独立：GeneralBattle 的 burst observe 间隔（2026-09-23 起
+        `(0.30, 0.60)`）与本线专用 reaction `(0.45, 0.85)` 各调各的，互不牵连。"""
+        self.assertEqual(GeneralBattle.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE, (0.30, 0.60))
+        self.assertNotEqual(GeneralBattle.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE,
+                            ACTIVITY_SETTLEMENT_REACTION)
+        self.assertIn('self._sample_interval(self.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE)',
+                      _src(GeneralBattle._fire_settlement_burst))
+
+    # ---- 单次事务：至多 1 次 execute_single_click ----
+
+    def test_transaction_executes_at_most_one_click(self):
+        t = self._t(classify_seq=[as_page.page_reward])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        self.assertEqual(click.call_count, 1)
+        self.assertEqual(len([e for e in t.events if e == 'screenshot']), 1)
+
+    def test_click_uses_final_point_from_fresh_sample_not_bare_coords(self):
+        t = self._t(classify_seq=[as_page.page_reward])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        args, kwargs = click.call_args
+        self.assertEqual(args[0], t.device)
+        self.assertIsInstance(args[1], FinalPoint)
+        self.assertEqual((args[1].x, args[1].y), (321, 654))
+
+    def test_second_click_requires_a_brand_new_transaction_not_reused_anchor(self):
+        """两次独立调用（模拟仍需处理结算的下一帧）必须各自重新 reaction + fresh confirm +
+        70/30 选择 + 重新采样，不得复用上一次的 anchor / region 选择。"""
+        t = self._t(classify_seq=[as_page.page_reward, as_page.page_reward])
+        rolls = iter([10, 90])  # 第一次 <=70 命中 activity_1，第二次 >70 命中 activity_2
+        with patch.object(normal_mod, 'execute_single_click') as click, \
+                patch.object(normal_mod, 'random_int', side_effect=lambda *a: next(rolls)):
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        self.assertEqual(click.call_count, 2)
+        samples = [e for e in t.events if e[0] == 'sample']
+        self.assertEqual([n for _, n in samples], ['random_activity_1', 'random_activity_2'])
+        # 两次各自独立截图确认，不是一次截图服务两次点击
+        self.assertEqual(len([e for e in t.events if e == 'screenshot']), 2)
+
+    # ---- 状态门控：page_climb_pass / I_ACT_FIRE 出现即停止 ----
+
+    def test_climb_destination_page_appeared_zero_clicks(self):
+        t = self._t(action_type='pass', current_page_seq=[as_page.page_climb_pass])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        click.assert_not_called()
+        self.assertEqual([e for e in t.events if e[0] == 'sample'], [])
+
+    def test_fire_button_appeared_zero_clicks(self):
+        t = self._t(action_type='pass', current_page_seq=[None], fire_seq=[True])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        click.assert_not_called()
+
+    def test_state_unclear_waits_no_click(self):
+        """既未到挑战页/挑战键，结算页分类又已经变化（既非原来的 current_page 也非明确的
+        新结算态）：视为状态不明确，不点。"""
+        t = self._t(current_page_seq=[None], fire_seq=[False],
+                    classify_seq=[None])  # 分类不再等于 current_page=page_reward
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        click.assert_not_called()
+
+    def test_climb_settlement_should_stop_ignored_for_non_climb_action_type(self):
+        """防御性判断：非爬塔 action_type 不应该被 `_climb_settlement_should_stop` 拦下
+        （正常情况下大富翁/伪神降临不会走到这个函数，由 owns 门控保证）。"""
+        t = self._t(action_type='rich_man')
+        self.assertFalse(t._climb_settlement_should_stop())
+
+    # ---- _handle_result / _handle_reward 门控 + 事故复现 ----
+
+    def test_owns_false_falls_back_to_generalbattle_micro_burst(self):
+        """大富翁/伪神降临（owns=False）：必须原样回落到 GeneralBattle 的 Micro-Burst，
+        不受本轮改造影响。"""
+        t = self._t(owns=False)
+        with patch.object(GeneralBattle, '_handle_result', return_value='super_result') as sup:
+            result = NormalClimbAct._handle_result(t, SimpleNamespace(), SimpleNamespace())
+        self.assertEqual(result, 'super_result')
+        sup.assert_called_once()
+
+    def test_owns_true_reward_page_uses_single_click_not_burst(self):
+        t = self._t(owns=True, classify_seq=[as_page.page_reward])
+        context = SimpleNamespace(last_page=None, is_win=None, reward_no_battle_ts=1.0)
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            action = t._handle_reward(context, SimpleNamespace())
+        self.assertEqual(action, BattleAction.CONTINUE)
+        self.assertTrue(context.is_win)
+        self.assertIsNone(context.reward_no_battle_ts)
+        self.assertEqual(click.call_count, 1)
+
+    def test_owns_true_boss_result_still_clicks_back_red_popup(self):
+        """回归防护：迁移到单击结算后，boss 结算前的专属附属弹窗点击不能丢。"""
+        t = self._t(owns=True, action_type='boss', classify_seq=[as_page.page_battle_result])
+        context = SimpleNamespace(last_page=None, is_win=None, reward_no_battle_ts=1.0)
+        with patch.object(normal_mod, 'execute_single_click'):
+            t._handle_result(context, SimpleNamespace())
+        clicks = [c for c in t.appear_then_click.call_args_list if c.args[0].name == 'I_UI_BACK_RED']
+        self.assertEqual(len(clicks), 1)
+
+    def test_over_ghost_popup_still_short_circuits_before_settlement_click(self):
+        t = self._t(owns=True, over_ghost=True)
+        context = SimpleNamespace(last_page=None, is_win=None, reward_no_battle_ts=1.0)
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            action = t._handle_reward(context, SimpleNamespace())
+        self.assertEqual(action, BattleAction.CONTINUE)
+        click.assert_not_called()
+
+    def test_incident_reward_click_dismisses_immediately_then_second_click_gets_fresh_transaction(self):
+        """复现用户描述的「Reward → 点击 → 弹窗瞬间消失 → 第二击穿透到底层活动页面」：
+        第一次调用点击后，若结算已经消失（分类不再是 page_reward），第二次独立调用
+        必须先重新 reaction + fresh confirm，发现真实挑战页已出现就直接放弃，不再点。"""
+        t = self._t(action_type='pass', classify_seq=[as_page.page_reward],
+                    current_page_seq=[None, as_page.page_climb_pass])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        self.assertEqual(click.call_count, 1)  # 只有第一次真正点了
+
+    def test_source_no_bare_device_click_no_micro_burst_call(self):
+        for func in (NormalClimbAct._handle_result, NormalClimbAct._handle_reward,
+                    NormalClimbAct._activity_settlement_single_click):
+            src = _src(func)
+            self.assertNotIn('device.click(', src)
+            self.assertNotIn('_settlement_burst_step(', src)
+            self.assertNotIn('_fire_settlement_burst(', src)
 
 
 # --------------------------------------------------------------------------------------

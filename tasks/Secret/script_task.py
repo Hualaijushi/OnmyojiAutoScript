@@ -9,6 +9,7 @@ from module.exception import TaskEnd
 from module.logger import logger
 from module.atom.click import RuleClick
 from module.atom.ocr import RuleOcr
+from module.click_pipeline import FinalPoint, execute_single_click
 
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_secret_zones, page_shikigami_records, page_battle_result, any_of
@@ -272,9 +273,9 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
             )
             for click_index in range(1, 3):
                 click_x, click_y = click_rule.coord()
-                self.device.click(
-                    x=click_x,
-                    y=click_y,
+                execute_single_click(
+                    self.device,
+                    FinalPoint(click_x, click_y),
                     control_name=(
                         f'SECRET_LAYER_{candidate["layer"]}'
                         f'_SELECT_{click_index}'

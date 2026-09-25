@@ -9,6 +9,7 @@ from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.config_base import ConfigBase, Time
 from tasks.Component.config_scheduler import Scheduler
+from tasks.Component.config_fire_reaction import FireReactionConfig
 
 
 ACTIVITY_NAME_TO_FIELD = {
@@ -197,6 +198,7 @@ class ActivityShikigami(ConfigBase):
     boss_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     ap100_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     fakegod_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
+    fire_reaction: FireReactionConfig = Field(default_factory=FireReactionConfig)
 
     @model_validator(mode='before')
     @classmethod

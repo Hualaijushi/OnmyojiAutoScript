@@ -20,7 +20,8 @@ from module.logger import logger
 from module.exception import TaskEnd
 from module.base.timer import Timer
 from module.base.utils.random import random_delay
-from module.reaction_profile import REACTION_FAST, REACTION_NORMAL, REACTION_DELIBERATE, REACTION_FIRE
+from module.click_pipeline import execute_single_click, list_click_target
+from module.interaction_policy import InteractionPolicy, fire_reaction_range
 
 
 # 觉醒单人挑战 FIRE 的有限 attempt / 总超时 / 点击后确认等待。engineering baseline，非 Level C 标定：
@@ -111,7 +112,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if self.appear(self.I_FORM_TEAM):
                 return True
             # 麒麟 / 材料类型选择：需要明显选择判断的稳定目标，DELIBERATE reaction
-            if self.appear_then_click(kirintype, interval=1, confirm_delay=REACTION_DELIBERATE):
+            if self.appear_then_click(kirintype, interval=1, policy=InteractionPolicy.DELIBERATE):
                 continue
         return False
 
@@ -122,7 +123,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         """
         pos = self.list_find(self.L_LAYER_LIST, layer)
         if pos:
-            self.device.click(x=pos[0], y=pos[1])
+            # L_LAYER_LIST 是文字列表：命中 OCR 框 → 框内统一采样；拿不到框时按 FinalPoint 原样执行。
+            control_name = f'EVOZONE_LAYER_{layer}'
+            execute_single_click(self.device, list_click_target(self.L_LAYER_LIST, pos, control_name), control_name=control_name)
             return True
         return False
 
@@ -134,7 +137,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         logger.info("test0")
         self.check_layer(layer)
         logger.info("test1")
-        self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK, confirm_delay=REACTION_FAST)
+        self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK, policy=InteractionPolicy.FAST)
         logger.info("test2")
         # 创建队伍
         logger.info('Create team')
@@ -143,7 +146,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if self.appear(self.I_CHECK_TEAM):
                 break
             # 普通进入组队：稳定按钮，NORMAL reaction
-            if self.appear_then_click(self.I_FORM_TEAM, interval=1, confirm_delay=REACTION_NORMAL):
+            if self.appear_then_click(self.I_FORM_TEAM, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
         # 创建房间
         self.create_room()
@@ -177,7 +180,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
             # 点击挑战
             if not is_first:
-                if self.run_invite(config=self.config.evo_zone.invite_config):
+                if self.run_invite(config=self.config.evo_zone.invite_config, fire_reaction=self.config.evo_zone.fire_reaction):
                     self.run_general_battle(
                         config=self.config.evo_zone.general_battle_config,
                         exit_matcher=self.I_CHECK_TEAM,
@@ -189,7 +192,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     break
             # 第一次会邀请队友
             if is_first:
-                if not self.run_invite(config=self.config.evo_zone.invite_config, is_first=True):
+                if not self.run_invite(config=self.config.evo_zone.invite_config, is_first=True,
+                                       fire_reaction=self.config.evo_zone.fire_reaction):
                     logger.warning('Invite failed and exit this evozone task')
                     success = False
                     break
@@ -285,7 +289,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         与 RealmRaid.fire() 同一 FIRE Contract（见 `docs/DECISIONS.md` D001 补记 FIRE 分节）：
         成功判据是 `is_in_battle()`，不以「`I_EVOZONE_FIRE` 消失」单独判成功；每次 attempt
-        独立采样 `REACTION_FIRE` → `sleep` → fresh screenshot → 二次确认 `I_EVOZONE_FIRE` 仍在 →
+        独立采样任务 FIRE reaction（`fire_reaction_range`，默认 400~800ms） → `sleep` → fresh screenshot → 二次确认 `I_EVOZONE_FIRE` 仍在 →
         点击；post-click 走 `_wait_evozone_fire_state()` 的三态（battle / retryable / transition-unknown）。
         有限 `EVOZONE_FIRE_MAX_TRIES` + 有限 `Timer(EVOZONE_FIRE_TIMEOUT)`，用尽仍未进入战斗返回
         False，由调用方决定**不交接 `run_general_battle`**。
@@ -310,7 +314,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     return True
                 # 'retryable'（挑战页仍在，下一 attempt 顶端会点）/ 'timeout'（过渡 / 未知，不点）
                 continue
-            fire_delay = random_delay(*REACTION_FIRE)
+            fire_delay = random_delay(*fire_reaction_range(self.config.evo_zone.fire_reaction))
             logger.info(f'EvoZone fire: attempt {attempt}, reaction {fire_delay:.2f}s')
             sleep(fire_delay)
             self.screenshot()
@@ -334,7 +338,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self.evozone_enter()
         layer = self.config.evo_zone.evo_zone_config.layer
         self.check_layer(layer)
-        self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK, confirm_delay=REACTION_FAST)
+        self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK, policy=InteractionPolicy.FAST)
         # 觉醒单人是 host-controlled 连续循环：疲劳安全节点放在「一场战斗完整结束、run_general_battle
         # 已回到稳定挑战页」之后，休息结束回循环顶会先 screenshot + is_in_evozone 重新确认业务页面。
         self.begin_fatigue_task('EvoZone')

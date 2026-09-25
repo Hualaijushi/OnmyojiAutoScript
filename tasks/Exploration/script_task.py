@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 
 from module.logger import logger
-from module.reaction_profile import REACTION_FAST, REACTION_CONFIRM, REACTION_NAVIGATION
+from module.interaction_policy import InteractionPolicy
 from tasks.Exploration.base import BaseExploration
 from tasks.Exploration.config import AutoRotate, UserStatus, ExplorationLevel
 import tasks.Exploration.page as pages
@@ -189,16 +189,16 @@ class ScriptTask(BaseExploration):
             return
         self.fill_shikigami()
         # 设置页开关：含义明确的稳定按钮，FAST reaction
-        self.appear_then_click(self.I_E_AUTO_ROTATE_OFF, interval=0.8, confirm_delay=REACTION_FAST)
+        self.appear_then_click(self.I_E_AUTO_ROTATE_OFF, interval=0.8, policy=InteractionPolicy.FAST)
 
     def run_on_exp_exit(self):
         if not self.need_exit: # 不需要退出则点取消, 通常是直接在探索界面启动脚本(或退出期间在主界面再次识别到需要攻击的怪物)
             # 取消退出：NAVIGATION reaction
-            self.appear_then_click(self.I_E_EXIT_CANCEL, interval=0.8, confirm_delay=REACTION_NAVIGATION)
+            self.appear_then_click(self.I_E_EXIT_CANCEL, interval=0.8, policy=InteractionPolicy.NAVIGATION)
             return
         # 退出确认：CONFIRM reaction（confirm_delay 会在 delay 后重新截图二次确认，
         # 若此时游戏已自动离开退出弹窗则不点，天然避免 stale click）
-        self.appear_then_click(self.I_E_EXIT_CONFIRM, interval=0.8, confirm_delay=REACTION_CONFIRM)
+        self.appear_then_click(self.I_E_EXIT_CONFIRM, interval=0.8, policy=InteractionPolicy.CONFIRM)
         self.wait_start_time = datetime.now()  # 队友等待时间重置
 
 

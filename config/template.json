@@ -234,6 +234,10 @@
       "max_continuous": 0,
       "quick_exit": false
     },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
+    },
     "switch_soul_config": {
       "enable": false,
       "switch_group_team": "-1,-1",
@@ -275,6 +279,10 @@
       "continuous_battle": false,
       "max_continuous": 0,
       "quick_exit": false
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     },
     "switch_soul_config": {
       "enable": false,
@@ -677,6 +685,10 @@
       "max_continuous": 0,
       "quick_exit": false
     },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
+    },
     "switch_soul": {
       "enable": false,
       "switch_group_team": "-1,-1",
@@ -738,6 +750,10 @@
       "max_continuous": 0,
       "quick_exit": false
     },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
+    },
     "switch_soul_config": {
       "enable": false,
       "switch_group_team": "-1,-1",
@@ -784,6 +800,10 @@
       "max_continuous": 0,
       "quick_exit": false
     },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
+    },
     "switch_soul": {
       "enable": false,
       "switch_group_team": "-1,-1",
@@ -829,6 +849,10 @@
       "continuous_battle": true,
       "max_continuous": 0,
       "quick_exit": false
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     },
     "switch_soul_config_1": {
       "enable": false,
@@ -1059,6 +1083,10 @@
       "continuous_battle": false,
       "max_continuous": 0,
       "quick_exit": false
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     }
   },
   "martial_arts": {
@@ -1378,6 +1406,10 @@
       "continuous_battle": false,
       "max_continuous": 0,
       "quick_exit": false
+    },
+    "fire_reaction": {
+      "fire_reaction_min_ms": 400,
+      "fire_reaction_max_ms": 800
     },
     "switch_soul_config": {
       "enable": false,

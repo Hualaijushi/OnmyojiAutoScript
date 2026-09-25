@@ -1,8 +1,9 @@
-import random
 import re
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
+from module.click_pipeline import ClickRegion, execute_single_click
+from module.interaction_policy import InteractionPolicy
 from module.logger import logger
 from tasks.GameUi.navigator import GameUi
 from tasks.SixRealms.assets import SixRealmsAssets
@@ -113,7 +114,8 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
         if refresh_time <= 0:
             logger.warning('Refresh time is 0')
             return False
-        if not self.appear_then_click(refresh_rule):
+        # L2：fresh confirm 失败（刷新图标在 reaction 期间消失）时零点击并返回 False，不进入刷新成功流程
+        if not self.appear_then_click(refresh_rule, policy=InteractionPolicy.CONFIRM):
             return False
         self.wait_animate_stable(self.C_STORE_ANIMATE_KEEP, timeout=1.5)
         logger.info('Refresh store done')
@@ -150,10 +152,13 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
                 logger.info(f'Not enough coin to buy {skill_rule.name}')
                 break
             if self.appear(skill_rule):  # 点击购买技能的左侧位置
+                # 「技能图标左侧 35~60px」是业务安全区；原两次 randint 只是在区内模拟分布。
+                # 区域与旧 randint 支撑集逐像素一致，改由统一 Region 模型在区内采样一次。
+                # 区域名与图标 rule 分开，避免将来图标登记的热点被套到左侧区域上。
                 x, y = skill_rule.front_center()
-                x -= random.randint(35, 60)
-                y += random.randint(-skill_rule.roi_front[3] // 2, skill_rule.roi_front[3] // 2)
-                self.device.click(x=x, y=y, control_name=skill_rule.name)
+                height = skill_rule.roi_front[3]
+                buy_region = ClickRegion((x - 60, y + (-height) // 2, 26, height + 1), f'{skill_rule.name}_buy_left')
+                execute_single_click(self.device, buy_region, control_name=skill_rule.name)
                 buy_cnt += 1
                 continue
             if coin_num < skill_price + 100:
@@ -200,5 +205,6 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
             logger.info('No remain island can choose, retry')
             return
         target_land = filtered_islands[0]  # 取第一个岛屿
-        self.appear_then_click(target_land, interval=0.8)
+        # L2：reaction 后只 fresh confirm 已选定的这一个岛屿；消失则本轮不点，由外层下一轮重新扫描 / 过滤 / 选择
+        self.appear_then_click(target_land, interval=0.8, policy=InteractionPolicy.NORMAL)
         
