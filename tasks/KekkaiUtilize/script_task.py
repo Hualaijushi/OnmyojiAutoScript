@@ -3,6 +3,7 @@
 # github https://github.com/runhey
 import re
 import time
+from time import monotonic
 from cached_property import cached_property
 from dataclasses import dataclass, field
 from datetime import timedelta, datetime
@@ -61,6 +62,13 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     utilize_add_count = 0
     utilize_failed_count = 0
     utilize_terminal_failure = False
+    # 最近一次 `_schedule_retry` 写入的 next_run 是否已从配置读回确认。只有为真，业务侧的
+    # 「稍后重试」出口才能向调度器报告正常结束（TaskEnd）。
+    utilize_retry_scheduled = False
+    # 单次任务的寄养循环收敛保护：本轮进入 `run_utilize` 的总次数 + 单调时钟起点。
+    # 与会被业务清零的 utilize_add_count / utilize_failed_count 相互独立，只在 `run()` 入口重新初始化。
+    utilize_total_attempts = 0
+    utilize_started_at = None
     utilize_found_eligible_card = False
     utilize_current_group_has_eligible_card = False
     utilize_current_group_scan_completed = False
@@ -75,6 +83,20 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         CardClass.FISH5: ('斗鱼', 5, 134),
         CardClass.FISH6: ('斗鱼', 6, 151),
     }
+    # 寄养循环收敛保护（`check_utilize_add`）。`run_utilize` 选中目标后会把 utilize_add_count /
+    # utilize_failed_count 清零，若寄养点击没有生效、育成页 `I_UTILIZE_ADD` 一直在，这两个业务计数
+    # 永远到不了上限，所以另设不被清零的总次数与总耗时上限。
+    # 次数依据：一次「放置」最多 3 次尝试（`_record_utilize_failure` 第 3 次失败即终态，即 2 次失败
+    # + 1 次成功）；育成页只有一个 `I_UTILIZE_ADD`、成功后只 OCR 一个剩余时间，页面与调度都按单个
+    # 寄养位设计，这里留两次「放置」的余量：3 × 2 = 6。
+    UTILIZE_ATTEMPTS_PER_PLACEMENT = 3
+    UTILIZE_MAX_PLACEMENTS = 2
+    UTILIZE_MAX_ATTEMPTS = UTILIZE_ATTEMPTS_PER_PLACEMENT * UTILIZE_MAX_PLACEMENTS
+    # 耗时依据：一次「放置」最坏 3 次尝试 × 每次最多 4 个搜索 PASS × SEARCH_PASS_TIMEOUT(120s)
+    # = 1440s，取 1800s（30 分钟）。这是「控制权回到循环」时才生效的软边界：底层某次调用自身
+    # 若永久阻塞，外层检查要等它返回才有机会执行（式神分类切换已自带本地边界并接受这里的截止时间，
+    # 见 `_utilize_deadline`）。
+    UTILIZE_TOTAL_TIMEOUT = 30 * 60
     # 寄养剩余时间 OCR 的兜底：识别失败或数值明显不合理时，按固定间隔重试，
     # 而不是把 next_run 设成当前时刻。
     UTILIZE_RES_TIME_FALLBACK = timedelta(minutes=5)
@@ -159,6 +181,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         self.utilize_add_count = 0
         self.utilize_failed_count = 0
         self.utilize_terminal_failure = False
+        self.utilize_retry_scheduled = False
+        self.utilize_total_attempts = 0
+        self.utilize_started_at = None
         self.utilize_found_eligible_card = False
         self.utilize_current_group_has_eligible_card = False
         self.utilize_current_group_scan_completed = False
@@ -179,8 +204,14 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         # 育成界面去蹭卡
         if con.utilize_enable:
             if not self.check_utilize_add():
-                # 正常返回而非抛出 TaskEnd，使调度器把本轮记为失败；
-                # 下次运行时间已由失败处理设置为 10 分钟后。
+                # 本轮没有完成寄养，但 `_schedule_retry` 已把 5~30 分钟后的 next_run 写入并读回
+                # 确认：这是业务上已经排好下一次的正常结束。必须抛 TaskEnd 让通用调度器记为成功——
+                # 直接 return 会被 `Script.run` 记为失败，连续 3 次 `Script.loop` 会 `exit(1)` 终止
+                # 整个调度线程（与「5 次尝试用尽」出口同样是业务重试，结果却不一致）。
+                if self.utilize_retry_scheduled:
+                    raise TaskEnd
+                # 没有可靠的下一次执行时间：不冒充正常结束，保持失败返回，让调度器如实计数。
+                logger.error('KekkaiUtilize 短期重试没有确认写入 next_run，本轮按失败返回')
                 return
 
         # 查看育成满级：开关关闭时完全跳过，不检测、不卸下、不切换、不补位
@@ -202,7 +233,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
     # Scheduler v1：静默窗口归一化 + 短期 retry cooldown 随机化。
     #
     # 契约（详见 Inventory 报告 + 本轮实施报告）：
-    #   正常寄养：OCR 剩余时间 → min_run_interval 地板 → _normalize_quiet_target → set_next_run
+    #   正常寄养：OCR 剩余时间 → min_run_interval 地板 → 成功随机延迟（仅 OCR 有效时）
+    #             → _normalize_quiet_target → set_next_run
     #   短期 retry：_build_retry_target（随机 cooldown） → _schedule_target（内部同一次
     #               normalize） → set_next_run
     # 5 个 helper 只负责「候选值怎么来 / 怎么被静默窗口归一化 / 怎么写回」，不碰任何
@@ -222,6 +254,20 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         """从项目统一随机源（SystemRandom）采样一次静默窗口恢复抖动（秒）。"""
         sched = self.config.kekkai_utilize.scheduler
         return random_int(sched.quiet_resume_jitter_min * 60, sched.quiet_resume_jitter_max * 60)
+
+    def _success_jitter_delta(self) -> timedelta:
+        """成功寄养后的独立随机延迟：`success_jitter_min`~`success_jitter_max` 分钟采样一次。
+
+        只在 `check_utilize_add` 的正常成功调度处调用（每次成功调度至多一次）。区间为 0~0 时
+        直接返回零延迟、不采样，保持与未加本配置时的调度结果完全一致；每次调用都是独立采样，
+        不缓存上一次的值。
+        """
+        sched = self.config.kekkai_utilize.scheduler
+        if sched.success_jitter_max <= 0:
+            return timedelta(0)
+        delta = timedelta(seconds=random_int(sched.success_jitter_min * 60, sched.success_jitter_max * 60))
+        logger.info(f'KekkaiUtilize 成功寄养后额外随机延迟 {delta}')
+        return delta
 
     def _normalize_quiet_target(self, candidate: datetime) -> datetime:
         """candidate → 静默窗口归一化。不调用 `set_next_run`，只算最终应该写入的时间。
@@ -266,11 +312,58 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         调 `random_int` 导致 cooldown 范围漂移。"""
         candidate = self._build_retry_target()
         final = self._schedule_target(candidate)
+        self.utilize_retry_scheduled = self._is_next_run_persisted(final)
         logger.info(
             f'KekkaiUtilize 短期重试: {reason}, '
             f'final_next_run={final.strftime("%Y-%m-%d %H:%M:%S")}'
         )
         return final
+
+    def _utilize_convergence_exhausted(self) -> str:
+        """本轮寄养循环是否已用尽收敛边界：返回触发原因（中文），未触发返回空串。
+
+        次数看 `utilize_total_attempts`，耗时看单调时钟（不受系统时间调整影响）；两者都不会被
+        `run_utilize` 里的业务计数清零，也不会因为选中候选卡或回到育成页重置。
+        """
+        if self.utilize_total_attempts >= self.UTILIZE_MAX_ATTEMPTS:
+            return f'总尝试次数已达上限（{self.utilize_total_attempts}/{self.UTILIZE_MAX_ATTEMPTS}）'
+        if self.utilize_started_at is not None:
+            elapsed = monotonic() - self.utilize_started_at
+            if elapsed >= self.UTILIZE_TOTAL_TIMEOUT:
+                return f'总耗时已达上限（{elapsed:.0f}s/{self.UTILIZE_TOTAL_TIMEOUT}s）'
+        return ''
+
+    def _utilize_deadline(self):
+        """本轮寄养循环的绝对截止时间（`monotonic` 口径），未开始计时返回 None。
+
+        传给式神分类切换，让它的总耗时不会绕过任务总预算（`UTILIZE_TOTAL_TIMEOUT`）重新获得完整额度。
+        """
+        if self.utilize_started_at is None:
+            return None
+        return self.utilize_started_at + self.UTILIZE_TOTAL_TIMEOUT
+
+    def _stop_utilize_for_convergence(self, reason: str) -> bool:
+        """收敛保护触发：停止继续搜索 / 寄养，复用短期重试出口，只写一次 next_run。
+
+        返回值语义与其它终态失败出口一致（False + `utilize_terminal_failure`）；`run()` 只有在
+        `_schedule_retry` 已读回确认写入时才以 TaskEnd 正常结束，否则仍按失败返回。
+        """
+        message = f'本轮结界蹭卡寄养流程未能收敛：{reason}，停止继续尝试，稍后重试'
+        logger.error(message)
+        self.push_notify(content=message)
+        self._schedule_retry(f'寄养循环未收敛（{reason}）')
+        self.utilize_terminal_failure = True
+        return False
+
+    def _is_next_run_persisted(self, expected: datetime) -> bool:
+        """刚写入的 next_run 是否已在配置里读回一致。
+
+        `set_next_run` 没有返回值：写盘失败会抛异常（照常上抛），但 `task_delay` 找不到任务 /
+        scheduler 时只 warning 后静默返回。`task_delay` 内部先 reload 再写，这里读回的就是落盘后
+        的模型；写入值已 `replace(microsecond=0)`，比较时同样截断。
+        """
+        saved = getattr(self.config.kekkai_utilize.scheduler, 'next_run', None)
+        return saved == expected.replace(microsecond=0)
 
     def _guard_quiet_window(self) -> bool:
         """`run()` 入口守卫。当前处于静默窗口 → 直接把 next_run 重排到窗口结束 + 抖动、
@@ -295,6 +388,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
 
     def check_utilize_add(self):
         con = self.config.kekkai_utilize.utilize_config
+        # 从实际寄养流程开始计时；只在第一次进入时取起点，回到育成页 / 选中候选卡都不会重置
+        if self.utilize_started_at is None:
+            self.utilize_started_at = monotonic()
         while 1:
             self.utilize_add_count += 1
             if self.utilize_add_count >= 5:
@@ -310,7 +406,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 else:
                     logger.warning('已检测到四星及以上结界卡，但未能完成选择，稍后重试')
                 self._schedule_retry('5 次尝试仍未找到合格结界卡')
-                return True
+                # 重试时间已确认写入才当作可继续收尾；否则按失败返回，交给 `run()` 如实上报
+                return self.utilize_retry_scheduled
 
             # 无论收不收到菜，都会进入看看至少看一眼时间还剩多少
             time.sleep(0.5)
@@ -332,16 +429,29 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                         f'按{self.UTILIZE_RES_TIME_FALLBACK}兜底重试'
                     )
                     remaining_time = self.UTILIZE_RES_TIME_FALLBACK
+                    remaining_time_valid = False
+                else:
+                    remaining_time_valid = True
                 # 已经蹭上卡了，设置下次蹭卡时间  # 减少30秒
                 # remaining_time = remaining_time - timedelta(seconds=30)
                 # 正常寄养调度契约（Scheduler v1，不被短期 retry cooldown 取代）：
-                # OCR 剩余时间 → min_run_interval 地板 → 静默窗口归一化 → 写回。
+                # OCR 剩余时间 → min_run_interval 地板 → 成功随机延迟 → 静默窗口归一化 → 写回。
                 next_time = datetime.now() + remaining_time
                 min_interval = con.min_run_interval
                 if min_interval and min_interval.total_seconds() > 0:
                     next_time = max(next_time, datetime.now() + min_interval)
+                # 成功随机延迟只属于「读到有效寄养剩余时间」的正常成功调度；OCR 兜底不是成功寄养，
+                # 不加。必须先加在候选值上、再交给 `_schedule_target` 统一归一化，静默窗口只判定
+                # 最终候选一次，不会把延迟再叠到已经归一化的 07:00 恢复时间上。
+                if remaining_time_valid:
+                    next_time += self._success_jitter_delta()
                 self._schedule_target(next_time)
                 return True
+            # 收敛保护：走到这里说明育成页 `I_UTILIZE_ADD` 还在（还要再寄养一次）。总次数 / 总耗时用尽
+            # 就不再进入寄养业务；放在导航之前：不做多余的页面操作，且已用尽次数但这一圈按钮已消失的正常成功不受影响。
+            exhausted = self._utilize_convergence_exhausted()
+            if exhausted:
+                return self._stop_utilize_for_convergence(exhausted)
             # U3（2026-09-14）：导航失败必须阻断寄养业务——`goto_page` 失败时按契约要么抛
             # `GamePageUnknownError`/`GameStuckError`，要么（防御性地，兼容未来/测试注入的
             # bool 返回）给出假值；两种信号统一收敛成 `reached_utilize_page`，一旦不为真就
@@ -360,7 +470,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 self._schedule_retry('导航到好友结界寄养页失败')
                 self.utilize_terminal_failure = True
                 return False
-            # 开始执行寄养
+            # 开始执行寄养：先累计本轮总尝试次数（不会被业务计数清零影响）
+            self.utilize_total_attempts += 1
             self.run_utilize(con.select_friend_list, con.shikigami_class, con.shikigami_order)
             if self.utilize_terminal_failure:
                 return False
@@ -892,7 +1003,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             return self._record_utilize_failure(f'刷新好友列表失败: {error}')
 
         if selected is None:
-            # 两个分组都没有可用候选 → 低价值失败（20 分钟后重试）
+            # 两个分组都没有可用候选 → 低价值失败（5~30 分钟随机 cooldown 后重试）
             return self._finish_low_value_utilize()
         if selected is not True:
             # 见过候选但都没达标，或搜索被安全中止 → 软失败，交外层 3 次上限的重试链
@@ -932,8 +1043,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             logger.warning('没有坑位可能是其他人的手速太快了抢占了')
             return self._record_utilize_failure('目标结界已经没有可用坑位')
         try:
-            # 切换式神的类型
-            self.switch_shikigami_class(shikigami_class)
+            # 切换式神的类型：传入本轮任务的总截止时间，切换失败（GameStuckError）就不会继续上式神，
+            # 按下面的软失败处理，不在这里另外安排重试
+            self.switch_shikigami_class(shikigami_class, deadline=self._utilize_deadline())
             # 上式神
             self.set_shikigami(shikigami_order, stop_image)
         except (GamePageUnknownError, GameStuckError) as error:

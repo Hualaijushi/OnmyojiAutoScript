@@ -10,10 +10,23 @@ from tasks.base_task import BaseTask
 from tasks.Utils.config_enum import ShikigamiClass
 from tasks.Component.ReplaceShikigami.assets import ReplaceShikigamiAssets
 import time
+from time import monotonic
 from module.exception import GameStuckError
 
 
 class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
+    # 分类切换（`switch_shikigami_class`）的本地边界。正常流程只有两步点击：先点左下角当前分类图标
+    # （「全部」）展开分类，再点目标分类，随后目标分类的「已选中」图标出现；允许把这两步整体再重复一轮
+    # （吸收一次丢失的点击），共 4 次点击。它必须小于 Device 兜底的「同一按钮 10 次 / 两个按钮各 6 次」
+    # （`click_record_check`），这样先触发的是这里的业务失败，而不是重启游戏的 GameTooManyClickError。
+    SWITCH_CLASS_MAX_CLICKS = 4
+    # 最后一次点击之后再观察多久才判失败：与目标按钮自身的重点击间隔（3 秒）一致——原逻辑认为 3 秒内
+    # 没有生效才会再点，所以最后一次点击也要给足这段时间确认，否则会把「刚点中还没刷新」误判为失败。
+    SWITCH_CLASS_SETTLE = 3.0
+    # 本次分类切换的总耗时上限（软边界）：4 次点击的最坏耗时约 20 秒（左下角图标 5 秒重点击间隔 + 目标
+    # 按钮位置稳定等待最多 2.5 秒），加上最后一次确认；取 30 秒，并且小于 Device 的 60 秒无点击卡死判定。
+    # 只在控制权回到循环时才检查，不能中断底层某次永久阻塞的调用。
+    SWITCH_CLASS_TIMEOUT = 30
 
     def in_shikigami_growth(self, screenshot=False) -> bool:
         # 判定是否在式神育成界面
@@ -22,13 +35,15 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
             self.screenshot()
         return self.appear(self.I_RS_RECORDS_SHIKI, interval=0.5)
 
-    def switch_shikigami_class(self, shikigami_class: ShikigamiClass = ShikigamiClass.N):
+    def switch_shikigami_class(self, shikigami_class: ShikigamiClass = ShikigamiClass.N,
+                               deadline: float = None):
         """
         要求在式神育成的界面
-        切换分类
+        切换分类；成功标志是目标分类的「已选中」图标（`I_RS_*_SELECTED`）在重新截图后出现。
         :param shikigami_class:
-        :param shikigami_order:
-        :return:
+        :param deadline: 调用方给的绝对截止时间（`time.monotonic()` 口径），与本地 30 秒上限取较早者，
+                         让上层任务的总时间预算不会因为反复调用本函数而被重新获得。
+        :raise GameStuckError: 点击次数或耗时用尽仍没有确认选中目标分类。
         """
         match_selected = {ShikigamiClass.MATERIAL: self.I_RS_MATERIAL_SELECTED,
                           ShikigamiClass.N: self.I_RS_N_SELECTED,
@@ -47,15 +62,35 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
         check_selected = match_selected[shikigami_class]
         check_click = match_click[shikigami_class]
         # 选择式神的种类
+        end_time = monotonic() + self.SWITCH_CLASS_TIMEOUT
+        if deadline is not None:
+            end_time = min(end_time, deadline)
+        clicks = 0
+        last_click_time = None
         while 1:
             self.screenshot()
+            # 成功只认重新截图后的「已选中」图标；已经在目标分类时第一帧就直接成功
             if self.appear(check_selected, interval=1):
                 break
+            # 还没确认选中：任何点击之前先检查边界。点击次数和耗时都不会因为找到按钮 / 重新截图而清零
+            if monotonic() >= end_time:
+                logger.error(f'式神分类切换超时：已点击 {clicks} 次仍未确认选中 {shikigami_class}')
+                raise GameStuckError(f'式神分类切换超时（{shikigami_class}）')
+            if clicks >= self.SWITCH_CLASS_MAX_CLICKS:
+                # 不再点击，只等最后一次点击刷新界面；观察满一个间隔仍没有选中才判失败
+                if monotonic() - last_click_time >= self.SWITCH_CLASS_SETTLE:
+                    logger.error(f'式神分类切换失败：已点击 {clicks} 次仍未确认选中 {shikigami_class}')
+                    raise GameStuckError(f'式神分类切换失败（{shikigami_class}）')
+                continue
             if self.appear(check_click, interval=3):
                 if self.wait_until_pos_stable(check_click, stable_time=0.8, timeout=2.5):
                     self.click(check_click)
+                    clicks += 1
+                    last_click_time = monotonic()
                 continue
             if self.appear_then_click(self.I_RS_ALL_SELECTED, interval=5):
+                clicks += 1
+                last_click_time = monotonic()
                 continue
         logger.info('Select shikigami class: %s' % shikigami_class)
 

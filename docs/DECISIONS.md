@@ -1694,6 +1694,77 @@ Level C 待验：00:00~07:00 静默窗口内 KekkaiUtilize 确实不会被真正
 `quiet_resume_jitter_min/max`、`cooldown_min/max` 默认值是否合适——这些数值本身仍是
 provisional，调整时不需要改本条 ADR 的分层决定，只需在 `docs/AI_CONTEXT.md` §4.64 追记。
 
+**补记（2026-09-20，短期重试出口的调度器结局契约）**：D023 只规定了「`next_run` 怎么算、怎么写」，没有规定业务重试出口
+**怎么结束**。`Script.run` 把「`run()` 正常返回」当失败、`TaskEnd` 当成功；`Script.loop` 对同一任务连续 3 次失败会
+`exit(1)`。本补记固化：
+
+- **已确认写入 `next_run` 的业务重试出口一律 `raise TaskEnd`**（无达标卡 / 3 次寄养失败 / 导航失败 / 5 次尝试用尽）：
+  「稍后重试」是业务上已经排好下一次的正常结束，不能累计成通用调度器的失败。此前前三个出口直接 `return`，只有 5 次出口
+  是 `TaskEnd`，长期无卡会在约 15~90 分钟内连续 3 次失败终止该账号调度线程。
+- **「已确认」= 从配置读回**：`_schedule_retry` 写入后用 `_is_next_run_persisted` 读回 `scheduler.next_run` 与写入值
+  （截断到秒）比对，结果放 `utilize_retry_scheduled`。`set_next_run` 无返回值、`task_delay` 找不到任务时只 warning，
+  不读回就无法区分「写成功」与「静默没写」。**读回不一致 → 仍 `return`（失败计数），不冒充正常结束**。
+- **不改全局机制**：不动 `Script.run` / `Script.loop` 的失败判定与 3 次阈值，不新增字段 / 延迟，成功 = OCR 剩余时间、
+  重试 = 5~30 分钟、静默归一化、单一写入出口（本 ADR 决定条目）全部不变。
+- **系统异常保持原路径**：`GamePageUnknownError` / `GameStuckError` 等没有新增任何捕获，仍走 `_handle_task_exception`
+  （Restart + 失败计数）。业务侧既有的软失败捕获（好友分组切换超时、进好友结界 / 上式神时的
+  `GamePageUnknownError` / `GameStuckError`）本就把它们当业务失败，累计到 3 次后进入短期重试——这层语义不变，
+  但结局现在是 `TaskEnd`（**取舍**：持续性卡死若只表现为这些被业务捕获的异常，不会再靠 3 次失败退出 / Restart 暴露，
+  仍会按 5~30 分钟节奏重试；这是「业务重试不算调度失败」的直接后果，已在 §4.78 记录）。
+- **其它任务不适用**：本补记只约束 KekkaiUtilize；其它任务的「稍后重试」出口是否有同样的 `return` / `TaskEnd` 不一致，
+  按各自审查处理。
+
+**补记（二）（2026-09-20，单次任务必须有界：总尝试次数 + 总耗时）**：D023 的成功 / 重试调度都假设 `check_utilize_add` 会自己走出循环，
+但它的业务计数器（`utilize_add_count`、`utilize_failed_count`）都会在「选中目标 / `run_utilize` 成功」时被清零，
+`I_UTILIZE_ADD` 一直在时不收敛。本补记固化：
+
+- **收敛保护独立于业务计数器**：`utilize_total_attempts`（每次进入 `run_utilize` 前 +1，只在新一次 `run()` 开头归零，
+  **找到卡 / `run_utilize` True / 重开好友列表 / 回育成页都不清零**）+ `time.monotonic()` 总耗时（首次进入 `check_utilize_add` 起算，
+  不重置）。业务计数器管「这次寄养做成没有」，收敛计数器管「这次任务总共试了几次」，不合并、不互相清零。
+- **阈值有依据，不是拍脑袋**：次数 = 每个寄养位最多 3 次（`_record_utilize_failure` 上限）× 2 个寄养位（页面 / 调度按单寄养位设计，
+  留一位余量）= 6；耗时 1800s ≥ 单寄养位最坏 1440s（3 次 × 4 轮 × `SEARCH_PASS_TIMEOUT` 120s）。**不新增 OASX 配置项**。
+- **触发后复用现有契约**：一次 `_schedule_retry`（5~30 分钟，静默窗口归一化）+ §4.78 读回确认；已确认 `raise TaskEnd`，未确认按失败；
+  不新增第二个调度出口、不双写 `next_run`、不新增异常捕获（`GameStuckError` 等照常上抛）。成功调度路径先于保护检查，
+  用满次数但按钮恰好消失的那一圈仍走成功调度。
+- **耗时是软边界**：只在控制权回到循环顶端时检查；底层调用（当时如 `switch_shikigami_class` 的无界 `while 1`，已由补记（四）收口）真阻塞时不生效，
+  那类问题要在阻塞点自己加超时（未做，见 ROADMAP）。
+- **`run_utilize` 返回 True 不等于寄养成功**（`set_shikigami` 成功是负向 marker）：未来若要提前在寄养页确认坑位已填 / 读到寄养时间
+  再返回 True，属另一项改造，不因本保护而取消。
+
+**补记（三）（2026-09-20，成功寄养后的独立随机延迟）**：D023 的成功调度原来是「OCR 剩余时间 → `min_run_interval` 地板 → 一次静默归一化 →
+写回」，下次运行恰好落在寄养到期那一刻。本补记在**不改变管线形状**的前提下加入一个可配置的成功专用延迟：
+
+- **位置与公式**：只在 `check_utilize_add` 的正常成功块（育成页 `I_UTILIZE_ADD` 消失 + OCR 剩余时间有效）里，把延迟加在候选值上：
+  `candidate = max(now + 剩余, now + min_run_interval) + success_jitter`，然后照旧交给 `_schedule_target`。延迟**必须在归一化之前**加：
+  落窗后归一化成 `07:00 + 静默抖动`，延迟被吸收，不允许再叠到恢复时间上（与本 ADR「normalize 之后不再叠加任何其它随机延迟」一致）；
+  被延迟推出窗外的候选保留原值、不再采样静默抖动。**不在 `_schedule_target` / `set_next_run` / 全局调度器里注入**。
+- **配置**：`scheduler.success_jitter_min/max`（分钟，默认 0~0，范围 0~720，`min <= max`，`min == max` 固定延迟）。0/0 直接返回零延迟、
+  **不采样**，结果与未加本字段时逐秒一致；每次成功调度至多采样一次、不缓存、走统一 `random_int`。三套区间（成功延迟 / 失败重试 `cooldown_*` /
+  静默恢复 `quiet_resume_jitter_*`）互相独立、互不叠加。
+- **适用边界**：只有 OCR 剩余时间**有效**的正常成功（含「进入时已在寄养」）才加。OCR 兜底 5 分钟、无卡 / 3 次失败 / 导航失败的短期重试、
+  6 次 / 1800 秒收敛保护、静默入口守卫、`utilize_enable=False`、`sync_next_run` 一律不加。不用 `TaskEnd` / `finish=True` / 调度器成功标志来判断
+  「是不是成功寄养」——OCR 兜底与已排好的重试同样会以 `TaskEnd` 正常结束。
+- **配置校验（取舍）**：OASX 单字段 PUT、`setattr` 不带校验会让任意值直接落盘，所以 `UtilizeScheduler` 开启 `validate_assignment`，成功延迟两端各做
+  交叉校验，宁可拒绝一次保存（旧值不变、失败字段保持 dirty、再保存一次即收敛）也不落盘 `min > max` 的中间态；**不自动交换或钳制**。副作用：
+  同组 `cooldown_*` / `quiet_resume_jitter_*` 的单字段修改也开始被校验（合法编辑不受影响）。
+- **不变**：静默恢复 5~30 分钟、失败重试 5~30 分钟、`success_interval` / `failure_interval`、收敛保护阈值、读回确认与 `TaskEnd` 契约、卡片筛选 / 搜索 / 点击。
+
+**补记（四）（2026-09-20，式神分类切换必须有界，失败沿既有软失败链收口）**：D023 补记（二）的总预算是软边界，`switch_shikigami_class` 的 `while 1`
+是它当时点名的失效点。本补记固化：
+
+- **本地边界**：点击次数 `SWITCH_CLASS_MAX_CLICKS = 4`（正常 2 步 + 整体重复一轮；小于 Device 单按钮 10 / 双按钮各 6 的点击兜底）、耗时
+  `SWITCH_CLASS_TIMEOUT = 30` 秒 `monotonic`（小于 Device 60 秒无点击判定）、最后一次点击后 `SWITCH_CLASS_SETTLE = 3` 秒确认宽限。次数与耗时都不因找到按钮 /
+  重新截图清零；耗时同样是软边界，不声称能中断永久阻塞的底层调用。
+- **任务预算穿透**：可选参数 `deadline`（绝对 `monotonic`）取与本地上限较早者；`run_utilize` 传 `_utilize_deadline()`，反复调用不会重新获得完整预算。
+  `check_max_lv` 不传（非寄养循环）。
+- **成功只认目标分类的「已选中」图标**（重新截图后的正向标志）；不新增图片资源、不改分类选择业务（当前是「全部」和目标以外的分类时仍无法主动展开，属现有判断能力
+  的边界）。
+- **失败复用既有异常与调度**：用尽抛 `GameStuckError`（与 `set_shikigami` 的 120 秒超时同一类型）。`run_utilize` 早已把它当软失败：不放置式神、不判成功，3 次后
+  由**唯一**的 `_schedule_retry` 写一次短期重试（读回确认 → `TaskEnd`）；函数内部**不**安排重试、不写 `next_run`，避免双写。不使用成功随机延迟。
+  没有被业务捕获的调用者（`check_max_lv`、`Exploration`）仍走 `_handle_task_exception`（重启路径，与此前 `GameTooManyClickError` 一致）。
+- **取舍**：`GameTooManyClickError` 不被 `run_utilize` 捕获，所以「本地上限先于 Device 点击兜底」是本设计的关键；但 `click_record` 在多次失败之间不清零（本轮不动
+  Device），历史点击仍可能让 Device 先触发——那种情况维持原来的重启路径。
+
 ## D024 后端 config bool 字段 = 前端自动出现的开关：OASX 是纯 schema-driven 表单，业务能力退休一律走「开关，不删代码」
 
 状态：Accepted

@@ -3198,6 +3198,150 @@ Login `_app_handle_login` 与 DailyTrifles `summon_recall` 属小号轮换业务
   后 `GET` 回显正确，`config/oas1.json` / `oas2.json` 全程哈希与 mtime 不变。未启动 MuMu / 游戏 / OCR，非
   Level C。
 
+### 4.78 KekkaiUtilize 短期重试正常结束：不再被通用调度器累计为失败
+
+2026-09-20。承接同日只读审查（成功后调度机制专项审查）发现的缺陷；规则见 `docs/DECISIONS.md` D023 补记。**未 commit / push**。
+
+- **根因**：`_finish_low_value_utilize` / `_record_utilize_failure`（3 次）/ 导航失败这三个「稍后重试」出口都已经用
+  `_schedule_retry` 写好 5~30 分钟后的 `next_run`，但 `run()` 里 `if not self.check_utilize_add(): return` 直接返回；
+  `Script.run` 把「正常返回」当失败（`script.py:528` `return False`），`Script.loop` 对同一任务连续 3 次失败会
+  `exit(1)`（`script.py:604-623`，失败计数按任务名、成功即清零、不受其它任务穿插影响）。而同样是业务重试的
+  「5 次尝试用尽」出口返回 True 后走到 `raise TaskEnd`（记为成功），两条出口结局不一致。好友列表长期没有达标卡时，
+  约 15~90 分钟内就能连续 3 次，终止该账号的调度线程。
+- **修复（只改 KekkaiUtilize 任务自身，不动全局失败判断 / 阈值）**：`_schedule_retry` 写入后用
+  `_is_next_run_persisted` 从 `self.config.kekkai_utilize.scheduler.next_run` 读回确认（`task_delay` 内部先 reload
+  再写，写入值已截断到秒，比较同口径；`set_next_run` 没有返回值，任务 / scheduler 缺失只 warning 静默返回，只能靠读回
+  发现），结果存进 `utilize_retry_scheduled`。`run()` 在 `check_utilize_add()` 返回 False 时：已确认 → `raise TaskEnd`
+  （调度器记为成功，`next_run` 保持刚写入的值，收尾流程不再改写）；未确认 → 仍直接 `return`（失败照常计数，不冒充
+  正常结束）。「5 次尝试用尽」出口改为 `return self.utilize_retry_scheduled`：已确认保持原语义（继续收尾业务后
+  `TaskEnd`），未确认按失败返回。写入本身抛异常仍照常上抛，系统异常（`GamePageUnknownError` / `GameStuckError`
+  等）没有被新增任何捕获，仍走 `Script._handle_task_exception` 的 Restart 路径。调度时间算法（成功 = OCR 剩余时间、
+  重试 = 5~30 分钟、静默归一化）一行未改，没有新增字段 / 延迟。
+- **出口矩阵**：无卡 / 3 次软失败 / 导航失败 → 重试 + `TaskEnd`；5 次用尽 → 重试 + 收尾 + `TaskEnd`；已在寄养 / 成功
+  寄养 / OCR 兜底 → 成功路径 + `TaskEnd`；静默守卫 → 重排 + `TaskEnd`；进结界 / 育成页导航异常、写入抛异常 → 异常上抛；
+  重试读回不一致 → 失败返回。
+- **测试**：新增 `tests/test_kekkai_utilize_retry_scheduler.py` 23 项——`run()` 出口矩阵 + **真实 `Script.run` /
+  `Script.loop` + 真实 `Config.task_delay` 落盘**（临时目录里的临时配置、冻结时钟、`exit(1)` 换成可观察替身）：连续 5 轮
+  无卡只重新调度（间隔恰 20 分钟、每轮落盘 next_run 合法且未被覆盖、失败计数恒 0、未触发退出、其它任务 Duel / AreaBoss
+  仍被正常选取执行）；重试读回不一致时失败照常累计并在第 3 次触发（被替身的）`exit(1)`；系统异常仍返回失败并 `task_call('Restart')`；
+  微秒时钟下读回一致；两个账号配置 / 失败计数互相独立。8 组变异（恢复原缺陷 / 读回恒真 / 恒假 / 5 次出口忽略读回 /
+  无条件 TaskEnd / 吞系统异常 / 多写一次 / 不截断微秒）全部被抓。修改既有 `tests/test_kekkai_utilize_state.py`：
+  `_sched_cfg` 的 scheduler 加 `next_run`，新增 `_persisting_set_next_run`，`RetrySingleOwnerTest` 改用它（原 Mock 不落值，
+  读回会判失败），删除 0。全量 1560 → **1583/1583 OK**。
+- **当时未修的独立待办**：若寄养点击后界面无变化、育成页 `I_UTILIZE_ADD` 一直在，`run_utilize` 每次选中都会把
+  `utilize_add_count` / `utilize_failed_count` 归零，`check_utilize_add` 没有硬性收敛（探针 200 次未退出）——**已在 §4.79 修复**。
+  `failure_interval` 死字段、OASX `success_interval` 文案仍不动。
+
+### 4.79 KekkaiUtilize 寄养循环收敛保护：单次任务的总尝试次数 + 总耗时硬边界
+
+2026-09-20。修 §4.78 记下的独立待办；规则见 `docs/DECISIONS.md` D023 补记（二）。**未 commit / push**。
+
+- **根因**：`I_UTILIZE_ADD` 是「育成页 → 寄养页」的唯一入口。`check_utilize_add` 的 `while 1` 只有三条出口：按钮消失 → 成功调度、
+  `utilize_terminal_failure`、`utilize_add_count >= 5`。但业务计数器会被清零：`utilize_add_count` 在每圈顶端 +1、
+  `run_utilize` 一选中目标就归零（所以 `>=5` 实际到不了）；`utilize_failed_count` 在 `run_utilize` 成功返回时归零（软失败到 3 次才终止，
+  成功一次就重来）。`run_utilize` 返回 True 只表示「选中卡 → 进好友结界 → 上式神流程走完」，`set_shikigami` 的成功是
+  `not appear(stop_image)` 的负向 marker，**不是寄养已生效**；权威确认只有下一圈的 `not appear(I_UTILIZE_ADD)` + OCR 剩余时间。
+  于是「按钮一直在 + 每次 `run_utilize` 都返回 True」时任务永不收敛（探针 200 次未退出），只能靠 Device 层
+  `GameTooManyClickError` 等外部保护——而 `_perform_search_swipe` 等会 `click_record_clear()`，外层没有可靠的设备级兜底。
+- **修复（只改 `tasks/KekkaiUtilize/script_task.py`，不新增配置项、不动 BaseTask、不动调度算法）**：
+  - **总尝试计数** `utilize_total_attempts`：`check_utilize_add` 每次进入 `run_utilize` 前 +1，**永不因找到卡 / `run_utilize` 成功 /
+    重开好友列表 / 回育成页而清零**，只在下一次独立的 `run()` 开头归零。上限 `UTILIZE_MAX_ATTEMPTS` = 6，即 3（每个寄养位的软失败上限，
+    对应 `_record_utilize_failure`）× 2（育成页 / 调度设计上只有一个寄养位，留一位余量）。边界测试证明「2 个寄养位 ×（2 次软失败 +
+    1 次成功）」恰好 6 次仍能正常完成，第 7 次才被拦。
+  - **总耗时** `utilize_started_at` / `UTILIZE_TOTAL_TIMEOUT = 30 * 60`：`time.monotonic()`，`check_utilize_add` 首次进入时记一次，之后
+    任何计数 / 选卡 / 重开列表都不重置。依据：一个寄养位最坏 3 次 ×（4 轮好友列表 × `SEARCH_PASS_TIMEOUT` 120s）= 1440s，取 1800s。这是
+    **软边界**：只在控制权回到 `check_utilize_add` 循环顶端时才检查，底层调用（当时如 `switch_shikigami_class` 的无界 `while 1`，已在 §4.81 修复）
+    真卡死时它不会生效。
+  - **触发时**（`_utilize_convergence_exhausted` → `_stop_utilize_for_convergence`）：中文 `logger.error` + `push_notify` 写明原因
+    （次数 / 耗时），复用 `_schedule_retry` 写**一次** 5~30 分钟重试（经静默窗口归一化），置 `utilize_terminal_failure`，返回 False；
+    `run()` 复用 §4.78 的读回确认：已确认 → `raise TaskEnd`（调度器记成功，`next_run` 不再被改写）；读回不一致 → 仍按失败返回。
+    没有新增任何 `try/except`，`GameStuckError` / `GamePageUnknownError` 等照常上抛。
+  - **检查位置**：放在「`I_UTILIZE_ADD` 消失 → 按 OCR 成功调度」**之后**、导航到寄养页**之前**：已用满次数但按钮恰好消失的那一圈仍走
+    正常成功调度；耗尽后不会再做任何多余的页面操作 / 收尾。
+- **业务计数与总计数的区别**：`utilize_add_count` / `utilize_failed_count` 是业务计数（衡量「这一次寄养有没有做成」，可以也应该在
+  推进时清零）；`utilize_total_attempts` 是收敛计数（衡量「这次任务总共折腾了几次」，不允许清零）。两者语义不同，不能合并。
+- **测试**：新增 `tests/test_kekkai_utilize_convergence.py` 17 项（真实 `check_utilize_add` / `run()` + 受控替身；调度层用真实
+  `Script.run` / `Script.loop` + 真实 `Config.task_delay` 落盘，临时配置、冻结时钟）：按钮恒在 + `run_utilize` 恒 True 且清零业务计数 →
+  恰 6 次即止（旧探针 200 次不退出）；正常单 / 双寄养位不受影响、6 次边界恰好通过；找到卡但上式神无效；重复重开好友列表；总耗时用
+  可控 `monotonic` 触发且选卡不重启计时；重试写入确认 / 未确认；系统异常不被吞（并断言新增 helper 里没有 `except`）；静默窗口归一化；
+  两账号计数与调度互相独立；真实 `Script.loop` 下保护触发后其它任务照常被调度、失败计数不累计。10 组变异（移除次数上限 /
+  找到卡时清零总计数 / 每圈重启计时 / 保护后继续寄养 / 重复写 `next_run` / 不看读回 / 上限缩成 3 误伤正常多位置 / 吞系统异常 / 耗时改用
+  `time.time` / 耗时检查失效）全部被抓，每项独立 120s 上限，源码逐字节还原。全量 1583 → **1600/1600 OK**。
+- **未修 / 待真机**：底层阻塞调用（软边界失效点；`switch_shikigami_class` 的无界 `while 1` 已在 §4.81 修复）；`run_utilize` True 仍是乐观成功；
+  真实游戏里寄养点击后按钮是否会持续存在、保护触发后是否按 5~30 分钟重排——Level C 待验。`failure_interval` 死字段、OASX
+  `success_interval` 文案本轮不动。
+
+### 4.80 KekkaiUtilize 成功寄养后的独立随机延迟（`success_jitter_min/max`）
+
+2026-09-20。规则见 `docs/DECISIONS.md` D023 补记（三）。**未 commit / push**。
+
+- **新增配置**：`UtilizeScheduler.success_jitter_min` / `success_jitter_max`（`tasks/KekkaiUtilize/config.py`），单位分钟，默认
+  **0~0**（不增加延迟），范围 0~720（`SUCCESS_JITTER_LIMIT_MINUTES`，12 小时，与 `UTILIZE_RES_TIME_MAX` 同量级），`min == max`
+  = 固定延迟。字段风格与同组的 `cooldown_min/max`、`quiet_resume_jitter_min/max` 一致；三套区间（成功延迟 / 失败重试 / 静默恢复）互相独立。
+  旧用户配置文件没有这两个键，由模型默认值补齐（加载不回写，不重算已有 `next_run`）。`config/template.json` 与
+  `assets/i18n/zh-CN.json`（追加式，「成功后最小/最大随机延迟」+ 说明）已同步；OASX 用后端 schema 自动生成，无前端改动。
+- **成功调度公式**（唯一实现点：`check_utilize_add` 的「育成页 `I_UTILIZE_ADD` 消失 → 读 OCR」块，`script_task.py`）：
+  `base = max(now + OCR 剩余, now + min_run_interval)` → `candidate = base + 一次成功延迟` → 既有 `_schedule_target`
+  （**一次**静默窗口归一化）→ `set_next_run`。「刚寄养成功」和「进入时已在寄养」共用这一块，所以同属正常成功路径。
+  只有 **OCR 剩余时间有效**（非零、≤12 小时）才加延迟；OCR 兜底 5 分钟（同一块里的另一个分支）、无卡 / 3 次失败 / 导航失败的短期重试、
+  6 次 / 1800 秒收敛保护、静默入口守卫、`utilize_enable=False`、OASX `sync_next_run` 都不使用它，不以 `TaskEnd` / 调度器成功标志判断。
+- **采样**：`_success_jitter_delta()`，走同一个 `random_int`（SystemRandom）；`max == 0` 直接返回零延迟、**不采样**（0/0 与改动前逐秒一致，
+  含微秒时钟下的截断）；每次成功调度至多一次，不缓存。**静默顺序**：延迟先加在候选值上、再一起归一化——落窗则 `07:00 + 静默抖动`
+  （延迟被吸收，不再叠加）；候选恰好被延迟推出窗外（如 06:50 + 20 分钟 = 07:10）则保留 07:10，不采样静默抖动。
+- **单字段保存**：OASX 草稿保存按「用户编辑顺序」逐字段 PUT，失败字段保持 dirty（`args_controller.dart:saveDraftChanges`）。
+  `UtilizeScheduler` 原本**没有 `validate_assignment`**（`setattr` 不校验，任何值都会落盘，包括 min > max），所以本轮给它加了
+  `ConfigDict(validate_assignment=True)`，并对成功延迟的两端各做一次交叉校验：违规的一端被拒绝、旧值不变、磁盘不写入中间态。
+  代价：**单次保存里先落到的一端若造成 min > max 会失败**（如 0/0 → 30/90 先保存 min），再点一次保存即可（第二轮 max 已到位）；
+  测试证明任何编辑顺序都在 ≤ 2 轮内收敛且每步落盘的都是合法区间。帮助文案提示「调高先改最大值」。
+  **副作用**：`validate_assignment` 是整个 `UtilizeScheduler` 级别，所以同组 `cooldown_*` / `quiet_resume_jitter_*` 的单字段修改现在也会被校验
+  （负数 / 越界 / `cooldown_max < cooldown_min` 被拒绝，此前会直接落盘并在运行时让 `random_int` 抛 `ValueError`）；合法编辑不受影响。
+  加载期 `ConfigBase.__init__` 对越界字段仍是既有的「回退默认值」策略，`min > max` 仍抛错。
+- **测试**：新增 `tests/test_kekkai_utilize_success_jitter.py` 45 项（公式 / 0-0 逐秒兼容网格 / 采样次数与边界 / 固定与独立采样 / 已在寄养 /
+  地板先于延迟 / 静默落窗与出窗 / 不重复叠加 / 各非成功路径不采样 / 配置默认值·校验·单字段保存·OASX 草稿保存收敛·旧文件兼容·GET 与翻译 /
+  真实 `Script.run` / `Script.loop` + 真实 `Config.task_delay`：两账号独立、恰写一次、`sync_next_run` 原样、其它任务照常调度）；18 组变异
+  （不应用 / 0-0 仍采样或加延迟 / 双采样 / 误用于重试或 OCR 兜底 / 先归一化后叠加 / 恢复后重复叠加 / 账号共享 / 不落盘 / 读回失效 /
+  校验失效（两端 + 赋值校验）/ 地板顺序 / 分钟换算 / 缓存随机值 / 取消上限）全部被抓，源码逐字节还原。改既有 `tests/test_kekkai_utilize_state.py`
+  的 `_sched_cfg` 替身（加两个字段）。全量 1600 → **1645/1645 OK**。
+- **未做 / 待真机**：真实寄养后的调度分布与 OASX 保存两轮的实际体验（Level C）；`switch_shikigami_class` 无界 `while 1`（已在 §4.81 修复）；
+  同组 `cooldown_*` / `quiet_*` 字段仍没有 zh-CN 翻译（显示原文）。
+
+### 4.81 式神分类切换有界化：`switch_shikigami_class` 不再是无界 `while 1`
+
+2026-09-20。规则见 `docs/DECISIONS.md` D023 补记（四）。**未 commit / push**。
+
+- **根因**：`ReplaceShikigami.switch_shikigami_class`（`tasks/Component/ReplaceShikigami/replace_shikigami.py`）是一个没有本地边界的 `while 1`，
+  唯一退出条件是目标分类的「已选中」图标 `I_RS_*_SELECTED`（左下角固定 ROI，正向标志，重新截图后判定）出现。流程本是两步点击：点当前分类图标
+  （`I_RS_ALL_SELECTED`，5 秒重点击间隔）展开分类 → 点目标分类（`I_RS_N` 等，3 秒间隔 + 位置稳定等待 ≤ 2.5 秒）。点击没生效 / 目标图标识别不到 /
+  当前分类既不是「全部」也不是目标（三个分支都不命中，只剩截图空转）时都没有出口。真机上它只被 Device 的兜底间接截断：无点击 60 秒
+  → `GameStuckError`；同一按钮 ≥ 10 次（或两个按钮各 ≥ 6 次）→ `GameTooManyClickError`。后者 **没有被 `run_utilize` 当业务失败处理**
+  （只捕获 `GamePageUnknownError` / `GameStuckError`），会升级成 `Script._handle_task_exception` 的重启游戏。
+- **调用者**：KekkaiUtilize 3 处（`run_utilize` 一处，`check_max_lv` 两处，后者只在 `auto_replace_max_level` 打开时执行）+ `Exploration/base.py:fill_shikigami`
+  一处（只传一个位置参数）。`set_shikigami` 自带 120 秒超时并抛 `GameStuckError`，与本函数是两个独立步骤。
+- **修复**：
+  - **点击次数** `SWITCH_CLASS_MAX_CLICKS = 4`：每次真正点击（当前分类图标或目标分类）后累计，不因找到按钮 / 重新截图清零。依据：正常只有 2 步，
+    允许整体再重复一轮（吸收一次丢失的点击）；且小于 Device 的两按钮各 6 次 / 单按钮 10 次，先触发的是业务失败而不是重启游戏。
+  - **耗时** `SWITCH_CLASS_TIMEOUT = 30` 秒（`time.monotonic()`）：4 次点击最坏约 20 秒，加最后确认；小于 Device 的 60 秒无点击判定。**软边界**——只在控制
+    权回到循环时检查，不能中断底层某次永久阻塞的调用。
+  - **任务截止时间**：新增可选参数 `deadline`（绝对 `monotonic` 时间），与本地 30 秒取较早者；`run_utilize` 传 `self._utilize_deadline()`
+    （= 本轮 `utilize_started_at + UTILIZE_TOTAL_TIMEOUT`），所以反复调用不会每次重新获得完整预算，预算用尽后再调用会在第一次点击前失败。`check_max_lv`
+    的两处不传（它不属于寄养循环），只受本地上限约束。
+  - **确认宽限** `SWITCH_CLASS_SETTLE = 3` 秒：点满次数后不再点击，再观察 3 秒（即目标按钮自身的重点击间隔）——最后一次点击「刚点中还没刷新」不会被误判失败。
+  - **成功判定不变**：只认重新截图后目标分类的「已选中」图标；已经在目标分类时第一帧就成功（即使截止时间已过）。**没有新增图片资源**，也没有扩展分支
+    （当前是「全部」和目标以外的分类时仍无法主动展开——现有判断能力的边界，交上限收口，不改业务）。
+  - **失败传播**：达到次数或耗时上限 → 中文 `logger.error` + 抛既有的 `GameStuckError`。`run_utilize` 早已把它当软失败捕获（`_record_utilize_failure`，不再放置式神、
+    不返回 True），累计到 3 次才由已有的 `_schedule_retry` 写一次 5~30 分钟重试（读回确认后 `TaskEnd`）；函数内部不安排重试、不写 `next_run`。
+    `check_max_lv` 与 `Exploration` 调用者不捕获它，走 `Script._handle_task_exception`（与此前的 `GameTooManyClickError` 同样是重启路径）。
+- **分类切换始终失败时**：单次调用最多点 4 次、约 20 秒内（先按次数收口；从不点击的情形 30 秒）；每轮任务最多调用 3 次（3 次软失败即终态），
+  合计分类切换 < 90 秒，且受 6 次总尝试 / 1800 秒总预算约束；**不会**放置式神、**不会**判为寄养成功；最终恰一次短期重试
+  （`now + 5~30 分钟`，静默窗口归一化，读回确认后正常结束），不使用成功随机延迟。
+- **测试**：新增 `tests/test_shikigami_class_switch_bound.py` 23 项（真实 `switch_shikigami_class` + 会随点击 / 假时钟变化的假界面；真实 `run_utilize` /
+  `check_utilize_add` / `run()`；真实 `Script.loop` + `Config.task_delay`）：已在目标 / 首次成功 / 多次成功 / 最后一次点击延迟刷新仍成功 / 图标始终在但无变化 /
+  目标始终识别不到 / 点击无效 / 单调时间超限 / 任务截止时间与重复调用 / 失败不放置式神 / 只安排一次重试 / 重试未确认不冒充正常结束 / 正常寄养与成功调度不变 /
+  Loop 下其它任务继续；假界面自带 400 帧硬上限。16 组变异（去次数上限 / 去耗时上限 / 忽略截止时间 / 用尽后当成功 / 点击即成功 / 找到按钮清零 / 去宽限 /
+  上限失效或放大 / 不传截止时间 / 每次重置预算 / 重复安排重试 / 吞异常继续放置 / 读回失效 / 失败当成功）全部被抓，源码逐字节还原。全量 1645 → **1668/1668 OK**。
+- **未做 / 待真机**：`unset_shikigami_max_lv` 同样是无界 `while 1`（只在 `auto_replace_max_level` 打开时执行，本轮范围外）；`click_record` 不会在 `run_utilize`
+  多次失败之间清零，历史点击可能让 Device 的 `GameTooManyClickError` 先于本地上限触发（不动 Device）；点击间隔、宽限与 30 秒上限的真机校准（Level C）。
+
 ### 4.82 L1 + L2 公共点击与反应策略集成进 master（Level A/B）
 
 2026-09-21。把 worktree `feature/l1-global-click-pipeline-v1`（L1 / L1.2）与 `feature/l2-interaction-reaction-layer`（含 L1 公共层选择性移植、

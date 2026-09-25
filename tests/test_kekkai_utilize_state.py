@@ -1408,6 +1408,7 @@ class PerformSearchSwipeK3Test(TestCase):
 
 def _sched_cfg(*, quiet_enable=True, quiet_start=dtime(0, 0, 0), quiet_end=dtime(7, 0, 0),
               jitter_min=5, jitter_max=30, cooldown_min=5, cooldown_max=30,
+              success_jitter_min=0, success_jitter_max=0,
               min_run_interval=timedelta(0), utilize_enable=True, lazy_mode=False,
               utilize_rule=None, **utilize_kwargs):
     """构造 `self.config.kekkai_utilize`：`scheduler` 只放 Scheduler v1 需要的字段；
@@ -1438,10 +1439,25 @@ def _sched_cfg(*, quiet_enable=True, quiet_start=dtime(0, 0, 0), quiet_end=dtime
                 quiet_resume_jitter_max=jitter_max,
                 cooldown_min=cooldown_min,
                 cooldown_max=cooldown_max,
+                success_jitter_min=success_jitter_min,
+                success_jitter_max=success_jitter_max,
+                next_run=None,
             ),
             utilize_config=SimpleNamespace(**uc_defaults),
         )
     )
+
+
+def _persisting_set_next_run(task):
+    """`set_next_run` 替身：像真实 `Config.task_delay` 一样把 target（截断到秒）写回 scheduler.next_run。
+
+    短期重试出口会把 next_run 读回确认才向调度器报告正常结束，纯 Mock 不落值会被判成「没写成功」。
+    """
+    def _write(**kwargs):
+        target = kwargs.get('target')
+        if target is not None:
+            task.config.kekkai_utilize.scheduler.next_run = target.replace(microsecond=0)
+    return Mock(name='set_next_run', side_effect=_write)
 
 
 def _patch_now(dt: datetime):
@@ -1661,7 +1677,7 @@ class RetrySingleOwnerTest(TestCase):
     def _task(self, **cfg_kwargs):
         t = KU.__new__(KU)
         t.config = _sched_cfg(**cfg_kwargs)
-        t.set_next_run = Mock(name='set_next_run')
+        t.set_next_run = _persisting_set_next_run(t)
         t.push_notify = Mock(name='push_notify')
         return t
 

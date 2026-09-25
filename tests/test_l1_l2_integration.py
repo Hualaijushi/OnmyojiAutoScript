@@ -26,6 +26,7 @@ from module.device.control import Control
 from module.exception import TaskEnd
 from module.interaction_policy import InteractionPolicy
 from tasks.base_task import BaseTask
+from tests.test_kekkai_utilize_retry_scheduler import SchedulerHarness, _StopLoop
 from tests.test_l2_policy_migration import INVENTORY
 
 _REPO = Path(__file__).resolve().parents[1]
@@ -342,3 +343,47 @@ class CallsiteRegisterGuardTest(TestCase):
         # C0 收口后：C1-A1 已迁走 4 点；Duel 2 + SixRealms 商店 4 归档为 DEFERRED（用户暂缓）；Buy 2 / DemonRetreat / Quiz /
         # SixRealms 3 点归档为 KEEP_*；只剩 GeneralInvite / GeneralBattle 需要真机依据的 7 点仍是 NEEDS_C（且 dev_status=DEFERRED）
         self.assertEqual(by_module, {'tasks/Component/GeneralBattle': 2, 'tasks/Component/GeneralInvite': 5})
+
+
+# ======================================================================================
+# 四、真实调度：reaction 的耗时不进入 next_run
+# ======================================================================================
+
+class ReactionDoesNotShiftScheduleTest(SchedulerHarness, TestCase):
+    """真实 `Script.run` / `Script.loop` + 真实 `Config.task_delay`：任务里跑一次带 policy 的真实点击，
+    `sleep` 会把冻结时钟推进 reaction 的时长；next_run 仍以任务开始时刻为基准，没有被 reaction 顺延。"""
+
+    REACTION = 0.5
+
+    def _make_ku(self, config, device):
+        t = super()._make_ku(config, device)
+        roi = (400, 300, 200, 90)
+        target = _Target(roi=roi)
+        t.appear = Mock(side_effect=lambda tgt, **kw: True)
+        t.device = SimpleNamespace(click=Mock(), image='F', get_image_batch_cache=Mock(return_value=None))
+        self.clicks = getattr(self, 'clicks', [])
+
+        def _run():
+            with patch('tasks.base_task.random_delay', return_value=self.REACTION), \
+                    patch('tasks.base_task.sleep', side_effect=lambda s: setattr(
+                        self.clock, 'now', self.clock.now + timedelta(seconds=s))):
+                BaseTask.appear_then_click(t, target, policy=InteractionPolicy.NORMAL)
+            self.clicks.append(self.clock.now)
+            BaseTask.set_next_run(t, task='KekkaiUtilize', success=True)      # finish=False：以任务开始时刻为基准
+            raise TaskEnd
+
+        t.run = _run
+        return t
+
+    def test_reaction_time_is_not_added_to_the_next_run_and_other_tasks_still_run(self):
+        self._write_config('simA', ku_options={'success_interval': '00 06:00:00'}, others={
+            'duel': self.START - timedelta(hours=1), 'area_boss': self.START + timedelta(hours=20)})
+        script = self._script('simA')
+        with self.assertRaises(_StopLoop):
+            script.loop()
+        self.assertEqual(self.ku_runs[:3], [self.START + timedelta(hours=6 * i) for i in range(3)])   # 6 小时一轮，未被 0.5s reaction 顺延
+        self.assertTrue(all(c == r + timedelta(seconds=self.REACTION) for c, r in zip(self.clicks, self.ku_runs)))
+        self.exit_mock.assert_not_called()
+        self.assertEqual(script.failure_record.get('KekkaiUtilize', 0), 0)
+        ran = [c for c, _ in self.other_runs]
+        self.assertTrue({'Duel', 'AreaBoss'} <= set(ran), ran)

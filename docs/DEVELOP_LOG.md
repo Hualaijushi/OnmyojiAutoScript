@@ -9373,6 +9373,86 @@ EternitySea/FallenSun/Sougenbi 真实驱动 `run_alone`/`run` 断言 `confirm_de
 200、默认 400/800，真实 `PUT` 改值后 `GET` 回显正确；`oas1.json`/`oas2.json` 哈希 mtime 全程不变。compileall
 通过；`git diff --check` 干净。未启动 MuMu / 游戏 / OCR，非 Level C；未合并 L2 worktree 的其余内容未带入。
 
+## 2026-09-20 - KekkaiUtilize 短期重试正常结束：不再被通用调度器累计为失败
+
+承接同日只读审查。`_finish_low_value_utilize` / `_record_utilize_failure`（3 次）/ 导航失败这三个「稍后重试」出口已写好
+5~30 分钟后的 `next_run`，`run()` 却直接 `return`；`Script.run` 把它记为失败，同任务连续 3 次 `Script.loop` `exit(1)`
+终止调度线程；「5 次尝试用尽」出口是 `TaskEnd`，结局不一致。未 commit / push。
+
+### 修复
+
+- `tasks/KekkaiUtilize/script_task.py`：`_schedule_retry` 写入后 `_is_next_run_persisted` 从配置读回确认（截断到秒），存入
+  `utilize_retry_scheduled`；`run()` 在 `check_utilize_add()` 返回 False 时，已确认 → `raise TaskEnd`，未确认 → 仍 `return`；
+  5 次出口改为 `return self.utilize_retry_scheduled`。系统异常路径 / 全局 3 次失败阈值 / 调度时间算法 / 配置字段均未改；顺手更新两处
+  过期注释（「10 分钟」「20 分钟」→ 5~30 分钟随机 cooldown）。
+
+### 验证
+
+新增 `tests/test_kekkai_utilize_retry_scheduler.py` 23 项：`run()` 出口矩阵（无卡 / 3 次软失败 / 导航失败 / 5 次用尽 / 静默归一化 /
+OCR 兜底 / 成功寄养 / 静默守卫 / 系统异常 / 读回不一致 / 写入抛异常 / 微秒时钟）+ 真实 `Script.run` / `Script.loop` +
+真实 `Config.task_delay` 落盘（临时配置、冻结时钟、`exit(1)` 替身）：连续 5 轮无卡间隔恰 20 分钟、失败计数恒 0、未触发退出、
+Duel / AreaBoss 仍被调度；读回不一致时失败累计到第 3 次触发替身 `exit`；两账号独立。8 组变异全部被抓。改既有
+`tests/test_kekkai_utilize_state.py` 的替身（`next_run` 字段 + `_persisting_set_next_run`）。全量 1560 → **1583/1583 OK**；
+compileall 通过；`git diff --check` 干净；`config/oas1.json` / `oas2.json` 哈希不变。探针确认一个独立的既有问题（未修）：
+`I_UTILIZE_ADD` 一直在时 `check_utilize_add` 不收敛，记入 ROADMAP。未启动 MuMu / 游戏 / OCR，非 Level C。
+
+## 2026-09-20 - KekkaiUtilize 寄养循环收敛保护：单次任务总尝试次数 + 总耗时硬边界
+
+承接 §4.78 记下的独立待办：`I_UTILIZE_ADD` 一直在时，`run_utilize` 选中目标即清 `utilize_add_count`、成功返回即清
+`utilize_failed_count`，`check_utilize_add` 永不收敛（探针 200 次未退出）。未 commit / push。
+
+### 修复
+
+- `tasks/KekkaiUtilize/script_task.py`：新增 `utilize_total_attempts`（进入 `run_utilize` 前 +1，只在新 `run()` 开头归零，
+  上限 `UTILIZE_MAX_ATTEMPTS = 3 × 2 = 6`）与 `utilize_started_at`（`time.monotonic()`，首次进入 `check_utilize_add` 记录，
+  `UTILIZE_TOTAL_TIMEOUT = 1800s`）；`_utilize_convergence_exhausted` 判定 + `_stop_utilize_for_convergence` 收尾（中文 error 日志 +
+  `push_notify` + 一次 `_schedule_retry` + `utilize_terminal_failure`）。检查位置在「按钮消失 → 成功调度」之后、导航之前。
+  `run()` 沿用 §4.78 读回确认 → `TaskEnd`。无新增配置项 / BaseTask 方法 / 异常捕获；调度时间算法未改。
+
+### 验证
+
+新增 `tests/test_kekkai_utilize_convergence.py` 17 项（含真实 `Script.loop` + 真实 `Config.task_delay` 落盘）；把
+`tests/test_kekkai_utilize_retry_scheduler.py` 的调度层驱动抽成 `SchedulerHarness`（原 23 项不变）。10 组变异全部被抓，源码逐字节
+还原。全量 1583 → **1600/1600 OK**；compileall 通过；`git diff --check` 干净；`config/oas1.json` / `oas2.json` 哈希不变。
+未启动 MuMu / 游戏 / OCR，非 Level C。遗留：`switch_shikigami_class` 无界 `while 1`（总耗时为软边界）；真机验证待做。
+
+## 2026-09-20 - KekkaiUtilize 成功寄养后独立随机延迟（`success_jitter_min/max`）
+
+产品要求：结界蹭卡成功后，下次运行时间可在寄养到期时刻之上额外随机延迟；默认 0~0 分钟，用户可在 OASX 修改，每账号独立。未 commit / push。
+
+### 实现
+
+- `tasks/KekkaiUtilize/config.py`：`UtilizeScheduler` 新增 `success_jitter_min/max`（分钟，默认 0，范围 0~`SUCCESS_JITTER_LIMIT_MINUTES` = 720，两端互相校验），
+  并开启 `ConfigDict(validate_assignment=True)`（此前 OASX 单字段保存不校验，任何值直接落盘）。
+- `tasks/KekkaiUtilize/script_task.py`：`_success_jitter_delta()`（`max == 0` 不采样；否则 `random_int(min*60, max*60)` 一次）；
+  `check_utilize_add` 成功块记录 OCR 是否有效，仅有效时把延迟加到「地板之后」的候选值上，再照旧 `_schedule_target`（一次静默归一化）。
+  OCR 兜底 / 重试 / 收敛保护 / 入口守卫 / `utilize_enable=False` 路径未改。
+- `config/template.json`、`assets/i18n/zh-CN.json`（追加式）同步；`tests/test_kekkai_utilize_state.py` 的 `_sched_cfg` 替身加两个字段。
+
+### 验证
+
+新增 `tests/test_kekkai_utilize_success_jitter.py` 45 项（公式 / 0-0 网格兼容 / 采样 / 路径隔离 / 静默边界 / 配置校验与落盘 / OASX 草稿保存收敛 /
+旧文件兼容 / GET 与翻译 / 真实 `Script.loop` 调度）。18 组变异全抓、源码逐字节还原。全量 1600 → **1645/1645 OK**；compileall 通过；
+`git diff --check` 干净；`config/oas1.json` / `oas2.json` 哈希与修改时间不变。未启动 MuMu / 游戏 / OCR，非 Level C。
+
+## 2026-09-20 - 式神分类切换有界化（`switch_shikigami_class`）
+
+承接 KekkaiUtilize 收敛保护的遗留风险：`ReplaceShikigami.switch_shikigami_class` 是无本地边界的 `while 1`，只被 Device 的 60 秒无点击 / 点击次数兜底间接截断，
+后者的 `GameTooManyClickError` 不被 `run_utilize` 当业务失败处理，会升级成重启游戏。未 commit / push。
+
+### 修复
+
+- `tasks/Component/ReplaceShikigami/replace_shikigami.py`：`switch_shikigami_class` 增加点击次数上限（4）、`monotonic` 耗时上限（30 秒）、可选 `deadline`
+  参数（与本地上限取较早者）、最后一次点击的 3 秒确认宽限；成功仍只认目标分类的「已选中」图标；用尽记中文错误日志并抛 `GameStuckError`。
+- `tasks/KekkaiUtilize/script_task.py`：新增 `_utilize_deadline()`（`utilize_started_at + UTILIZE_TOTAL_TIMEOUT`），`run_utilize` 把它传给分类切换；失败沿既有
+  `except (GamePageUnknownError, GameStuckError)` → `_record_utilize_failure` 软失败链，内部不安排重试。更新一处过期注释。
+- 未改：分类选择业务 / 图片资源 / `set_shikigami` / `unset_shikigami_max_lv` / Device / 调度算法 / 成功随机延迟 / 收敛保护阈值。
+
+### 验证
+
+新增 `tests/test_shikigami_class_switch_bound.py` 23 项（真实循环 + 假界面 / 假时钟；真实 `run_utilize` / `run()`；真实 `Script.loop`）。16 组变异全抓、源码逐字节还原。
+全量 1645 → **1668/1668 OK**；compileall 通过；`git diff --check` 干净；`config/oas1.json` / `oas2.json` 哈希与修改时间不变。未启动 MuMu / 游戏 / OCR，非 Level C。
+
 ## 2026-09-21 - L1 + L2 公共点击与反应策略集成进 master（Level A/B）
 
 选择性移植 L1（`feature/l1-global-click-pipeline-v1`）与 L2（`feature/l2-interaction-reaction-layer`，含 L1 公共层选择性移植 / L2-1 / L2-2 / L2-3B Batch A）到 master 工作区。未 commit / push、未整分支合并、未整目录覆盖。

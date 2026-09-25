@@ -1,7 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from enum import Enum
 from datetime import datetime, time, timedelta
 
@@ -21,7 +21,14 @@ class UtilizeRule(str, Enum):
 
 
 
+SUCCESS_JITTER_LIMIT_MINUTES = 12 * 60
+
+
 class UtilizeScheduler(Scheduler):
+    # OASX 单字段修改走 `setattr`，没有 `validate_assignment` 时任何值都会直接落盘（包括负数、
+    # min > max），成功延迟的区间校验必须在赋值时生效（同 `FireReactionConfig` 的做法）。
+    model_config = ConfigDict(validate_assignment=True)
+
     priority: int = Field(default=2, description='priority_help')
     success_interval: TimeDelta = Field(default=TimeDelta(hours=6), description='success_interval_help')
     failure_interval: TimeDelta = Field(default=TimeDelta(hours=6), description='failure_interval_help')
@@ -39,6 +46,16 @@ class UtilizeScheduler(Scheduler):
     # 统一走它（见 `docs/DECISIONS.md` 对应 ADR），取代此前各出口各自硬编码的 5/10/20 分钟。
     cooldown_min: int = Field(default=5, ge=0, description='cooldown_min_help')
     cooldown_max: int = Field(default=30, ge=0, description='cooldown_max_help')
+
+    # 成功寄养后的独立随机延迟（分钟）：只作用于「读到有效寄养剩余时间」的正常成功调度，
+    # 在预计寄养结束时间上额外增加一次随机延迟；OCR 兜底 / 短期重试 / 静默守卫等出口都不使用。
+    # 与 `cooldown_*`（失败重试）、`quiet_resume_jitter_*`（静默恢复）是三套互不相干的区间。
+    # 默认 0~0 = 不增加延迟，调度结果与未加本字段时逐秒一致。上限 12 小时（与
+    # `UTILIZE_RES_TIME_MAX` 同量级），避免误填过大的值把下一次蹭卡推到一两天之后。
+    success_jitter_min: int = Field(default=0, ge=0, le=SUCCESS_JITTER_LIMIT_MINUTES,
+                                    description='success_jitter_min_help')
+    success_jitter_max: int = Field(default=0, ge=0, le=SUCCESS_JITTER_LIMIT_MINUTES,
+                                    description='success_jitter_max_help')
 
     # 跨字段边界校验用 `field_validator`（沿用 `tasks/Dokan/config.py` 等既有 `ConfigBase`
     # 子类的写法），不用 `model_validator`——`ConfigBase.__init__` 的异常恢复只按
@@ -58,6 +75,26 @@ class UtilizeScheduler(Scheduler):
         jitter_min = info.data.get('quiet_resume_jitter_min')
         if jitter_min is not None and v < jitter_min:
             raise ValueError('quiet_resume_jitter_max 不能小于 quiet_resume_jitter_min')
+        return v
+
+    # 成功延迟的两端互相校验：OASX 每次只 PUT 一个字段（走 `setattr`），任何一端单独改成
+    # 违反 min <= max 的值都必须在这一步被拒绝、旧值保持不变，不能先落盘一个 min > max 的中间状态
+    # （运行时 `random_int(min, max)` 会因此抛 ValueError）。所以两端各校验一次；构造时
+    # `success_jitter_min` 先于 max 校验，此时读不到 max，由 max 的校验兜底。
+    @field_validator('success_jitter_min', mode='after')
+    @classmethod
+    def validate_success_jitter_min(cls, v, info):
+        jitter_max = info.data.get('success_jitter_max')
+        if jitter_max is not None and v > jitter_max:
+            raise ValueError('success_jitter_min 不能大于 success_jitter_max')
+        return v
+
+    @field_validator('success_jitter_max', mode='after')
+    @classmethod
+    def validate_success_jitter_max(cls, v, info):
+        jitter_min = info.data.get('success_jitter_min')
+        if jitter_min is not None and v < jitter_min:
+            raise ValueError('success_jitter_max 不能小于 success_jitter_min')
         return v
 
 class UtilizeConfig(BaseModel):

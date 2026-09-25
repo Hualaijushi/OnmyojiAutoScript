@@ -301,7 +301,9 @@
       "failure_interval": "00 06:00:00",
       "server_update": "09:00:00",
       "delay_date": 1,
-      "float_time": "00:00:00"
+      "float_time": "00:00:00",
+      "success_jitter_min": 0,
+      "success_jitter_max": 0
     },
     "utilize_config": {
       "utilize_rule": "default",
