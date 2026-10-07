@@ -142,24 +142,31 @@ class C0RegistryTest(TestCase):
         self.assertEqual(sum(d.values()), self.summary['total'])
         # 1092 + 2026-09-23 爬塔线专用结算单击改造新增 4 个调用点（+1 KEEP_IMMEDIATE 的
         # execute_single_click、+3 KEEP_SPECIAL 的 appear_then_click，均是 base_act.py /
-        # general_battle.py 既有同类点位的逐字复制，分类保持一致）
-        self.assertEqual(self.summary['total'], 1096)
+        # general_battle.py 既有同类点位的逐字复制，分类保持一致）；
+        # 2026-10-06 SwitchSoul V1（数字模式）：队伍点击改成带 NORMAL 的事务（原循环内 R8 点位 → ALREADY_L2 / R2，
+        # KEEP_IMMEDIATE -1）、确认框首次点击新增一处带 CONFIRM 的 `appear_then_click`（ALREADY_L2 +1，原有的
+        # 3 秒恢复重试 `click` 保留，仍是 R6）、分组两次补点拆成两条独立语句（`click` +1，R6，KEEP_IMMEDIATE +1）。
+        # 净变化：总数 1096 → 1098、ALREADY_L2 37 → 39、KEEP_IMMEDIATE 631 不变、NEEDS_C 仍是 7；
+        # 新点位全部是规则分类（basis rule 897 → 899），没有改函数名绕分类规则
+        self.assertEqual(self.summary['total'], 1098)
         self.assertEqual({k: d[k] for k in ('MIGRATE', 'ALREADY_L2', 'KEEP_IMMEDIATE', 'KEEP_SPECIAL', 'NEEDS_C', 'DEFERRED', 'PRIMITIVE', 'EXCLUDED')},
-                         {'MIGRATE': 7, 'ALREADY_L2': 37, 'KEEP_IMMEDIATE': 631, 'KEEP_SPECIAL': 235, 'NEEDS_C': 7,
+                         {'MIGRATE': 7, 'ALREADY_L2': 39, 'KEEP_IMMEDIATE': 631, 'KEEP_SPECIAL': 235, 'NEEDS_C': 7,
                           'DEFERRED': 6, 'PRIMITIVE': 35, 'EXCLUDED': 138})
 
     def test_basis_counts_are_reconciled_and_c0_reviewed_is_a_separate_dimension(self):
         basis = self.summary['by_basis']
-        self.assertEqual(sum(basis.values()), 1096)
+        self.assertEqual(sum(basis.values()), 1098)
         # basis = 决定来源（互斥）：GeneralInvite / GeneralBattle 的 7 点沿用 L2-2 人工结论，所以 c0 basis = 4 + 6 + 3 + 4 = 17，
         # human 182（179 + 本轮新增 3 处 appear_then_click 人工登记行）；rule 897（+1，新增
-        # execute_single_click 走规则分类）；c0_reviewed = 24 是另一个维度（不与 basis 相加）
-        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (182, 17, 897))
+        # execute_single_click 走规则分类；→ 899：SwitchSoul V1 净增 2 个规则分类点）；
+        # c0_reviewed = 24 是另一个维度（不与 basis 相加）
+        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (182, 17, 899))
         self.assertEqual(self.summary['c0_reviewed'], 24)
         self.assertEqual(sum(1 for s in self.c0 if s['basis'] == 'human'), 7)
 
     def test_only_the_four_completed_points_gained_a_policy_in_c1(self):
-        self.assertEqual(self.summary['policy_sites'], 36)
+        # 36 = 32 + C1 的 4 处；SwitchSoul V1 另外新增 2 处（不是 C0 复核点位，所以下面 `c0_with_policy` 仍恰好是 DONE）
+        self.assertEqual(self.summary['policy_sites'], 38)
         self.assertEqual(self.summary['c1_done'], 4)
         c0_with_policy = {_key(s) for s in self.c0 if s['policy']}
         self.assertEqual(c0_with_policy, set(DONE))

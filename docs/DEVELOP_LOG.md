@@ -9801,3 +9801,52 @@ Settlement Micro-Burst 的 anchor 跨调用复用模型在"弹窗刚消失、真
   固定输出的 `# 描述 ` 行尾空格，HEAD 中同类行已有 88 / 66 行，经用户确认保持原样）；密钥扫描 0 命中；
   `config/oas*.json`、`log/` 未纳入。推送前 `git fetch origin` 确认 `origin/master` 仍为 `a5e2d7e6`，普通 push，无 force。
 - 未做：不改任何业务逻辑；Level C 真机验证（L1/L2、FIRE、Settlement、ActivityShikigami、KekkaiUtilize、GlobalGame）仍按 ROADMAP 待验。
+
+## 2026-10-06 - SwitchSoul V1：数字模式时序 / 点击节奏（分组补点区间等待、队伍三轮空转改单次事务、确认框 CONFIRM）
+
+### 背景
+- 前两轮只读审查（实现审查 + 原始流程特征审查）+ 2026-10-06 oas1 / oas2 真机日志 8 次数字切换已确认：分组 `click → sleep(0.5) → click → sleep(0.5)`（两次点击完成间隔 610–650 ms，几乎无抖动）；队伍 `for range(3)` + `sleep(0.8)`，第 3 轮被 `interval=3` 挡住，**8/8 次都打假的「Click team N failed」**；固定 sleep 3.9 秒占一次切换 6.34–7.15 秒的 55%–61%；同一预设重复切换时队伍箭头仍被点中但不弹确认框（2 个样本）。
+- 用户决定第一轮只做**数字模式时序 / 点击节奏**：保留分组两次点击（只改时序）、清理队伍三轮空转、关键点击加 reaction + fresh confirm；不碰滑动调度、不碰 by-name、不加最终成功判定、不改调用方。
+
+### 实现（只改 `tasks/Component/SwitchSoul/switch_soul.py`）
+- `switch_soul_one` 后半段拆成 4 个 helper：`_click_group_twice`（两次 `click`，间隔 `GROUP_CLICK_GAP=(0.4,0.8)`、第二击后 `GROUP_SETTLE=(0.3,0.6)`，两段语义不同、范围分开，随机源是公共 `random_delay`）、`_click_target_team`（`TEAM_FIND_TIMEOUT=3.0` 窗口内「截图 → `appear_then_click(target_team, policy=NORMAL)`」，恰好点一次，reaction 期间目标消失不点旧坐标）、`_observe_confirm_dialog`（`TEAM_RESPONSE_TIMEOUT=2.0` 窗口轮询，不出现 = 正常结束，包含已装备同一预设）、`_confirm_team_switch`（首次 `appear_then_click(SURE, interval=3, policy=CONFIRM)`；确认框仍在则沿用原 `click(SURE, 3)` 的 3 秒重试，`I_CHECK_BLOCK` 与末尾 `ui_click_until_disappear` 兜底保留）。
+- 假 warning 删除；真正没点出去才打 `Team N not found in group N`。
+- **顺手发现并修复**：`self.appear_then_click(self.I_CHECK_BLOCK, 3)` 的 `3` 落在了 `action` 形参上，`I_CHECK_BLOCK` 一出现就 `AttributeError`（自 `e4e6be23` 起保护形同虚设）；改成 `interval=3`，补 AST 守卫。全仓同形态只有这一处。
+- 没动：L1 全部、滑顶 swipe / `sleep(0.5)` / OCR 判停、by-name、全部调用方、其它组件、`dev_tools` 生成器。
+
+### 测试与验证
+- 新增 `tests/test_switch_soul_numeric_v1.py` 33 项（真实 `SwitchSoul` + 真实 `appear_then_click` / `click`，帧序列 + 虚拟时钟驱动：分组两击与区间 delay、新预设、已装备、队伍 / 确认框在 reaction 期间消失零点击、确认框卡顿 3 秒重试、`I_CHECK_BLOCK`、AST 钉住滑顶 / by-name / 兜底 / 无裸 `device.click` / `policy=` 恰好两处）。**变异验证 22 组全部被抓**；变异脚本每组前后校验源文件 hash、后台运行不设外部强杀，还原后基线 OK、hash 一致。
+- 测试第一次跑就暴露了上面的 `I_CHECK_BLOCK` 位置参数缺陷（我写的 `I_CHECK_BLOCK` 用例直接抛 `AttributeError`）。另有一处测试自己的错：直接驱动 `_observe_confirm_dialog` 的帧序列少了「观察帧」前的当前帧，确认框在 fresh 帧上「消失」导致 0 点击，修的是测试帧序列。
+- L2 登记册重新生成：1094 → 1096、ALREADY_L2 37 → 39（队伍 NORMAL、确认首击 CONFIRM，规则 R2）、KEEP_IMMEDIATE 628 不变（队伍 -1、分组第二击 +1）、NEEDS_C 仍 7、policy 点位 36 → 38、basis rule 895 → 897；没有改函数名绕规则。同步 `tests/test_l2_c0_registry.py`（总数 / decision / basis / policy 点位）、`tests/test_l1_l2_integration.py`（policy 点位 36 → 38；policy 声明守卫新增 `POST_C1_CONSUMERS` 逐点登记 + `test_post_c1_consumers_match_the_source_exactly`）、`tests/test_l2_interaction_reaction.py`（policy consumer 文件表加 SwitchSoul），并在注释里写明原因。
+- 全量 `unittest discover -s tests` **2160 → 2194**（+34）；`compileall -q tasks tests dev_tools` OK；`git diff --check` 只有 `tasks/FrogBoss/assets.py:42` 的生成器行尾空格（已有记录），本轮文件范围内干净；两个 CRLF 工作区测试文件在 `git diff` 里有 CRLF→LF 规范化提示，不是空白错误。
+- 过程中把测试注释里的日期误写成 2026-10-07（当天是 2026-10-06），已在收尾前改正。
+
+### 未做 / 待真机
+- **全部是 Level A/B（离线帧序列 + 真实 primitive），没有真机通过**：分组补点间隔不再固定、两次落点不同、新预设弹确认框并确认、已装备预设无确认框正常结束、不再出现常驻 `Click team failed`、确认框卡顿重试仍有效，见 ROADMAP「SwitchSoul V1 Level C」。
+- 风险（详见 AI_CONTEXT §4.99）：缩短后的 settle 在新旧分组的列表上无法区分「是哪个分组的队伍箭头」；观察窗口 2.0 秒来自 6/6 的日志证据；「已装备不弹确认框」只有 2 个样本；`I_CHECK_BLOCK` 保护修复后首次真实走到该路径需真机观察。
+- 本轮没动：数字模式滑顶 interval 与循环冲突（V2）、OCR by-name、`-1,-1` 配置 `exit(1)`、AbyssShadows 异常转换、Dokan OCR 分支、约 24 个重复调用块（见 ROADMAP「SwitchSoul 后续」）。未 commit / push。
+
+## 2026-10-06 - SwitchSoul V2：数字模式「分组列表滑到顶」调度（每滑一次重新观察，数字调用点不再传 interval）
+
+### 背景
+- V1 已 Level C 真机通过（用户 2026-10-06 验收数字预设切换）。上一轮只读设计审查把旧调度解释成「基本只盲滑 1 次」，并建议 `MAX_GROUP_TOP_SWIPES=5`。用户记得「原来的预设流程有时会连续上滑好几次」，要求**先核实历史，再决定实现与上限，不要先锁死 5**。
+
+### 历史核实
+- **Git**：滑顶自 `5b032282`（2023-08-06）起是 `while 1`：OCR → `swipe(…, 6)` → OCR → 相同则停；6 秒 interval 使它长期只能真滑 1 次。`4d74f701`（2024-07-22，提交信息「修复切换御魂时 只会滑动一次的BUG, 现在可以正确的滑动到最顶部」）改成 `swipe(…, 0.5)` + `sleep(0.5)`，**从此真正能连续多滑**；`e4e6be23`（2025-03-19，提交信息把 interval 写成「持续时间 0.5→1.5」）又让周期 < interval，第二滑被静默吞掉。**原设计就是「滑到稳定为止」**；Git 无法证明 1.5 的作者动机。资产 ROI 自 `b0c9b0df` 起没变。
+- **真机 BehaviorTrace**（`log/behavior/*.jsonl`，37 个文件，仅 4 个含 `ss_group_swipe_up`）：数字模式 12 次切换，11 次真滑 1 次（10 次门会拦第二滑，无法区分「在顶」与「被吞」；1 次门可放行仍只滑 1 次 → 确在顶），**1 次真滑 2 次**（oas1 18:25:09）；by-name 1 / 2 / 2 滑；`ss_group_swipe_up` 手指位移 114~176 px、均值 147 px。
+- **更正上一轮结论**：「10 次数字切换每次都只有一条 swipe」是错的——**文本日志会合并连续相同的行**，18:25:09 的两条 `[0.27s] SwipeTrajectory 10 pts @ ss_group_swipe_up` 被折叠成一行；我当时还把那次的 3.1 秒间隔解释成「OCR 慢到 2.4 秒」，实际是真的又滑了一次。滑动次数以 BehaviorTrace 为准。
+
+### 实现（只改 `tasks/Component/SwitchSoul/switch_soul.py`）
+- `switch_soul_one` 的滑顶段换成 `self._swipe_group_list_to_top()`；新增私有 `_group_list_text()`（新截图 + 原样 `str([ocr_text…])`）与 `_swipe_group_list_to_top()`（观察 → 循环 {上限检查 → `self.swipe(S_SS_GROUP_SWIPE_UP)`（**无 interval**）→ `sleep(random_delay(*GROUP_TOP_SETTLE))` → 新截图 + OCR → 与滑之前相同即停，否则继续}；达到上限 warning + 返回 False，业务照常继续）。新增常量 `GROUP_TOP_SETTLE=(0.4, 0.7)`、`MAX_GROUP_TOP_SWIPES=4`。日志：每轮 DEBUG、终局 INFO「Group list stabilized after N swipe(s), changed=[…]」、上限 WARNING。
+- **`MAX_GROUP_TOP_SWIPES=4` 的依据**：分组总数与单次滑动的 UI 滚动量仓库里都得不到，所以**不由列表容量推出**；下限是真机最大需要次数 2、历史上无上限的循环、用户记忆里的「好几次」，4 次手指位移约 590 px ≈ 一屏；上限是 Device「最近 15 条记录里同名 ≥10 次」守卫——连续两次切换（EternitySea 两队 / Orochi 按层）之间只隔 3 次点击，**4 是前后切换都滑满也到不了 10 的最大值（5 会）**，用真实 `Device.click_record_check` 做成测试钉住。
+- **没动**：L1 / `RuleSwipe` / `swipe_endpoint` / `TouchSwipeModel` / minitouch / `BaseTask.swipe`；V1 全部；by-name 全部；FrameWait 不引入（顶部不会动，FrameWait 会白等 timeout）；OCR 判停仍是一次相同即停（`QuickLoadout._rewind_list` 要求连续两次且空文本不算稳定，本轮按用户决定不照搬）。
+
+### 测试与验证
+- 新增 `tests/test_switch_soul_group_top_v2.py` 30 项（真实 `SwitchSoul` / `BaseTask.swipe` / `RuleSwipe.sample_endpoints` / `TouchSwipeModel`，只替换截图 / OCR / 最底层 `device.swipe_trajectory`，虚拟时钟 + 虚拟 `Timer`）。V1 测试里 4 个因钉着旧滑顶形态或受额外 delay 事件影响而改写断言，V1 行为断言不变。**变异验证 20 组全部被抓**，缓存 endpoints / trajectory 两组另用只跑 V2 模块的聚焦变异确认是被运行期用例抓住（不是靠别处报错）；脚本每组前后校验 hash、后台运行、不设外部强杀，还原后基线 OK。
+- L2 登记册重新生成：**调用点数量无变化**（1096 / ALREADY_L2 39 / KEEP_IMMEDIATE 628 / policy 38），唯一变化是 `switch_soul_one#1` 的「已有等待」`sleep` → `-`（函数内的 `sleep(0.5)` 搬进了没有点击点的 helper）。
+- `compileall -q tasks tests dev_tools` OK；全量 `unittest discover -s tests` **2194 → 2224**（+30）；`git diff --check` 本轮文件范围内干净。
+- 文档：AI_CONTEXT §4.100 + §7 基线 + §8 ③ 改成「多数情况下只执行 1 次真实 swipe，取决于 OCR + 循环耗时是否超过 1.5 秒，行为具有时序偶然性」；V1 状态改为 Level C PASS。
+
+### 未做 / 待真机
+- **V2 是 Level A/B，不是真机通过**：列表已在顶 1 次探测、不在顶 2 / 3 次且第二滑不再被吞、独立手势、是否出现 `not stable after 4 swipes`、`changed` 序列抖动、V1 不受影响，见 ROADMAP「SwitchSoul V2 数字模式滑顶调度 Level C 验收」。
+- 风险：真实总组数和 UI 滚动量未知，MAX=4 对「列表远离顶部」的覆盖是估算；「假相同」（滑动没生效 / 延迟生效）仍会误判到顶；一次相同即停没有「空文本不算稳定」保护。未 commit / push。

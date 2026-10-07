@@ -296,16 +296,32 @@ class CallsiteRegisterGuardTest(TestCase):
         self.assertEqual(text[text.index(start):text.index(end)], expected[expected.index(start):expected.index(end)],
                          '登记册汇总与源码扫描不一致：运行 `toolkit\\python.exe -m dev_tools.click_callsite_register --write` 重新生成')
 
+    # 2026-10-06 SwitchSoul V1：既不在 L2-2 人工审计清单、也不是 C0 复核的 24 点，是 C1 之后新增的显式 L2 consumer。
+    # 沿用 `C1_MIGRATED` 的做法**逐点登记**（文件 / 函数 / 目标 / policy 全部对得上），所以别的文件新增 policy 仍会被拦住。
+    POST_C1_CONSUMERS = {
+        ('tasks/Component/SwitchSoul/switch_soul.py', '_click_target_team', 'target_team', 'InteractionPolicy.NORMAL'),
+        ('tasks/Component/SwitchSoul/switch_soul.py', '_confirm_team_switch', 'self.I_SOU_SWITCH_SURE',
+         'InteractionPolicy.CONFIRM'),
+    }
+
     def test_reaction_declarations_only_in_human_audited_files(self):
         for site in self.sites:
             if site['policy'] or site['confirm_delay']:
                 with self.subTest(site=f'{site["file"]}::{site["qual"]}#{site["ordinal"]}'):
-                    if site['basis'] == 'c0':
+                    if (site['file'], site['func'], site['target'], site['policy']) in self.POST_C1_CONSUMERS:
+                        self.assertEqual((site['basis'], site['decision']), ('rule', 'ALREADY_L2'))
+                    elif site['basis'] == 'c0':
                         # C0 复核后迁移的点位：必须在 `C1_MIGRATED` 里逐点登记（文件 / 函数 / 目标 / policy 全部对得上）
                         self.assertIn((site['file'], site['func'], site['target'], site['policy']), reg.C1_MIGRATED)
                     else:
                         self.assertIn(site['file'], reg.AUDITED_FILES)
                         self.assertEqual(site['basis'], 'human')
+
+    def test_post_c1_consumers_match_the_source_exactly(self):
+        # 登记项必须真的在源码里、源码里规则分类的 policy 点位也不能多出登记之外的：陈旧登记 / 悄悄新增都会失败
+        declared = {(s['file'], s['func'], s['target'], s['policy']) for s in self.sites
+                    if s['policy'] and s['basis'] == 'rule'}
+        self.assertEqual(declared, self.POST_C1_CONSUMERS)
 
     def test_no_site_declares_both_policy_and_confirm_delay(self):
         # `check_lock` 把两个形参原样透传给 appear_then_click（运行时同时非 None 会被 resolve_reaction_range 拒绝），
@@ -332,7 +348,8 @@ class CallsiteRegisterGuardTest(TestCase):
         # 仍直接 device.click / 后端直调的调用点 = primitive + 已知例外（`test_l1_click_pipeline` 的白名单逐条给出理由）
         raw_files = {s['file'] for s in self.sites if s['kind'] in ('raw_device_click', 'raw_backend')}
         self.assertNotIn('tasks/Hyakkiyakou/slave/hya_device.py', raw_files)    # 百鬼夜行已经走 click_with_backend
-        self.assertEqual(summary['policy_sites'], 36)                                   # 32 + C1-A1 的 4 处
+        # 32 + C1-A1 的 4 处 + 2026-10-06 SwitchSoul V1 的 2 处（数字模式队伍 NORMAL、确认框首次点击 CONFIRM）
+        self.assertEqual(summary['policy_sites'], 38)
         self.assertEqual(summary['confirm_delay_sites'], 3)                       # GeneralBattle.check_lock 透传 ×2 + RealmRaid 再次挑战确认 ×1
 
     def test_needs_c_sites_are_pinned_so_new_candidates_need_a_conscious_decision(self):

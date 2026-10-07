@@ -488,6 +488,8 @@ class TimingOwnershipTest(TestCase):
             'tasks/Dokan/page.py': 1,
             'tasks/Pets/script_task.py': 1,
             'tasks/SixRealms/common.py': 2,
+            # SwitchSoul V1（数字模式）：队伍首次点击 NORMAL、确认框首次点击 CONFIRM；恢复重试仍是立即点击
+            'tasks/Component/SwitchSoul/switch_soul.py': 2,
         }
         actual = {}
         for path in (_REPO / 'tasks').rglob('*.py'):

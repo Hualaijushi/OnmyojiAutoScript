@@ -5,9 +5,13 @@ from time import sleep
 from typing import Union
 
 from module.atom.click import RuleClick
+from module.atom.image import RuleImage
 from module.atom.long_click import RuleLongClick
 from module.atom.ocr import RuleOcr
+from module.base.timer import Timer
+from module.base.utils.random import random_delay
 from module.click_pipeline import FinalPoint, execute_single_click
+from module.interaction_policy import InteractionPolicy
 from tasks.base_task import BaseTask
 from tasks.Component.SwitchSoul.assets import SwitchSoulAssets
 from module.logger import logger
@@ -21,6 +25,20 @@ def switch_parser(switch_str: str) -> tuple:
 
 
 class SwitchSoul(BaseTask, SwitchSoulAssets):
+    # 数字模式分组：两次补点之间的间隔、第二次点击后给队伍列表刷新的 settle（秒）。
+    # 两段语义不同，范围也分开写；每次运行各自独立采样（`random_delay` 复用项目统一随机源）。
+    GROUP_CLICK_GAP = (0.4, 0.8)
+    GROUP_SETTLE = (0.3, 0.6)
+    # 数字模式队伍：识别 target_team 的有界窗口、点击后观察确认框的有界窗口（秒）。
+    # 实测确认框在队伍点击后 1 秒内出现；已经装备同一预设时不会弹确认框，窗口到期就是正常结束。
+    TEAM_FIND_TIMEOUT = 3.0
+    TEAM_RESPONSE_TIMEOUT = 2.0
+    # 数字模式滑顶：每次真实 swipe 之后的 settle（秒）、一次切换里真实 swipe 的上限。
+    # 上限是故障安全帽，不是正常节奏目标：Device 对「同名 control 在最近 15 条记录里 ≥10 次」抛
+    # GameTooManyClickError，且连续两次切换（EternitySea 两队 / Orochi 按层）之间只隔 3~4 次点击，
+    # 4 是即使前一次也滑满上限、也不会让同名计数到 10 的最大值；达到上限只 warning 并继续，不升级成重启游戏。
+    GROUP_TOP_SETTLE = (0.4, 0.7)
+    MAX_GROUP_TOP_SWIPES = 4
 
     def run_switch_soul(self, target: tuple | list[tuple] | str):
         """
@@ -87,19 +105,7 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
             return match[team]
 
         # 滑动至分组最上层(分組過多, 导致第一个分组显示不全)
-        cur_text = ""
-        while 1:
-            self.screenshot()
-            compare1 = self.O_SS_GROUP_NAME.detect_and_ocr(self.device.image)
-            ocr_text = str([result.ocr_text for result in compare1])
-            # 相等时 滑动到最上层
-            if cur_text == ocr_text:
-                break
-            cur_text = ocr_text
-            # 向上滑动
-            self.swipe(self.S_SS_GROUP_SWIPE_UP, 1.5)
-            # 等待滑动动画
-            sleep(0.5)
+        self._swipe_group_list_to_top()
 
         if group < 1 or group > 7:
             raise ValueError('Switch soul_one group must be in [1-7]')
@@ -107,35 +113,108 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
             raise ValueError('Switch soul_one team must be in [1-4]')
         # 这一步是选择组
         target_click, target_check = get_group_assets(group)
-        # while 1:
-        #     self.screenshot()
-        #     if self.click(target_click, interval=1):
-        #         continue
-        #     if self.appear(target_check):
-        #         break
-        # 2023.8.5 修改为无反馈的点击切换
-        for i in range(2):
-            self.click(target_click)
-            sleep(0.5)
-        # 点击队伍
+        self._click_group_twice(target_click)
+        # 点击队伍：单次正式点击事务 + 有界观察确认框
         target_team = get_team_asset(team)
-        for i in range(3):
-            sleep(0.8)
-            self.screenshot()
-            if self.appear(self.I_SOU_SWITCH_SURE):
-                while 1:
-                    self.click(self.I_SOU_SWITCH_SURE, 3)
-                    self.screenshot()
-                    if self.appear_then_click(self.I_CHECK_BLOCK, 3):
-                        continue
-                    if not self.appear(self.I_SOU_SWITCH_SURE):
-                        break
-                continue
-            if not self.appear_then_click(target_team, interval=3):
-                logger.warning(f'Click team {team} failed in group {group}')
+        if self._click_target_team(target_team):
+            self._observe_confirm_dialog()
+        else:
+            logger.warning(f'Team {team} not found in group {group}, skip clicking')
         # 兜底若还出现确认按钮则点击
         self.ui_click_until_disappear(self.I_SOU_SWITCH_SURE)
         logger.info(f'Switch soul_one group {group} team {team}')
+
+    def _group_list_text(self) -> str:
+        """截一张新图并读分组列表文字；文本格式沿用原滑顶的 `str(list)`，只做精确相等比较。"""
+        self.screenshot()
+        results = self.O_SS_GROUP_NAME.detect_and_ocr(self.device.image)
+        return str([result.ocr_text for result in results])
+
+    def _swipe_group_list_to_top(self) -> bool:
+        """数字模式：观察 → 滑一次 → settle → 再观察，列表文字不再变化才算到顶。
+
+        每一滑都是一次独立的 `RuleSwipe` 手势（端点与轨迹每次重新采样），滑完先 settle、截新图、OCR，
+        再由观察结果决定要不要发起下一滑；不预授权多滑。第一轮无条件探测滑一次——「滑之前和滑之后
+        文字相同」才说明这一滑没有让列表移动。节奏归本循环所有，所以这里不传 `interval`：原来的
+        `interval=1.5` 比一轮约 1 秒的循环还长，第二滑会被静默吞掉（见 e4e6be23），是否放行还取决于 OCR 快慢。
+
+        返回 True = 列表已稳定；达到 `MAX_GROUP_TOP_SWIPES` 仍在变化返回 False，业务照常继续（不新增失败契约）。
+        """
+        previous = self._group_list_text()
+        changes = []
+        while 1:
+            if len(changes) >= self.MAX_GROUP_TOP_SWIPES:
+                logger.warning(f'Group list not stable after {len(changes)} swipes, continue anyway')
+                return False
+            self.swipe(self.S_SS_GROUP_SWIPE_UP)
+            sleep(random_delay(*self.GROUP_TOP_SETTLE))
+            current = self._group_list_text()
+            changed = current != previous
+            changes.append(changed)
+            logger.debug(f'Group top swipe {len(changes)}/{self.MAX_GROUP_TOP_SWIPES}, changed={changed}')
+            if not changed:
+                logger.info(f'Group list stabilized after {len(changes)} swipe(s), changed={changes}')
+                return True
+            previous = current
+
+    def _click_group_twice(self, target_click: RuleClick) -> None:
+        """分组两次补点。
+
+        分组切换没有可靠的成功标志（历史上的验证循环已换成无反馈点击），所以两次点击保留，
+        本方法只管两次点击的时序：两次之间、第二次之后各有一段区间随机等待，语义不同、范围分开。
+        每次 `click` 都重新采样落点（L1），这里不缓存坐标。
+        """
+        self.click(target_click)
+        sleep(random_delay(*self.GROUP_CLICK_GAP))
+        self.click(target_click)
+        sleep(random_delay(*self.GROUP_SETTLE))
+
+    def _click_target_team(self, target_team: RuleImage) -> bool:
+        """队伍首次点击事务：识别 → NORMAL reaction → fresh confirm → 单次 L1 点击。
+
+        返回 True 表示点击已经发出（恰好一次，不再补点）。reaction 后目标消失只是本次不点，
+        在 `TEAM_FIND_TIMEOUT` 内重新识别；永远不复用 reaction 之前的旧坐标。窗口内始终没有点出去返回 False。
+        """
+        timer = Timer(self.TEAM_FIND_TIMEOUT).start()
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(target_team, policy=InteractionPolicy.NORMAL):
+                return True
+            if timer.reached():
+                return False
+
+    def _observe_confirm_dialog(self) -> bool:
+        """队伍点击后在有界窗口内观察确认框，出现就走确认事务。
+
+        没出现不是失败：已经装备同一预设时游戏不会弹确认框，窗口到期按当前业务语义正常结束。
+        截图自带 0.3 秒最小间隔，轮询不会空转。返回确认框是否出现过。
+        """
+        timer = Timer(self.TEAM_RESPONSE_TIMEOUT).start()
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_SOU_SWITCH_SURE):
+                self._confirm_team_switch()
+                return True
+            if timer.reached():
+                logger.info('No confirm dialog after team click, preset may already be equipped')
+                return False
+
+    def _confirm_team_switch(self) -> None:
+        """确认框事务：首次确认走 CONFIRM reaction + fresh confirm；确认框仍在则沿用原有的 3 秒间隔重试。
+
+        多开模拟器卡顿时确认框可能点不掉（4d74f701），所以后续恢复重试不叠加 reaction，保持原 interval=3。
+        `I_CHECK_BLOCK` 是误触到式神检查的保护（e4e6be23），同样留在恢复循环里。
+        注意 `appear_then_click` 的第二个位置参数是 `action`，间隔必须写成 `interval=`；
+        原来写成位置参数 `3` 会在 `I_CHECK_BLOCK` 真正出现时把 `3` 当成点击动作而抛 AttributeError。
+        """
+        self.appear_then_click(self.I_SOU_SWITCH_SURE, interval=3, policy=InteractionPolicy.CONFIRM)
+        while 1:
+            self.screenshot()
+            if self.appear_then_click(self.I_CHECK_BLOCK, interval=3):
+                continue
+            if not self.appear(self.I_SOU_SWITCH_SURE):
+                break
+            self.click(self.I_SOU_SWITCH_SURE, 3)
 
     def switch_souls(self, target: tuple or list[tuple]) -> None:
         """

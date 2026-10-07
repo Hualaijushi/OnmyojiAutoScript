@@ -251,6 +251,27 @@ FIRE 分节与 L2-1 的「FIRE owner 自己拥有 reaction」**不变**，本补
   EternitySea / FallenSun 的 `run_invite` 也改为传本任务 `fire_reaction`（不再用公共默认）。
 - 其余旧式入口按 L2-3A 批次（B / C / D / E / F）逐批收口，不做全仓通用 FSM；GeneralBattle「准备」（Batch C）先设计再实现。
 
+**补记（2026-10-06，SwitchSoul V1：C1 之后第一个显式 L2 consumer，数字模式时序 / 点击节奏）**：
+
+- **决定**：SwitchSoul 数字模式「分组两次点击之后」的固定节奏改造——**保留分组两次点击**（御魂预设切换没有可靠的成功标志，无反馈重复点击是原有容错，只改时序）；两次之间 `GROUP_CLICK_GAP=(0.4, 0.8)`、第二次之后 `GROUP_SETTLE=(0.3, 0.6)` 区间等待（语义不同、范围分开，随机源只用公共 `random_delay`）；队伍从 `for range(3)` + `sleep(0.8)` 改成「识别 → NORMAL reaction → fresh confirm → 恰好一次 L1 点击」+ 有界观察确认框（`TEAM_RESPONSE_TIMEOUT=2.0`）；确认框首击 CONFIRM；**确认框没出现不是失败**（已装备同一预设时游戏不弹确认框，真机日志 2 个样本），正常结束。
+- **不变的边界**：L1（`ClickSampler` / `FinalPoint` / `execute_single_click` / minitouch / `TouchSwipeModel`）零改动；确认框卡顿的 3 秒重试**不叠 reaction**（`4d74f701`：多开模拟器卡顿时确认框曾点不掉导致卡死）；`I_CHECK_BLOCK` 保护保留；滑动调度、OCR by-name、`-1,-1` 异常处理、调用方均不在 V1 范围。
+- **policy 选择**：队伍 NORMAL、确认 CONFIRM。DELIBERATE 的注释写了「阵容 / 预设」但本调用点前面已有 `GROUP_SETTLE`，叠加会让两击之间变成 1.2~2.2 秒；NORMAL_HIGH 的语义是「高频重复、每轮可能多次」，不符合「恰好一次」。没有新增 policy。
+- **`policy=` 白名单（守卫的一处扩展）**：`tests/test_l1_l2_integration.py::test_reaction_declarations_only_in_human_audited_files` 原来只允许人工审计文件 + `C1_MIGRATED`。SwitchSoul 既不在 L2-2 审计清单、也不是 C0 的 24 点，沿用 `C1_MIGRATED`「逐点登记」的做法新增 `POST_C1_CONSUMERS`（文件 / 函数 / 目标 / policy 全部对得上）并加相等性测试——别的文件新增 policy 仍会被拦住，陈旧登记也会失败。**后续任何 C1 之后的新 consumer 都按这个办法逐点登记，不放宽守卫**；这与 §4.98 FrogBoss「守卫只允许人工审计文件所以自己写事务」的选择并不矛盾——FrogBoss 的事务自己持有 reaction，SwitchSoul 是普通点击加 policy。
+- **登记册**：1094 → 1096、ALREADY_L2 37 → 39、KEEP_IMMEDIATE 628 不变、NEEDS_C 仍 7、policy 点位 36 → 38；新点位是规则分类的自然结果（R2 / R6 / R8），没有改函数名绕规则，也没有改生成器。
+- **顺带的原有缺陷**：`appear_then_click(self.I_CHECK_BLOCK, 3)` 把间隔写成位置参数落在 `action` 上，`I_CHECK_BLOCK` 一出现就 `AttributeError`；`appear_then_click` 的第二个位置参数是 `action`，间隔必须写 `interval=`（AST 守卫已加）。
+- **Level C 前不得标 VERIFIED**：全部 reaction 区间与窗口都是 PROVISIONAL，沿用 D001 的约定。
+
+**补记（2026-10-06，SwitchSoul V2：数字模式「分组列表滑到顶」的调度归业务循环所有）**：
+
+- **决定（节奏 owner）**：`RuleSwipe` 只负责一次手势，**SwitchSoul 的业务循环负责什么时候允许下一次手势**——观察 → 滑一次 → settle → 新截图 + OCR → 与滑之前相同即停，否则再滑一次（每一滑重新 `sample_endpoints` + 新 `TouchSwipeModel` 轨迹，不缓存、不预授权多滑）。数字滑顶这个调用点**不再传 `interval`**：`BaseTask.swipe` 的 `interval` 被拦截时返回 False、无日志、不更新计时器，而循环周期（约 0.9~1.9 秒）与它（1.5 秒）没有结构上的大小关系，是否放行取决于 OCR 快慢，是时序偶然性。节奏改由「滑 + settle + 截图 + OCR」的结构保证（相邻两滑周期不可能小于约 1.1 秒）。与 `list_find` / Exploration / KekkaiUtilize K3 同一个分工（`swipe_trajectory` 的文档本来就写明「滑完等什么、失败怎么办由业务层负责」）。**by-name 的 `interval=2` 与 2.5 / 2 / 1.5 秒 sleep 不在本决定内，保持原样。**
+- **历史依据**：原设计就是「滑到稳定为止」的 `while 1`（`5b032282`）；6 秒 interval 让它长期只能真滑 1 次，`4d74f701`（提交信息「现在可以正确的滑动到最顶部」）改 0.5 才真正多滑，`e4e6be23` 改 1.5 又吞掉第二滑。Git 无法证明 1.5 的作者动机，提交信息把 interval 当成了「持续时间」。
+- **settle**：`GROUP_TOP_SETTLE=(0.4, 0.7)`，公共 `random_delay`，不叠固定 sleep；**不引入 FrameWait**——顶部本来就不会动，`wait_for_changed_and_stable` 在最常见的「已在顶」路径上只能等满 timeout，比旧的 0.5 秒还慢；V3 再看 `changed=False` 能否直接当「已在顶」。
+- **停止判据**：沿用「OCR 文本一次相同即停」（原样 `str(list)` 精确相等，不重写 OCR）。理由：两种误判代价不对称——假「变化」只多滑一次、自愈且有界；假「相同」只在滑动没生效 / 延迟生效时出现，旧版同样存在；连续两次相同会让最常见的顶部路径多一个 settle + OCR（约 +1 秒）。`QuickLoadout._rewind_list`（连续两次、空文本不算稳定、上限 10）是同类先例，Level C 的 `changed` 序列有抖动证据再评估。
+- **`MAX_GROUP_TOP_SWIPES=4` 与改它的规矩**：上限是**故障安全帽**，不是由分组总数推出来的（总组数和 UI 滚动量仓库里得不到）。依据 = 真机观察到的最大需要次数 2 + 历史上无上限 + 4 次手指位移约一屏；上界 = Device 对「最近 15 条记录里同名 control ≥10 次」的 `GameTooManyClickError`，连续两次切换之间只隔 3 次点击，**4 是前后切换都滑满也到不了 10 的最大值（5 会）**，`DeviceGuardDerivationTest` 用真实 `Device.click_record_check` 钉住。**以后要改大它，必须先用组数 / 滚动量数据重新论证并同步这条推导，不能凭感觉。** 达到上限只 warning 并继续，**不新增失败契约**（不 `exit(1)` / `TaskEnd` / 重启游戏；是否应该因「滑不到顶」中止任务留给后续事务化）。
+- **证据规矩**：判断「一次切换里真实滑了几次」**只看 BehaviorTrace**（`log/behavior/*.jsonl`，不去重），不看文本日志——文本日志会合并连续相同的行（上一轮「每次只有一条 swipe」的结论因此是错的）。
+- **登记册**：swipe 不是点击调用点，调用点数量无变化；唯一变化是 `switch_soul_one#1` 的「已有等待」`sleep` → `-`。**Level C 前不得标 VERIFIED**（`GROUP_TOP_SETTLE` / `MAX_GROUP_TOP_SWIPES` 全 PROVISIONAL）。
+- **Level C**：2026-10-07 用户确认数字模式滑顶真机运行无问题（PASS）；参数仍按 D001 约定视为 PROVISIONAL，`Group list not stable after 4 swipes` 与 `changed` 序列抖动作为继续观察项。
+
 ---
 
 ## D002 稳定性基础层不因行为随机化而修改
