@@ -12,6 +12,12 @@ import tasks.SixRealms.page as pages
 
 
 class SixRealmsCommon(GameUi, SixRealmsAssets):
+    # 点击商品只是「尝试购买」。真机上购买确认弹窗在点击后约 0.47~0.86s 出现；点击落空时弹窗根本不会出现
+    BUY_CONFIRM_TIMEOUT = 2.5
+    # 点掉确认后等金币 HUD 刷新；HUD 数字在界面动画期间会滞后一帧以上
+    BUY_COIN_TIMEOUT = 2.0
+    # 连续未验证成功的尝试上限。失败不再消耗购买配额，所以点击一直失效时靠它收口，而不是无界重试
+    BUY_MAX_FAILED_ATTEMPTS = 3
 
     def get_skill_select(self, skill_rule_list: List[RuleImage]) -> RuleImage:
         """
@@ -131,11 +137,12 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
         :param fresh_rule: 刷新图标
         :param refresh_times_rule: 刷新次数文本
         :param buy_num: 最大购买次数
-        :return: (剩余金币数量, 购买次数)
+        :return: (剩余金币数量, 已验证成功的购买次数)；点击但没买成的尝试不计入
         """
         coin_num = coin_num_rule.ocr(self.device.image)
         buy_interval_timer = Timer(1.5)  # 控制购买间隔
         buy_cnt = 0
+        failed_cnt = 0
         while True:
             self.screenshot()
             if self.appear_then_click(self.I_UI_CONFIRM, interval=0.7):
@@ -158,8 +165,16 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
                 x, y = skill_rule.front_center()
                 height = skill_rule.roi_front[3]
                 buy_region = ClickRegion((x - 60, y + (-height) // 2, 26, height + 1), f'{skill_rule.name}_buy_left')
+                logger.info(f'Try to buy {skill_rule.name}, coin before: {coin_num}')
                 execute_single_click(self.device, buy_region, control_name=skill_rule.name)
-                buy_cnt += 1
+                if self._confirm_skill_purchase(coin_num_rule, coin_num):
+                    buy_cnt += 1
+                    failed_cnt = 0
+                else:
+                    failed_cnt += 1
+                    if failed_cnt >= self.BUY_MAX_FAILED_ATTEMPTS:
+                        logger.warning(f'Purchase of {skill_rule.name} not verified {failed_cnt} times in a row, stop')
+                        break
                 continue
             if coin_num < skill_price + 100:
                 logger.info('Not enough coin to refresh and buy')
@@ -168,6 +183,36 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
                 break
         logger.info(f'Finish purchase {skill_rule.name} times: {buy_cnt}')
         return coin_num, buy_cnt
+
+    def _confirm_skill_purchase(self, coin_num_rule: RuleOcr, coin_before: int) -> bool:
+        """
+        点击商品后的购买事务：购买确认弹窗出现并被点掉，且金币确实下降，才算买成。
+        两段等待都有上限，超时按「未买成」返回，不抛异常、不等全局卡死检测兜底。
+        :param coin_num_rule: 金币数量文本
+        :param coin_before: 点击商品那一帧的金币。HUD 滞后只会让它偏高；只有弹窗已出现并被点掉才会比较金币，
+            所以偏高最多让真实购买更容易被验证，不会让真实购买漏判
+        :return: 验证买成True, 否则False
+        """
+        confirm_timer = Timer(self.BUY_CONFIRM_TIMEOUT).start()
+        while True:
+            self.screenshot()
+            # interval 与 buy_skill 循环头的确认弹窗点击一致，点掉后不会在下一帧被重复点击
+            if self.appear_then_click(self.I_UI_CONFIRM, interval=0.7):
+                logger.info('Purchase confirm appeared')
+                break
+            if confirm_timer.reached():
+                logger.warning(f'Purchase confirm not appeared in {self.BUY_CONFIRM_TIMEOUT}s, keep buy_cnt unchanged')
+                return False
+        coin_timer = Timer(self.BUY_COIN_TIMEOUT).start()
+        while True:
+            self.screenshot()
+            coin_after = coin_num_rule.ocr(self.device.image)
+            if coin_after < coin_before:
+                logger.info(f'Purchase verified, coin {coin_before} -> {coin_after}')
+                return True
+            if coin_timer.reached():
+                logger.warning(f'Purchase not verified, coin {coin_before} -> {coin_after}, keep buy_cnt unchanged')
+                return False
 
     def get_remain_turns(self, remain_rule: RuleOcr) -> int:
         """

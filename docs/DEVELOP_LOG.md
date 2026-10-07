@@ -9850,3 +9850,40 @@ Settlement Micro-Burst 的 anchor 跨调用复用模型在"弹窗刚消失、真
 ### 未做 / 待真机
 - **V2 是 Level A/B，不是真机通过**：列表已在顶 1 次探测、不在顶 2 / 3 次且第二滑不再被吞、独立手势、是否出现 `not stable after 4 swipes`、`changed` 序列抖动、V1 不受影响，见 ROADMAP「SwitchSoul V2 数字模式滑顶调度 Level C 验收」。
 - 风险：真实总组数和 UI 滚动量未知，MAX=4 对「列表远离顶部」的覆盖是估算；「假相同」（滑动没生效 / 延迟生效）仍会误判到顶；一次相同即停没有「空文本不算稳定」保护。未 commit / push。
+
+## 2026-10-07 - SixRealms 购买确认 P0：`buy_skill` 买成功才计数（孔雀国六道轰雷「点了没买成却记成已获得」）
+
+### 背景
+- 2026-10-06 的只读专项排查（今日 oas1 日志 + BehaviorTrace + 当前源码 + git 历史）确认：oas1 孔雀国第 6 轮（13:09:21 起）13:11:54 商店第 3 行识别到 `PK_PK_STORE_SKILL_THUNDER` 并点击，之后 1.38 秒内购买确认弹窗没有出现（BehaviorTrace 下一个动作是 2.05 秒后的 `PK_PK_STORE_EXIT`）、金币仍 500；旧 `buy_skill` 点击当刻 `buy_cnt += 1`，孔雀国 `buy_num=1`，下一轮 `Buy done` 退出，`run_on_pk_store` 把 `skill_roaring_thunder` 置 1，13:12:09 / 13:12:35 两次进店都 `Skill level is enough, skip shopping`，期间还花了 2 次唤息，13:12:40 用户手动 stop。
+- 用户本轮只要求修这一个 P0：`buy_skill` 不能点击即计数；不改路线 / 价格 / 刷新动画 / OCR / 其它 SixRealms 策略。
+
+### 根因与历史
+- 不是识别失败，也不是 L1/L2 回归：`buy_cnt += 1` 紧跟点击这一语义自上游 `4ce4de4f`（2026-05-17，AzurTian）起就存在，`76d88056`（2026-08-27，唤息 / 召唤）只让这个状态更「值钱」，`68a89f4d`（2026-09-25，L1/L2）改的是刷新点击（CONFIRM）与购买点击的落点采样（支撑集与旧 `randint` 一致），判定逻辑没动。保留日志（09-30 起）与 BehaviorTrace（09-04 起）里孔雀国商店在 2026-10-06 之前从未被执行，所以无法做 L2 前后对照。
+- 同日月之海 oas2 13:07:45 有一次同样的「点击、没弹窗、1.6 秒后循环重试买成」，旧代码把 2 次真实购买记成 `times: 3`（`Skill 101 level: 6`）。公共函数的返回值长期是「点击次数」，月之海 `buy_num=99` 靠金币闸门自愈，孔雀国 `buy_num=1` 一次落空就固化。
+- 落空时机：两次落空点击都发生在刷新确认后约 0.36 秒（孔雀国 0.355 秒、月之海 0.364 秒），刷新后成功的样本间隔更长（孔雀国 13:07:22 为 0.47 秒；月之海 13:07:47 的重试为 1.99 秒）。样本很少，「点击落在重新发牌动画期间」是最可能的解释但**未证实**，属 P1，本轮没改。
+
+### 改动（只动 `tasks/SixRealms/common.py`）
+- 新增常量 `BUY_CONFIRM_TIMEOUT=2.5` / `BUY_COIN_TIMEOUT=2.0` / `BUY_MAX_FAILED_ATTEMPTS=3`（依据：真机弹窗 0.47~0.86 秒的 10 个样本；失败上限防止「失败不耗配额」后点击持续失效变成无界重试；全部是工程基线，不是真机标定）。
+- 新增私有事务 `_confirm_skill_purchase(coin_num_rule, coin_before)`：① 弹窗 `appear_then_click(I_UI_CONFIRM, interval=0.7)` 在窗口内出现并点掉；② 之后窗口内金币 OCR 严格小于 `coin_before`；两者满足返回 True，否则返回 False，两段都有 `Timer` 上限、每轮重新截图、不抛异常。
+- `buy_skill`：点击后调用事务，成功才 `buy_cnt += 1` 并清零 `failed_cnt`；失败 `failed_cnt += 1`，达到上限 `warning` + `break`，否则 `continue` 走原循环（1.5 秒节流 / 金币闸门 / 刷新判断不变，下一轮重新识别、新坐标）；返回值语义改为「已验证成功的购买次数」；加 `Try to buy …, coin before: X` 日志（事务内另有 `Purchase confirm appeared` / `Purchase verified, coin X -> Y` / 未验证的 warning）。
+- `peacock_kingdom.py` / `moon_sea.py` **零改动**：`skill_roaring_thunder += buy_times` / `cnt_skill101 += buy_times` 结构不变，靠返回值修正。L1 / L2 / `ClickSampler` / `execute_single_click` / assets / json / 路线 / 唤息 / 召唤 / Boss 全部不动。
+
+### 测试与验证
+- 新增 `tests/test_six_realms_buy_verify.py` 26 项（真实 `buy_skill` / 事务 / `BaseTask.appear_then_click` / `execute_single_click` / `ClickSampler`，只替换截图 / 识别 / 金币 OCR / `device.click`；时间驱动虚拟商店 + 虚拟 `Timer`）：事故回归（点了没弹窗 → `buy_times == 0`，孔雀国经真实 `run_on_pk_store` 后状态仍 0）、连续失败上限、重试等满确认窗口、正常购买（价格 100 / 200 / 300 / 450 都算，不钉死扣费）、弹窗点掉但金币不变不算、HUD 延迟 1.2 秒仍算 / 慢于窗口有界不算、晚到 1.9 秒的弹窗仍处理、配额（成功 → 失败 → 成功凑满 `buy_num=2`；`buy_num=99` 复现月之海 13:07 只记真实 2 次；成功后失败计数清零）、失败后商品消失走刷新 / 重试新坐标 / 金币闸门不变、孔雀国状态更新（0 次保持 0 且下次仍购物、买成后才 skip、`buy_num` 仍为 1）、月之海按真实次数累计、AST 结构守卫。
+- 变异验证 8 组全部被抓（点击即计数 / 不校验金币 / 金币相等也算 / 不要求弹窗 / 去掉失败上限 / 成功后不清零 / 去掉金币等待上限 / 去掉确认窗口等待）；脚本每组前后校验源文件 hash。第一次以 `run_in_background` + 命令内 `&` 启动没有产出结果文件（源文件 hash 未变，原因没查），改前台重跑后正常。
+- 改既有测试 2 个：`tests/test_l1_click_pipeline.py::test_case29…`（替身补 `_confirm_skill_purchase`，只验点击区域）、`tests/test_l2_c0_registry.py`（总数 / decision / basis 三处钉住数字）。
+- L2 登记册重新生成：新增 1 处调用点 `SixRealmsCommon._confirm_skill_purchase#1`（`appear_then_click(I_UI_CONFIRM)`，R8 `KEEP_IMMEDIATE`），1096 → **1097**、KEEP_IMMEDIATE 628 → **629**、basis rule 897 → **898**、ALREADY_L2 39 / policy 38 不变。
+- `compileall -q tasks tests dev_tools` OK；全量 `unittest discover -s tests` **2224 → 2250**（+26）。
+- 文档：AI_CONTEXT §4.101 + §2 工作区 + §7 基线 + §8 SixRealms P1/P2；ROADMAP 完成表 + Level C 清单 + SixRealms 后续；DECISIONS D028；TESTING 一条测试经验。
+
+### 未做 / 待真机
+- **Level A/B，不是真机通过**。核心验收：正常购买（`Purchase verified` → `times: 1` → `Skill level: 1`）与点击落空（`Purchase confirm not appeared` → 无 `Buy done` → `Skill level` 仍 0 → 后续进店不 skip），清单见 ROADMAP。
+- 风险：弹窗晚于 2.5 秒窗口或金币 HUD 滞后超过 2 秒会漏记真实购买（偏保守，下一轮会再点同一商品；孔雀国有战斗 HUD 置位兜底）；点击当时为什么没触发弹窗仍不确认。
+- P1/P2 明确未动：刷新确认后首帧过早（HUD 滞后 5/14）、价格 300 与实测 200、金币闸门先于识别、`wait_animate_stable` 的位置与 ROI、`refresh_time` 只取第一位数字、战斗 HUD 置位无日志，见 AI_CONTEXT §8 与 ROADMAP「SixRealms 商店后续」。
+
+## 2026-10-07 - SwitchSoul V2 / SixRealms P0 Level C 状态同步 + 提交前审查与本地提交
+
+- 用户确认 SwitchSoul V2（数字模式滑顶调度）真机运行无问题 → **Level C PASS**（V1 已于 2026-10-06 PASS）；参数仍按 D001 约定视为 PROVISIONAL。
+- SixRealms 购买确认 P0：用户真机运行观察正常，本轮收口；没有逐项跑完 ROADMAP 专项清单，不标 VERIFIED；P1/P2 暂缓。
+- 提交前审查后把 SwitchSoul V1 + V2、SixRealms P0 按主题拆成两个本地 commit（未 push）；FrogBoss（§4.93 ~ §4.98）仍是 Level C pending 的 WIP，原样留在工作区、未提交。
+- 拆分口径：commit 里的交接文档只含对应主题的章节；§4.99 ~ §4.101 正文里的测试总数（2160 / 2194 / 2224 / 2250）与登记册总数（1094 → 1096 → 1097）是开发时工作区（含 FrogBoss WIP）的口径，各 commit 自身的基线写在该 commit 版 AI_CONTEXT §7；`tests/test_l2_c0_registry.py` 的钉住数字与 `docs/L2_CALLSITE_REGISTER.md` 按各 commit 自身的源码重新生成 / 核对。

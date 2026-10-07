@@ -680,7 +680,8 @@ class MigratedSitesBehaviourTest(unittest.TestCase):
         from tasks.SixRealms import common
         skill = SimpleNamespace(name='I_SKILL', roi_front=(500, 300, 40, 30), front_center=lambda: (520, 315))
         fake = SimpleNamespace(I_UI_CONFIRM=object(), screenshot=Mock(), appear_then_click=Mock(return_value=False),
-                               appear=Mock(return_value=True), device=SimpleNamespace(image='F', click=Mock()))
+                               appear=Mock(return_value=True), device=SimpleNamespace(image='F', click=Mock()),
+                               _confirm_skill_purchase=Mock(return_value=True))   # 本用例只验点击区域，购买验证另有专项测试
         timer = Mock()
         timer.return_value.reached.return_value = True
         with patch.object(common, 'Timer', timer), \
