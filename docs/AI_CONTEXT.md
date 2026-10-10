@@ -42,7 +42,7 @@
   2. `139f3bcd` fix: improve KekkaiUtilize reliability and shikigami switching bounds（§4.78~§4.81）；
   3. fix: improve GlobalGame configuration handling（§4.75~§4.76；即当前 HEAD，本节随该 commit 一起提交，故不写自身 hash——以 `git log -1` 为准）。
 - 拆分方式：只按整文件 / 整块暂存，文档中间版本只整块删除其它主题的章节，不改写文字；每个 commit 提交前都把暂存区导出到仓库外独立目录跑 compileall + 全量 unittest（C1 1909 / C1+C2 2018 / C1+C2+C3 2044，全 OK）。
-- 工作区（2026-10-07 更新）：SwitchSoul V1 / V2（§4.99 / §4.100）与 SixRealms 购买确认 P0（§4.101）已按主题拆成两个本地 commit（未 push，hash 以 `git log` 为准）；之后未提交的只剩 §4.93 ~ §4.98 FrogBoss WIP（`tasks/FrogBoss/`（含新模块 `state_probe.py`、新模板 `fb/fb_reward_continue.png`）、`tests/test_frog_boss_*.py`、`tests/fixtures/frog_boss/`，以及它在 `tests/test_l2_c0_registry.py` 钉住数字、`docs/L2_CALLSITE_REGISTER.md` 与交接文档里的对应部分），Level C 仍 pending。`config/oas*.json`、`log/` 等本地文件仍由 `.gitignore` 排除，未纳入版本控制。
+- 工作区（2026-10-07 更新）：SwitchSoul V1 / V2（§4.99 / §4.100）与 SixRealms 购买确认 P0（§4.101）已按主题拆成两个本地 commit（未 push，hash 以 `git log` 为准）；2026-10-10：FrogBoss（§4.93 ~ §4.98）与 Orochi「发现宝藏」两份未提交 WIP 按用户决定放弃、已从工作区删除（删除前在仓库外 `D:\oas_xy\wip_backup_20261010\` 留了完整备份：全部 tracked 改动的 binary patch + 未跟踪文件 + 当时的文档）；2026-10-10 游戏 UI 更新适配（§4.102 / §4.103）作为一个本地 commit 提交（未 push）。工作区另外保留两样未提交内容：用户 16:46 ~ 16:57 用 annotator 重截的 ActivityShikigami 新活动模板（climb / 入口 / 主页标题等，尚未审查），以及一张没有任何 json 引用的重复图 `tasks/GlobalGame/ui/ui_ui_reward_1.png`。`config/oas*.json`、`log/` 等本地文件仍由 `.gitignore` 排除，未纳入版本控制。
 
 ### 2.1 已失效的 2026-09-02 工作区清单（历史记录）
 
@@ -3733,6 +3733,34 @@ master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
 - **Level A/B（离线时间驱动沙盒 + 真实 primitive）PASS；Level C：2026-10-07 用户真机运行观察正常，本轮收口**（没有逐项跑完 ROADMAP 里的专项清单，不标 VERIFIED；P1/P2 暂缓）。**未验证 / 风险**：① 点击当时为什么没触发弹窗仍**不确认**（真机只有一帧证据；两次失败点击——孔雀国 13:11:54、月之海 13:07:45——都发生在刷新确认后约 0.36 秒，而刷新后成功的样本间隔更长（孔雀国 13:07:22 为 0.47 秒；月之海 13:07:47 的重试为 1.99 秒），样本很少，**动画未结束时点击落空是最有可能的解释但未证实**，属下面 P1，本轮没改）；② 窗口 2.5 / 2.0 秒来自真机弹窗 0.47~0.86 秒的 10 个样本（孔雀国 3 + 月之海 7 的弹窗延迟），更慢的环境下弹窗晚于窗口会被判未买成；极端情况（弹窗晚到被循环头点掉、或金币 HUD 滞后超过 2 秒）会**漏记真实购买**，之后下一轮会再点同一商品——方向是偏保守，孔雀国靠战斗 HUD `I_PK_BATTLE_THUNDER` 置位兜底；③ 失败重试会对同一商品再点一次，若「弹窗点掉但金币 HUD 未及时更新」这种极端漏记发生，可能重复购买。
 - **仍保留的 P1/P2（本轮明确不做）**：刷新确认后首帧过早（0.21 秒就识别，HUD 滞后 5/14）、价格 300 与实测 200 不一致、金币闸门先于商品识别（金币 <300 时看得见也买不了）、`refresh_store` 的 `wait_animate_stable` 在确认弹窗出现时就返回、`refresh_time = int(matches.group()[1])` 只取第一位数字、战斗 HUD 置位无日志。见 ROADMAP「SixRealms 后续」。
 
+### 4.102 2026-10-10 游戏 UI 更新：公共确认 / 取消 / 获得奖励 / 邀请勾选框等模板重截
+
+2026-10-10。游戏更新后，标准双按钮弹窗的「确定 / 取消」、「获得奖励」标题、组队邀请的勾选框、邮件「确认收取」等换了样式。真机当天已确认的失效：SwitchSoul 切预设后确认框认不出（AreaBoss 卡在式神录、用户手动停止）、DailyTrifles 商店签到「获得奖励」10 秒超时后返回失败。用户当天用 annotator 按新版画面重截，本节是审查后提交的范围。
+
+- **改动（PNG + ROI，都经项目生成器重新生成 `assets.py`）**：
+  - 标准双按钮弹窗的「确定」（新按钮在 (664,406) 附近，旧 ROI 整体下移约 8 像素）：`GlobalGame` `I_UI_CONFIRM`、`SwitchSoul` `I_SOU_SWITCH_SURE`、`GeneralInvite` `I_GI_SURE`、`RealmRaid` `I_FRESH_ENSURE`、`DemonEncounter` `I_BOSS_CONFIRM`、`AbyssShadows` `I_ENSURE_BUTTON` / `I_START_ENSURE`、`GameUi` `I_CHESS_EXIT_CONFIRM`（百鬼棋局退出，模板从 88×45 改为整颗按钮）；「取消」：`GlobalGame` `I_UI_CANCEL`、`GameUi` `I_CHESS_EXIT_CANCEL`。
+  - 「获得奖励」标题：`GlobalGame` `I_UI_REWARD`（317×42 → 238×64，roiBack 扩到 (438,53,396,259)）、`GameUi` / `ActivityShikigami` 的 `I_ACTIVITY_AWARD`。
+  - 组队邀请勾选框 `GeneralInvite` `I_I_DEFAULT` / `I_I_NO_DEFAULT`（新旧图相似度只有 0.08 / 0.17，确实改版；ROI 不变）、邮件「确认收取」`DailyTrifles` `I_HARVEST_MAIL_CONFIRM`、寄养小号确认 `ReplaceShikigami` `I_U_CONFIRM_SMALL`（与旧图 0.962，基本是同一按钮重截）。
+  - 退四退出确认 `GeneralBattle` `I_EXIT_ENSURE` 见 §4.103。
+- **当天的事故与修正**：重截「获得奖励」时 json 的 `itemName` 被改成 `ui_reward_1`，重新生成后 `I_UI_REWARD` 这个属性消失；`GameUi/default_pages.py` 在模块加载时就读它，14:52 oas1 / oas2 都在启动时 `AttributeError` 退出。已改回 `itemName = ui_reward`（`imageName` 仍为 `ui_ui_reward.png`）。
+- **审查**：11 个模块的资产名与 HEAD 完全一致（没有消失、没有新增）；所有 json 的 `itemName` 不变；`assets.py` 与 `dev_tools/assets_extract.py` 生成结果逐字节一致；每个改动条目的模板都放得进 roiBack。真实画面（结界突破退出确认弹窗，两个场景）：9 个「确定」拷贝 + 2 个「取消」拷贝全部 1.000——说明不同任务弹窗的按钮像素位置相同；无弹窗画面全部 ≤0.301。
+- **没有真实画面验证的**：新版「获得奖励」（仓库里没有新版奖励弹窗的画面，只做契约检查与「现有 27 张画面不误命中」，最高 0.336）、邀请勾选框、邮件「确认收取」、寄养小号确认。这几项靠 Level C。
+- **测试**：新增 `tests/test_ui_assets_2026_10_10.py` 7 项：18 个改动条目的 itemName / 文件 / ROI 与资产一致、模板放得进 roiBack、`I_UI_REWARD` 仍在且 `default_pages` 能导入、11 个模块 `assets.py` 与生成器一致；真实画面正 / 负样本；奖励标题不误命中。夹具复用 §4.103 的 `tests/fixtures/general_battle/`。
+- **不在本次提交**：ActivityShikigami 新活动模板（climb / 入口 / 主页标题 / OCR 等）——用户当天重截、尚未审查，留在工作区；ActivityShikigami 只提交 `I_ACTIVITY_AWARD`。
+- **小瑕疵（不影响匹配）**：`ui_ui_reward.png` 是 238×64 而 roiFront 写的是 239×65；`AbyssShadows` / `GameUi` 的 `assets.py` 有生成器带出的行尾空格 / 文件末空行（`git diff --check` 会提示）。
+- **Level A/B PASS；Level C PENDING**（验收清单见 ROADMAP「2026-10-10 UI 更新适配」条）。
+
+### 4.103 结界突破退四：新版「确认退出战斗吗？」弹窗的 `I_EXIT_ENSURE` 适配（PNG + ROI）
+
+2026-10-10。游戏 UI 更新后，退四的退出确认弹窗改版，`I_EXIT_ENSURE` 识别不到，退四卡死。只换资产，不改代码。
+
+- **事故**：oas2 15:29:59 `GameStuckError`（现场 `log/error/oas2_1791617399625/`，画面里弹窗已出现）；oas1 15:30:19 触发 `GameTooManyClickError: GB_EXIT`（15:31:32 在 RealmRaid `finally` 恢复阵容锁后抛出）。调用链：RealmRaid `run()` 退四 → `run_general_battle(build_quick_exit_config(...))` → FSM `QUICK_EXIT` → `_resolve_action` → `GeneralBattle.exit_battle()`（`general_battle.py:1284`）；循环里先 `appear_then_click(I_EXIT_ENSURE, 0.8)`，认不出就 `appear_then_click(I_EXIT, interval=6)`——弹窗下面的 `GB_EXIT` 仍可见，于是每 6 秒再点一次，直到设备层保护兜底。
+- **根因**：旧模板（135×63，2023 年截）在新弹窗上旧 ROI 内 -0.066 分、全图最佳 0.431；新「确定」按钮在 (664,406,179,66)，相对旧 ROI (674,388,135,63) 为 Δx=-10 / Δy=+18 / Δw=+44 / Δh=+3——位置和尺寸都变了，降阈值无效。
+- **修改（PNG + ROI）**：新 PNG 从事故原帧按 (664,406,179,66) 裁出（与 §4.102 的 `ui_ui_confirm.png` 像素一致）；`tasks/Component/GeneralBattle/gb/image.json` 的 `exit_ensure` 条目 `roiFront` → `664,406,179,66`、`roiBack` → `644,386,219,106`（四边各留 20 像素，不伸到左侧「取消」）；只对 GeneralBattle 重新生成 `assets.py`（diff 只有这一行）。`itemName` / 文件名 / 阈值 0.8 / 资产名不变，保留专用资产、不改成复用 `I_UI_CONFIRM`。`exit_battle()`、退出事务、Device 保护、GameStuck 超时都没动；AbyssShadows / Duel 也通过继承用这个资产，一并恢复。
+- **离线匹配（生产 ImageRuntime）**：5 张真实正样本（oas2 事故帧 ×2、15:30:14 帧、用户 15:30:16/17/19 手动截图，其中两张是另一个场景）新模板全部 1.000（余量 +0.200），旧模板全部 -0.066；真实负样本（2026-10-07 有 `GB_EXIT` 无弹窗的战斗页 0.116、结界突破列表页 0.170）不命中。仓库里没有「准备页但没有弹窗」的真实画面，负样本用这两张代替。
+- **测试**：新增 `tests/test_general_battle_exit_ensure.py` 13 项 + 夹具 `tests/fixtures/general_battle/`（事故原帧、另一场景正样本、两张负样本、旧模板）：资产契约、真实识别正 / 负样本、旧模板特征化、**真实 `exit_battle()` 事务**（点击序列恰为 `['GB_EXIT', 'GB_EXIT_ENSURE']`；弹窗已打开时只点确定、不再点 `GB_EXIT`；换回旧模板时复现事故）。变异 4 组全部被抓（旧 PNG + 旧 ROI / 新 PNG + 旧 ROI / 改 `itemName` / `exit_battle` 先点 `GB_EXIT`），文件逐字节还原。L2 登记册无调用点变化。
+- **Level A/B PASS；Level C PENDING**（计划见 ROADMAP「结界突破退四退出确认」条）。**仍保留的 P1**：`exit_battle()` 里确认键认不出时会无界地每 6 秒重点 `GB_EXIT`，只能靠设备层保护兜底——应改成「点 `GB_EXIT` → 有界等待确认框 → 有界重试」，本轮按要求不做。
+
 ## 5. 已确认保留的 upstream 修改
 
 ### 5.1 NemuIPC 与 scrcpy
@@ -3797,9 +3825,9 @@ Easy Install 当前主要预置 medium OCR 模型；small 模型可能首次自�
 
 ## 7. 测试与验证状态
 
-**当前基线（2026-10-07，commit 口径：HEAD 之上提交 §4.99 ~ §4.101 SwitchSoul V1 / V2 + SixRealms 购买确认 P0；不含仍未提交的 FrogBoss WIP）**：
+**当前基线（2026-10-10，commit 口径：在 §4.99 ~ §4.101 之上提交 2026-10-10 UI 更新适配 §4.102 / §4.103；不含工作区里未提交的 ActivityShikigami 新活动模板）**：
 `toolkit/python.exe -m compileall -q tasks tests dev_tools` 通过；
-`toolkit/python.exe -m unittest discover -s tests` = **2134/2134 OK**（`2044 → 2134` = §4.99 新增 `tests/test_switch_soul_numeric_v1.py` 33 项 + `tests/test_l1_l2_integration.py` 的 `test_post_c1_consumers_match_the_source_exactly` 1 项、§4.100 新增 `tests/test_switch_soul_group_top_v2.py` 30 项、§4.101 新增 `tests/test_six_realms_buy_verify.py` 26 项，删除 0；§4.99 ~ §4.101 正文里的 2160 / 2194 / 2224 / 2250 与登记册 1094 → 1096 → 1097 是开发时工作区（含未提交 FrogBoss WIP）的口径；`1996 → 2044` = §4.89~§4.92 各节累计新增，增量见各节自述；`1980 → 1996` = §4.88 新增
+`toolkit/python.exe -m unittest discover -s tests` = **2154/2154 OK**（`2134 → 2154` = §4.102 新增 `tests/test_ui_assets_2026_10_10.py` 7 项 + §4.103 新增 `tests/test_general_battle_exit_ensure.py` 13 项，改 0 个既有测试，删除 0；`2044 → 2134` = §4.99 新增 `tests/test_switch_soul_numeric_v1.py` 33 项 + `tests/test_l1_l2_integration.py` 的 `test_post_c1_consumers_match_the_source_exactly` 1 项、§4.100 新增 `tests/test_switch_soul_group_top_v2.py` 30 项、§4.101 新增 `tests/test_six_realms_buy_verify.py` 26 项，删除 0；§4.99 ~ §4.101 正文里的 2160 / 2194 / 2224 / 2250 与登记册 1094 → 1096 → 1097 是开发时工作区（含未提交 FrogBoss WIP）的口径；`1996 → 2044` = §4.89~§4.92 各节累计新增，增量见各节自述；`1980 → 1996` = §4.88 新增
 `tests/test_l2_c0_registry.py` 16 项，改 2 个既有测试的钉住值，删除 0；`1948 → 1980` = §4.87 新增
 `tests/test_l2_stage_c1_a1.py` 32 项，改 2 个既有测试文件（登记册锁 / policy consumer 钉住），删除 0；`1894 → 1948` = §4.86 新增
 `tests/test_l1_stage3b_global_guard.py` 54 项，改 2 个既有测试文件（白名单 / 登记册锁），删除 0；`1854 → 1894` = §4.85 新增
@@ -4027,7 +4055,7 @@ primitive 本体未改，`tests/test_base_task_confirm_click.py`（5）继续锁
 - **SixRealms 商店 P1/P2（2026-10-07 孔雀国六道轰雷漏买专项确认，P0 已由 §4.101 修复，下列均未动）**：① 刷新确认后 0.21~0.26 秒就用同一帧做商品识别 + 金币 / 剩余次数 OCR，14 次刷新里有 5 次 HUD 数字仍是旧值（该帧上的商品识别结果不可信，下一步直接再刷新，那一套商品从未被可靠地看过）；② `refresh_store` 的 `wait_animate_stable(timeout=1.5)` 在点刷新图标之后、确认弹窗出现时就返回（约 0.75 秒），根本没等到「确认之后真正重新发牌」的动画，且 `C_STORE_ANIMATE_KEEP` ROI (825,87,317,466) 盖不到商店第 3 行（y>553）和第 1 列；③ 价格写死 300，孔雀国 3 次真实购买金币差都是 200（月之海是 300）；④ `coin < price` 的闸门排在 `appear(skill)` 之前，金币 200~299 时轰雷看得见也没机会被识别 / 购买；⑤ `refresh_time = int(matches.group()[1])` 只取第一位数字（现在最多 3 次，不触发）；⑥ 战斗 HUD `I_PK_BATTLE_THUNDER` 置位 `skill_roaring_thunder = 1` 没有日志。这些要等真机帧（点击前后 +0.0 / +0.3 / +0.8 / +1.4 秒、完整商店网格、购买弹窗）再动，不能凭推测改。
 - `tasks/Component/CostumeShikigami/assets.py` 存在 20 处 upstream 生成注释行尾空格，会触发 `git diff --check` 提示。当前决定是不为此单独修改生成文件。
 - Image frame 注册发生在部分方向修正前。
-- 同一 `config_name` 的多个截图生产者可能竞争 frame。
+- 同一 `config_name` 的多个截图生产者会竞争 frame——**2026-10-10 已确认**：图像服务全局只有一个（`127.0.0.1:22269`），`ImageRuntime._config_frames` 每个 `config_name` 只保留一帧，`register_frame` 会删掉同配置的旧帧（`module/image/runtime.py:237-242`）。annotator 实时采集用的是完整的 `Device(config=<同名配置>)`，每次 `screenshot()` 都会按同一个 `config_name` 注册（`module/device/screenshot.py:75`），于是把正在运行的 OAS 手里的帧挤掉，OAS 下一次匹配就 `KeyError: Unknown frame id`（oas2 15:30:14.302 OAS 注册帧 → 15:30:14.611 annotator 首帧 → 15:30:14.636 报错；同日只开 annotator、或只跑 OAS 的时段都没有出错）。**临时规则：某个配置的 OAS 在运行时，不要用同一个配置开 annotator 实时采集；需要实采先停该配置的 OAS（上传图片不受影响）。** 另外 2026-10-07 那次 `Unknown frame id`（oas2，Chess `_hand_card_detections`）是另一种原因：同一帧在 16 秒后才用来匹配，超过服务端 10 秒 TTL 被清掉，与 annotator 无关。隔离方案（推荐：annotator 截图不注册帧）只做了设计、未实施，见 ROADMAP。
 - Image/OCR RPC 运行中断线后没有自动恢复。
 - low spec small OCR 可能需要首次下载，离线环境可能失败。
 - 诊断导出 endpoint 尚未确认统一有效鉴权。

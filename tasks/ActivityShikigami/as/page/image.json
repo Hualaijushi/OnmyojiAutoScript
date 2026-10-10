@@ -38,8 +38,8 @@
   {
     "itemName": "activity_award",
     "imageName": "as_activity_award.png",
-    "roiFront": "475,234,324,40",
-    "roiBack": "448,169,372,114",
+    "roiFront": "518,208,241,66",
+    "roiBack": "384,114,474,272",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动奖励附属页面"

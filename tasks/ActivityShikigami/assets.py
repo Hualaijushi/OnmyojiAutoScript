@@ -147,7 +147,7 @@ class ActivityShikigamiAssets:
 	# 确认跳过 
 	I_CONFIRM_SKIP = RuleImage(roi_front=(707,442,137,38), roi_back=(656,397,231,124), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_confirm_skip.png")
 	# 活动奖励附属页面 
-	I_ACTIVITY_AWARD = RuleImage(roi_front=(475,234,324,40), roi_back=(448,169,372,114), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_activity_award.png")
+	I_ACTIVITY_AWARD = RuleImage(roi_front=(518,208,241,66), roi_back=(384,114,474,272), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_activity_award.png")
 	# 活动签到附属页面关闭按钮 
 	I_ACTIVITY_SIGNIN_CLOSE = RuleImage(roi_front=(1100,186,40,32), roi_back=(1072,160,94,85), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/page/as_activity_signin_close.png")
 	# 庭院直接进入活动页面 

@@ -29,11 +29,11 @@
   {
     "itemName": "activity_award",
     "imageName": "page_activity_award.png",
-    "roiFront": "475,234,324,40",
+    "roiFront": "521,214,239,60",
     "roiBack": "448,169,372,114",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": ""
+    "description": "活动获得奖励"
   },
   {
     "itemName": "activity_signin_close",

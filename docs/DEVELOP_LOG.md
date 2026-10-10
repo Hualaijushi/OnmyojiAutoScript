@@ -9887,3 +9887,32 @@ Settlement Micro-Burst 的 anchor 跨调用复用模型在"弹窗刚消失、真
 - SixRealms 购买确认 P0：用户真机运行观察正常，本轮收口；没有逐项跑完 ROADMAP 专项清单，不标 VERIFIED；P1/P2 暂缓。
 - 提交前审查后把 SwitchSoul V1 + V2、SixRealms P0 按主题拆成两个本地 commit（未 push）；FrogBoss（§4.93 ~ §4.98）仍是 Level C pending 的 WIP，原样留在工作区、未提交。
 - 拆分口径：commit 里的交接文档只含对应主题的章节；§4.99 ~ §4.101 正文里的测试总数（2160 / 2194 / 2224 / 2250）与登记册总数（1094 → 1096 → 1097）是开发时工作区（含 FrogBoss WIP）的口径，各 commit 自身的基线写在该 commit 版 AI_CONTEXT §7；`tests/test_l2_c0_registry.py` 的钉住数字与 `docs/L2_CALLSITE_REGISTER.md` 按各 commit 自身的源码重新生成 / 核对。
+
+## 2026-10-10 - 游戏 UI 更新适配：公共确认 / 获得奖励等模板重截审查 + 结界突破退四 `I_EXIT_ENSURE` 修复 + WIP 清理
+
+### 背景
+- 游戏更新后标准双按钮弹窗「确定 / 取消」、「获得奖励」标题、组队邀请勾选框、邮件「确认收取」等换了样式。真机当天：SwitchSoul 切预设确认框认不出（AreaBoss 卡住、用户手动停止）、DailyTrifles 商店签到「获得奖励」10 秒超时、结界突破退四卡死（oas2 15:29:59 GameStuck、oas1 `GameTooManyClickError: GB_EXIT`）。
+- 用户当天用 annotator 按新版画面重截了公共确认 / 获得奖励等模板。重截「获得奖励」时 `itemName` 被改成 `ui_reward_1`，`I_UI_REWARD` 消失，14:52 两个账号启动时 `AttributeError` 退出；已改回 `ui_reward`。
+
+### 改动
+- 公共确认 / 取消 / 获得奖励 / 邀请勾选框 / 邮件确认 / 寄养确认：11 个模块的 PNG + json ROI + 生成器重新生成的 `assets.py`（明细见 AI_CONTEXT §4.102）。ActivityShikigami 只提交 `I_ACTIVITY_AWARD`（json / `assets.py` 只取这一处改动）；用户同时重截的新活动模板未审查，留在工作区、不提交。
+- 退四退出确认：`tasks/Component/GeneralBattle/gb/gb_exit_ensure.png` 从事故原帧 `log/error/oas2_1791617399625/2026-10-10_15-29-59-470541.png` 按 (664,406,179,66) 裁出；`gb/image.json` `exit_ensure` 的 roiFront → 664,406,179,66、roiBack → 644,386,219,106；只对 GeneralBattle 重新生成 `assets.py`。`exit_battle()` 没动。
+- 没动：L1 / L2 / `click_pipeline` / `interaction_policy` / 任何业务代码。
+
+### 测试与验证
+- 新增 `tests/test_ui_assets_2026_10_10.py` 7 项、`tests/test_general_battle_exit_ensure.py` 13 项，夹具 `tests/fixtures/general_battle/` 5 个（事故原帧、另一场景同一弹窗、2026-10-07 无弹窗战斗页、结界突破列表页、旧模板）。
+- 审查：11 个模块资产名与 HEAD 一致，`itemName` 都没变，`assets.py` 与生成器输出逐字节一致；真实新版弹窗（两个场景）上 9 个「确定」拷贝 + 2 个「取消」拷贝全部 1.000，无弹窗画面 ≤0.301；`I_EXIT_ENSURE` 旧 -0.066 → 新 1.000。新版「获得奖励」、邀请勾选框、邮件确认、寄养确认没有真实画面，只做契约检查。
+- `exit_battle()` 真实事务测试：点击序列恰为 `['GB_EXIT', 'GB_EXIT_ENSURE']`，弹窗已开时不再点 `GB_EXIT`，换回旧模板能复现事故；变异 4 组全部被抓。
+- 全量（commit 口径）**2134 → 2154**；L2 登记册不变；`git diff --check` 只剩生成器带出的行尾空格（`AbyssShadows` / `GameUi` 的 `assets.py`）。
+
+### annotator / OAS `Unknown frame id`（只读核查）
+- 图像服务全局只有一个；`ImageRuntime._config_frames` 每个 `config_name` 只留一帧，注册新帧会删同配置旧帧。annotator 实时采集用完整 `Device(config=<同名配置>)`，每次截图都按同一 `config_name` 注册，把运行中 OAS 的帧挤掉（oas2 15:30:14.302 → .611 → .636）。同日只开 annotator、或只跑 OAS 的时段都没有出错。
+- 2026-10-07 那次是 Chess 同一帧 16 秒后才用、超过 10 秒 TTL，与 annotator 无关。
+- 临时规则与隔离方案（提议：annotator 截图不注册帧）记入 AI_CONTEXT §8 / ROADMAP；未实施。
+
+### WIP 清理（用户决定）
+- FrogBoss（原 §4.93 ~ §4.98）与 Orochi「发现宝藏」两份未提交 WIP 放弃，从工作区删除；删除前在仓库外 `D:\oas_xy\wip_backup_20261010\` 留了完整备份。Git 历史里已有的 FrogBoss / Orochi 功能不受影响。
+
+### 未做 / 待真机
+- Level C PENDING：UI 更新适配与退四退出确认（清单见 ROADMAP）。
+- P1：`exit_battle()` 有界化；annotator 帧缓存隔离。P2：2026-10-07 TTL 过期。
