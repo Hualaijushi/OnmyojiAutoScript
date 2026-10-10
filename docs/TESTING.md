@@ -239,6 +239,10 @@
   `toolkit\python.exe -m unittest discover -s tests` = **Ran 1901，failures 0 / errors 0 / skipped 1，退出码 0**；静态守卫 `check_repo().ok = True`；`git diff --check` 干净。
   唯一跳过项 `test_config_model_script_task.RealLocalConfigTest` 是因为集成 worktree 里没有真实账号配置，属预期（不要为了跑它去放真实配置）。
   注意：本分支的测试总数与 master（1996）不同 —— 本分支未迁移结界蹭卡 / ReplaceShikigami 两块业务及其 5 个测试文件，也未迁移 `test_l1_l2_integration.py` 的调度一节。
+- **最新基线（2026-10-10，cherry-pick master `e2d459d8` UI 适配后，见 `docs/AI_CONTEXT.md` §4.74 / §4.75）**：`unittest discover -s tests` = **Ran 1921，failures 0 / errors 0 / skipped 1**
+  （`1901 → 1921` = `tests/test_ui_assets_2026_10_10.py` 7 项 + `tests/test_general_battle_exit_ensure.py` 13 项）；登记册仍 1127 / policy 36。
+- **`assets.py` 与生成器的一致性**：本分支提交的 `assets.py` 有一部分去掉了生成器写出的行尾空格 / 文件末空行，所以资产测试按「逐行去行尾空白后内容完全一致」比较（`_strip_trailing_ws`）。
+  改 json 后用 `dev_tools/assets_extract.py` 重新生成时，不要整份覆盖造成大面积空白 diff；只保留变化条目，并让 `git diff --check` 保持干净。
 - **守卫豁免的写法要求**：业务豁免只能由用户决定新增，登记在 `dev_tools/click_entry_guard.BUSINESS_EXEMPTIONS`，精确到（文件, 函数, 调用形式, 次数）；
   `tests/test_l1_stage3b_global_guard.py` 的 `SwitchAccountExemptionTest` 反向验证豁免的精确性（同函数多一处裸点击→违规、别的函数裸点击→违规、原调用点消失→过期）。
   **不得**用扩大白名单 / 放宽断言 / 删除守卫的方式消除守卫红灯。

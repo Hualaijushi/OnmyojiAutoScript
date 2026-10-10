@@ -9371,3 +9371,25 @@ RealmRaid/ActivityShikigami/RyouToppa/click/swipe/FrameWait 分域回归及 comp
    L2 暂缓的 13 个调用点；不做全局 GesturePipeline 改造，不调整点击空间模型 / Minitouch dwell / L2 reaction 区间。
 8. **仍未完成**：Level C 真机（未启动 MuMu / 游戏 / 真实 OCR），reaction 区间仍 PROVISIONAL；`INVENTORY` 里 synevo 独有的 EvoZone `_return_to_main_after_run` 增补行是否纳入正式人工审计口径待确认；
    Kekkai / ReplaceShikigami 业务改造是否单独排期待确认。
+
+## 2026-10-10 - 游戏 UI 更新适配集成进 synevo：cherry-pick master `e2d459d8`（公共确认 / 获得奖励等模板重截 + 退四 `I_EXIT_ENSURE`）
+
+### 背景
+- 游戏更新后标准双按钮弹窗「确定 / 取消」、「获得奖励」标题、组队邀请勾选框、邮件「确认收取」等换了样式；master 当天重截并提交 `e2d459d8`（真机事故与审查见 master DEVELOP_LOG 同日条）。
+- 本分支在既有 worktree `D:/Codex/workspace/oas-synevo-settlement-v12-20260914/synevo`（集成前 HEAD `82e115b0`）用 `git cherry-pick --no-commit e2d459d8` 带入，没有 `merge master`。
+
+### 逐文件解决
+- 冲突只在 3 份文档（`AI_CONTEXT` / `DEVELOP_LOG` / `ROADMAP`）：以本分支内容为准，只补本次 UI 集成的信息（AI_CONTEXT §4.74 / §4.75、Level C 清单、`exit_battle()` 有界化 P1），master 的其它章节没有带入。
+- PNG 全部取 e2d459d8 版本；json 与 `assets.py` 自动三方合并，结果逐条与本分支生成器核对：资产名与集成前一致，只有 UI 条目变化；`ui_reward` / `I_UI_REWARD` 保留；ActivityShikigami 只带入 `I_ACTIVITY_AWARD`，本分支 `main_goto_act` 不变。
+- e2d459d8 带入的 3 处行尾空白（AbyssShadows / GameUi `assets.py`）按本分支规范只去掉这 3 处；本分支 `assets.py` 本来就与生成器在行尾空白上有差异（自有新增条目提交时去掉了行尾空格），所以没有用生成结果整份覆盖。
+- DailyTrifles `assets.py` 随提交恢复 `I_GIFT_RECOMMEND` / `I_STORE_COST_TYPE_JADE` 两行与 json 一致（上游 `7af95277` 的 `assets.py` 改动在本 fork 合并 `73bcafcb` 时丢失），属行为变化，列入 Level C。
+- 两份测试的「`assets.py` 与生成器一致」改为逐行去行尾空白后比较（`_strip_trailing_ws`），其余断言未改。
+
+### 测试与验证
+- 带入 `tests/test_ui_assets_2026_10_10.py` 7 项、`tests/test_general_battle_exit_ensure.py` 13 项、夹具 `tests/fixtures/general_battle/` 5 个，全部通过。
+- 全量 `unittest discover -s tests` = Ran 1921（1901 → 1921），failures 0 / errors 0 / skipped 1；compileall 通过；L2 登记册 1127 / policy 36 不变；`git diff --check` 干净。未启动 MuMu / 游戏 / 设备 / 真实 OCR。
+
+### 未带入 / 未做
+- master 的 ActivityShikigami 新活动 WIP、FrogBoss / Orochi WIP、SwitchSoul V1/V2、SixRealms 等其它提交；master 的 annotator `Unknown frame id` 结论与隔离方案（本分支 `register_frame` 不删同配置旧帧，机制不同，见 AI_CONTEXT §8）。
+- Level C PENDING：UI 更新适配（含 DailyTrifles 商店两行行为变化）与退四退出确认（含本分支 `hunt_adapter` 主动退出），清单见 ROADMAP。
+- P1：`exit_battle()` 有界化。未 push。

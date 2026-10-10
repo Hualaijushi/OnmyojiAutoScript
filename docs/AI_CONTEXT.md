@@ -41,6 +41,7 @@
   `4c6c2a2e36f4d32b1a3c72c80ff2db3770fc6024`；本轮只在其上新增 GeneralBattle Settlement
   Micro-Burst v1.2 提交，不合并 master。
 - `master` 仍独立位于 `a5e2d7e6b84f3545994d9bd15ca6d0ff0bcb755b`，其未提交 v1.2 工作区不由本分支处理。
+- 2026-10-10：master 的游戏 UI 更新适配提交 `e2d459d8`（fix: adapt UI assets for 2026-10-10 update）以 `git cherry-pick --no-commit` 逐文件解决后提交到本分支（§4.74 / §4.75，hash 以 `git log` 为准），未 push。没有 `merge master`；master 上的其它提交（SwitchSoul V1/V2、SixRealms 购买确认等）与 master 工作区 WIP（ActivityShikigami 新活动模板、FrogBoss / Orochi）都没有带入。
 
 ### 2.1 已失效的 2026-09-02 工作区清单（历史记录）
 
@@ -3176,6 +3177,35 @@ RPC 可靠性文件均无本轮 diff。
 - **仍未完成**：Level C 真机（未启动 MuMu / 游戏 / 真实 OCR），reaction 区间仍是 PROVISIONAL；Kekkai / ReplaceShikigami 两块业务改造是否单独排期仍待用户决定；
   `INVENTORY` 里 synevo 独有的 EvoZone `_return_to_main_after_run` 增补行是否纳入正式人工审计口径仍待确认。
 
+### 4.74 2026-10-10 游戏 UI 更新：公共确认 / 取消 / 获得奖励 / 邀请勾选框等模板重截（cherry-pick 自 master `e2d459d8`）
+
+2026-10-10。游戏更新后，标准双按钮弹窗的「确定 / 取消」、「获得奖励」标题、组队邀请的勾选框、邮件「确认收取」等换了样式（master 侧的真机发现与审查见 master `docs/AI_CONTEXT.md` §4.102）。本分支用 `git cherry-pick --no-commit e2d459d8` 带入、逐文件解决，没有 `merge master`。
+
+- **带入的资产（PNG + json ROI + `assets.py`）**：
+  - 标准双按钮弹窗的「确定」（新按钮在 (664,406) 附近）：`GlobalGame` `I_UI_CONFIRM`、`SwitchSoul` `I_SOU_SWITCH_SURE`、`GeneralInvite` `I_GI_SURE`、`RealmRaid` `I_FRESH_ENSURE`、`DemonEncounter` `I_BOSS_CONFIRM`、`AbyssShadows` `I_ENSURE_BUTTON` / `I_START_ENSURE`、`GameUi` `I_CHESS_EXIT_CONFIRM`；「取消」：`GlobalGame` `I_UI_CANCEL`、`GameUi` `I_CHESS_EXIT_CANCEL`。
+  - 「获得奖励」标题：`GlobalGame` `I_UI_REWARD`（317×42 → 238×64，roiBack 扩到 (438,53,396,259)）、`GameUi` / `ActivityShikigami` 的 `I_ACTIVITY_AWARD`。
+  - 组队邀请勾选框 `GeneralInvite` `I_I_DEFAULT` / `I_I_NO_DEFAULT`（只换 PNG）、邮件「确认收取」`DailyTrifles` `I_HARVEST_MAIL_CONFIRM`、寄养小号确认 `ReplaceShikigami` `I_U_CONFIRM_SMALL`（只换 PNG）。
+  - 退四退出确认 `GeneralBattle` `I_EXIT_ENSURE` 见 §4.75。
+- **逐文件解决**：
+  - PNG 全部取 e2d459d8 版本；json 自动三方合并，只改 UI 条目的 ROI（`GameUi` `activity_award` 另补了 description「活动获得奖励」）。`GlobalGame` `ui_reward` 的 `itemName` 不变，`GlobalGameAssets.I_UI_REWARD` 仍在。ActivityShikigami 只带入 `activity_award`，本分支自己的 `main_goto_act`（roiFront 1188,304,35,28）不变。
+  - `assets.py` 自动三方合并后，用本分支 `dev_tools/assets_extract.py` 对 11 个模块重新生成并逐条比对：资产名与集成前 HEAD 完全一致，变化的条目只有 UI 条目，与生成器只差行尾空白。本分支自有新增条目（DailyTrifles 寮勋章捐赠、GeneralBattle 结算安全区、GameUi `I_CHECK_TEAM_2` 等）提交时去掉了生成器写出的行尾空格 / 文件末空行，所以没有用生成结果整份覆盖；e2d459d8 带入的 3 处新增行尾空白（AbyssShadows `# 极难度` 行与文件末空行、GameUi `# 活动获得奖励` 行）按本分支规范只去掉这 3 处，`git diff --check` 干净。
+  - **DailyTrifles 额外两行（行为变化）**：e2d459d8 本身带了 `I_GIFT_RECOMMEND` roiBack (1162,77,98,457) → (1162,77,97,545)、`I_STORE_COST_TYPE_JADE` (600,490,50,60) → (570,362,81,247)。本分支 json 早就是新值（上游 `7af95277` 同时改了 json 和 `assets.py`，`186417d4` 又扩大礼包屋 roiBack），本 fork 合并 `73bcafcb` 时 `assets.py` 取回了旧值、与 json 不一致；master 重新生成时恢复，本分支随提交一并带入，集成后与 json / 生成器一致。礼包屋页面识别与勾玉购买识别区域从此按 json 生效，列入 Level C。
+- **真实画面**（与 master 相同的夹具）：9 个「确定」拷贝 + 2 个「取消」拷贝在新版弹窗上全部 1.000，无弹窗画面 ≤0.301。新版「获得奖励」、邀请勾选框、邮件「确认收取」、寄养小号确认没有真实画面，只做契约检查，靠 Level C。
+- **测试**：带入 `tests/test_ui_assets_2026_10_10.py` 7 项；其中「`assets.py` 与生成器一致」在本分支改为逐行去掉行尾空白后比较（内容仍须完全一致，`ui_reward` 改名这类问题照样能抓住）。
+- **未带入**：master 工作区的 ActivityShikigami 新活动模板（climb / 入口 / 主页标题 / OCR 等）、FrogBoss / Orochi WIP；master 的 annotator `Unknown frame id` 结论（本分支图像服务机制不同，见 §8）。
+- **小瑕疵（不影响匹配）**：`ui_ui_reward.png` 是 238×64，而 roiFront 写的是 239×65。
+- **Level A/B PASS；Level C PENDING**（验收清单见 ROADMAP「2026-10-10 UI 更新适配」条）。
+
+### 4.75 结界突破退四：新版「确认退出战斗吗？」弹窗的 `I_EXIT_ENSURE` 适配（PNG + ROI，cherry-pick 自 master `e2d459d8`）
+
+2026-10-10。事故与根因见 master `docs/AI_CONTEXT.md` §4.103：游戏更新后退出确认弹窗改版，旧模板（135×63）在旧 ROI 内只有 -0.066 分，`exit_battle()` 认不出确认键，每 6 秒再点一次 `GB_EXIT`，直到设备层保护兜底（oas2 GameStuck、oas1 `GameTooManyClickError: GB_EXIT`）。只换资产，不改代码。
+
+- **本分支是同一条调用链**：RealmRaid 退四 `run_general_battle(build_quick_exit_config(...))`（`tasks/RealmRaid/script_task.py:176` / `:182`）→ FSM `QUICK_EXIT`（`general_battle.py:1186`）→ `exit_battle()`（`general_battle.py:1281`），循环结构与 master 相同，所以同样受影响。
+- **修改**：`gb_exit_ensure.png` 换成新按钮 (664,406,179,66) 的裁图；`gb/image.json` `exit_ensure` 的 roiFront → `664,406,179,66`、roiBack → `644,386,219,106`（不伸到左侧「取消」）；GeneralBattle `assets.py` 相对集成前 HEAD 只有这一行变化。`itemName` / 文件名 / 阈值 0.8 / 资产名 `GB_EXIT_ENSURE` 不变。
+- **本分支额外受影响的调用点**：除 AbyssShadows / Duel 外，本分支独有的 `tasks/DailyTrifles/hunt_adapter.py:156`（账号轮换麒麟 / 阴界之门短时参战后主动退出，带 `exit_timeout` 截止时间）也用 `GeneralBattleAssets.I_EXIT_ENSURE`，Level C 需单独核对。
+- **测试**：带入 `tests/test_general_battle_exit_ensure.py` 13 项 + 夹具 `tests/fixtures/general_battle/` 5 个；资产契约、真实画面正 / 负样本、旧模板特征化、真实 `exit_battle()` 事务（点击序列恰为 `['GB_EXIT', 'GB_EXIT_ENSURE']`；弹窗已打开时只点确定）在本分支全部通过；生成器一致性检查同 §4.74 改为去行尾空白后比较。master 上做过的 4 组变异测试本分支没有重做。L2 登记册仍 1127 / policy 36，无调用点变化。
+- **Level A/B PASS；Level C PENDING**（计划见 ROADMAP「结界突破退四退出确认」条）。**仍保留的 P1**：`exit_battle()` 确认键认不出时会无界地每 6 秒重点 `GB_EXIT`，应改成有界等待 / 有界重试；本轮不做。
+
 ## 5. 已确认保留的 upstream 修改
 
 ### 5.1 NemuIPC 与 scrcpy
@@ -3239,6 +3269,8 @@ Easy Install 当前主要预置 medium OCR 模型；small 模型可能首次自�
 - 源码和最新 Git 状态始终高于本文档；确认事实变化后同步更新状态快照。
 
 ## 7. 测试与验证状态
+
+**最新基线（2026-10-10，§4.74 / §4.75 UI 适配集成后）**：`compileall -q`（module / tasks / tests / dev_tools）通过；`unittest discover -s tests` = **Ran 1921，failures 0 / errors 0 / skipped 1**（`1901 → 1921` = 带入 `tests/test_ui_assets_2026_10_10.py` 7 项 + `tests/test_general_battle_exit_ensure.py` 13 项，既有测试未改、未删；上一基线 1901 见 §4.73）；L2 登记册仍 1127 / policy 36；`git diff --check` 干净。下面 2026-09-14 的段落是更早的历史基线。
 
 **当前分支：`zoombies-account-rotation-dailytask/synevo`（2026-09-14 起）**——
 `integration/custom-oas`（7f244a8c）已通过 `--no-ff` 合入本分支（merge commit `6d635e98`），
@@ -3457,7 +3489,7 @@ primitive 本体未改，`tests/test_base_task_confirm_click.py`（5）继续锁
 
 - `tasks/Component/CostumeShikigami/assets.py` 存在 20 处 upstream 生成注释行尾空格，会触发 `git diff --check` 提示。当前决定是不为此单独修改生成文件。
 - Image frame 注册发生在部分方向修正前。
-- 同一 `config_name` 的多个截图生产者可能竞争 frame。
+- 同一 `config_name` 的多个截图生产者可能竞争 frame。（master 2026-10-10 确认的「annotator 用同一配置实时采集，把运行中 OAS 的帧挤掉 → `Unknown frame id`」依赖 master 的 `register_frame` 删除同配置旧帧；本分支 `module/image/runtime.py:237-244` 已改为旧帧保留到 TTL / 容量上限淘汰，不是同一机制，所以没有带入 master 的该条结论与隔离方案。本分支在 annotator 与 OAS 同配置并发时是否还会出错未核实。）
 - Image/OCR RPC 运行中断线后没有自动恢复。
 - low spec small OCR 可能需要首次下载，离线环境可能失败。
 - 诊断导出 endpoint 尚未确认统一有效鉴权。

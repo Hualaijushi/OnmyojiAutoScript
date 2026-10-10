@@ -65,8 +65,8 @@
   {
     "itemName": "boss_confirm",
     "imageName": "boss_boss_confirm.png",
-    "roiFront": "671,400,175,61",
-    "roiBack": "671,400,175,61",
+    "roiFront": "663,410,175,61",
+    "roiBack": "663,410,175,61",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"

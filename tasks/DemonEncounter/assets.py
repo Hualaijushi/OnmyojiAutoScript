@@ -31,7 +31,7 @@ class DemonEncounterAssets:
 	# 集结挑战 
 	I_BOSS_FIRE = RuleImage(roi_front=(1062,549,100,100), roi_back=(1062,549,100,100), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/boss/boss_boss_fire.png")
 	# description 
-	I_BOSS_CONFIRM = RuleImage(roi_front=(671,400,175,61), roi_back=(671,400,175,61), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/boss/boss_boss_confirm.png")
+	I_BOSS_CONFIRM = RuleImage(roi_front=(663,410,175,61), roi_back=(663,410,175,61), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/boss/boss_boss_confirm.png")
 	# 已选中 
 	I_BOSS_SELECTED = RuleImage(roi_front=(543,339,37,41), roi_back=(543,339,37,41), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/boss/boss_boss_selected.png")
 	# 还没选中 

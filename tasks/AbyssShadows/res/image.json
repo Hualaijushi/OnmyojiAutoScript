@@ -128,8 +128,8 @@
   {
     "itemName": "ensure_button",
     "imageName": "res_ensure_button.png",
-    "roiFront": "672,405,169,55",
-    "roiBack": "672,405,169,55",
+    "roiFront": "668,410,169,55",
+    "roiBack": "668,410,169,55",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -254,8 +254,8 @@
   {
     "itemName": "start_ensure",
     "imageName": "res_start_ensure.png",
-    "roiFront": "660,390,190,80",
-    "roiBack": "660,390,190,80",
+    "roiFront": "660,404,183,66",
+    "roiBack": "660,404,183,66",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "开启确认按钮"
