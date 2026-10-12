@@ -9916,3 +9916,129 @@ Settlement Micro-Burst 的 anchor 跨调用复用模型在"弹窗刚消失、真
 ### 未做 / 待真机
 - Level C PENDING：UI 更新适配与退四退出确认（清单见 ROADMAP）。
 - P1：`exit_battle()` 有界化；annotator 帧缓存隔离。P2：2026-10-07 TTL 过期。
+
+## 2026-10-11 - KekkaiUtilize 好友结界寄养：确认后不再点式神，放置结束条件改看空位数
+
+### 背景
+- 2026-10-10 16:46:44 oas1 `GameTooManyClickError: shikigami_left_2`（`log/error/oas1_1791622004317/`）。只读审查证实：寄养已成功（截图右上本账号式神剩 05:59:42，11 秒后重跑读到 5:59:21），确认按钮 16:46:26 正常命中；失败在 `set_shikigami` 的结束条件。
+- 同一模式 10-06 23:57、10-09 15:04 也出现过（都在 UI 更新之前）。8 天日志：「Right side has two」16/16 成功，「has one」12 次中 3 次失败；三次失败截图 `I_U_ADD_1` 都是 0.865 命中、`I_U_ADD_2` ≈0.01。
+
+### 根因
+- 好友结界两个寄养位都空时，`run_utilize` 把右数第一格 `I_U_ADD_1` 当结束图片；游戏先放右数第二格，右数第一格一直空着，`not appear(stop_image)` 永远不成立。确认后循环继续按 1.5 / 4.5 秒节奏点 `shikigami_left_2/6`，第 10 次点击触发 Device 兜底。
+
+### 修改（2 个源码文件，规则见 DECISIONS D023 补记（五））
+- `tasks/KekkaiUtilize/script_task.py` `run_utilize`：进场时分别判断两个空位图标，得到空寄养位数并记日志；调用 `set_shikigami(order, slot_images=(I_U_ADD_1, I_U_ADD_2), empty_slots=n)`。
+- `tasks/Component/ReplaceShikigami/replace_shikigami.py` `set_shikigami`：新增仅限关键字的 `slot_images` / `empty_slots`。传入时空位数减少就退出；点过确认后不再点式神，确认最多 3 次（`SET_CONFIRM_MAX_CLICKS`），空位不变只观察 3 秒（`SET_CONFIRM_SETTLE`，provisional）。不传时执行路径不变。
+- 方案取舍：最先写成 KekkaiUtilize 自己的放置方法，但那会新增 5 个点击调用点，L2 审计清单对齐失败（5 项 L1/L2 测试红），要改清单和多处钉住数字；改为在公共函数上加可选参数、复用原有点击调用点，登记册不变。
+
+### 测试与验证
+- 新增 `tests/test_kekkai_utilize_set_shikigami_slots.py` 13 项 + 夹具 `tests/fixtures/kekkai_utilize/friend_realm_after_placement_2026-10-10.png`（事故原帧）。两组变异（去掉确认后保护 / 改回单图结束条件）各被 3 项抓到，文件按 md5 还原。
+- 相关测试（KekkaiUtilize 全部、分类切换、Exploration、KekkaiActivation）368 项 OK；L1/L2 170 项 OK；登记册内存重新生成与 `docs/L2_CALLSITE_REGISTER.md` 一致（1099 / policy 38）。
+- 全量 **2154 → 2167 OK**；`compileall` 通过；`git diff --check` 干净。未启动 MuMu / 游戏。
+
+### 未做 / 待真机
+- Level C PENDING（清单见 ROADMAP）。**改动生效前必须重启 OAS 进程**：任务只重新加载自己的 `script_task.py`，`ReplaceShikigami` 用缓存模块，不重启会 `TypeError`。
+- 候补式神分支（`I_U_CIRCLE_ALTERNATE` → `I_U_CONFIRM_ALTERNATE`）原样保留；`I_U_CONFIRM_ALTERNATE` 在新版标准弹窗上固定 ROI 内只有 0.140（全图 0.920@(687,414)），是否需要重截未核实。
+
+## 2026-10-12 - RyouToppa 点击进攻后的过渡状态：有界等待进入战斗，不重点进攻、不判交互异常
+
+### 背景
+- 2026-10-11 00:00 ~ 00:30 oas2 寮突破 6 次「区域2进攻按钮有限重试后仍未进入战斗，判定为交互异常」（`log/error/oas2_1791648007506` 等 6 个目录），`run()` 抛 `GamePageUnknownError`，同一任务连续 3 次后「Request human takeover」、oas2 进程退出：00:04:48 一次，00:30:18 第二次后一直停到 13:40。
+- 只读调查：与 23:46:19 第一次战斗失败（区域1 Lose）无关——失败后按设计改打邻近区域2，之后连胜 60 场。
+
+### 根因
+- 点击进攻后游戏的过渡分两段：列表压暗转圈（离线匹配：`I_FIRE` 0.956、`I_TOPPA_RECORD` 0.993，和正常弹窗分不开），然后全屏加载（`I_FIRE` 0.41 ~ 0.48，也不是战斗页）。
+- `attack_area` 点击后调用 `_wait_for_attack_state`，第一帧见 `I_FIRE` 就返回 `'fire'`（点完 0.1 秒记「仍存在」）；第 2 次尝试截到加载画面时已是最后一次，记「状态已变化」后直接结束循环 → `INTERACTION_ERROR`。6 次都在点击后 1.04 ~ 1.37 秒判定，与正常进入战斗的最长 1.33 秒重叠；重启后先看到 `page_reward` / `page_battle`，说明战斗都已开打。
+
+### 修改（只动 `tasks/RyouToppa/script_task.py`）
+- 新增 `RYOU_TOPPA_ATTACK_ENTER_TIMEOUT = 6`（provisional）与 `_wait_for_battle_after_fire()`：点击后有界等待，期间不点任何东西，看到战斗页立即返回；到时按最后一帧返回 `'fire'` / `'list'` / `'unknown'`，交给原有重试 / 异常处理。
+- `attack_area` 三处改用它：点击进攻之后、尝试开头发现按钮已消失时、最后一次尝试「按钮状态已变化」时。
+- 没动：点区域后的 `_wait_for_attack_state`、重试次数、FIRE reaction、失败区域 / 主区域逻辑、调度层退出策略、图片 / json / assets / 阈值；没有新增点击调用点。
+
+### 测试与验证
+- 新增 `tests/test_ryoutoppa_attack_transition.py` 12 项 + 夹具 `tests/fixtures/ryou_toppa/`（事故当晚压暗转圈帧、全屏加载帧，走生产 `ImageRuntime`）。
+- 变异：三处各自撤回分别被 4 / 1 / 1 项抓到；三处全撤回（原始逻辑）7 项失败，包括事故时序复现；文件按 md5 还原。
+- RyouToppa / FIRE 相关与 L1/L2 测试 357 项 OK；登记册内存重新生成与文档一致（1099 / policy 38）；全量 **2167 → 2179 OK**；`compileall` 通过；`git diff --check` 干净。未启动 MuMu / 游戏。
+
+### 未做 / 待真机
+- Level C PENDING（清单见 ROADMAP）。本修复只改 RyouToppa 自己的 `script_task.py`、不改跨模块接口，OAS 每次运行任务都会重新加载它，下一次寮突破即生效，不需要重启（2026-10-11 KekkaiUtilize 修复仍需重启）。
+- 已知边界：遮罩超过 6 秒时，到时仍按「按钮还在」交回原逻辑，第 2 次尝试会再点一次进攻（有界）。
+- 本轮未处理：主区域因失败标识变成 `UNAVAILABLE` 后一直停在区域1（不影响推进）；调度层「失败 3 次退出」。
+
+## 2026-10-12 - Secret 秘闻奖励页结算：推进区域固定用面板下方的 `C_RANDOM_SAVE_BOTTOM`
+
+### 背景
+- 2026-10-12 13:06 oas2 秘闻第 2 层战斗结束后，在奖励页同一点 (1016, 619) 点击 9 次，页面不推进；13:06:38 结算安全帽 9/9 后停止点击，13:07:38 `GameStuckError: Wait too long`（`log/error/oas2_1791781659216/`），13:07:43 用户手动停止。
+- 只读调查：秘闻没有自己的结算处理，整场战斗（含结算）交给 `run_general_battle(battle_key="secret")`；`I_UI_REWARD`（0.19）、Confirm、frame cache 均未参与。
+
+### 根因
+- 秘闻奖励页被 `I_REWARD` 1.000 / `I_REWARD_GOLD` 0.992 识别为 `page_reward`，奖励宝袋标志 `I_GET_BATTLE_REWARD` 0.998 → 通用 `_select_reward_region` 选 `C_RANDOM_DEFAULT`。
+- 秘闻页右下多了「本次通关时间 / 分享」面板（事故帧实测 y 546 ~ 618），占默认区约两成；锚点落在面板底边，点击无效；同一结算状态按 D025 复用锚点，9 次都点在同一处。
+
+### 修改（只动 `tasks/Secret/script_task.py`）
+- Secret 的 `ScriptTask` 覆盖 `_select_reward_region()`，固定返回 `C_RANDOM_SAVE_BOTTOM` (819, 639, 425, 69)：事故帧上整块在面板下方、深色像素 0%。右侧区会碰到「分享」按钮，不用。
+- 没动：GeneralBattle、D025 合同、随机采样、点击上限、设备层、资产 / json / 阈值；其它任务仍用通用方法；没有新增点击调用点。只改任务自己的 `script_task.py`，下一次秘闻即生效。
+- 方案取舍：没有给通用 `_select_reward_region` 加 `battle_key` 参数——那要改 GeneralBattle 的 `region_provider` 调用与既有源码断言；秘闻任务里只有 secret 一种战斗，任务内覆盖效果等同、范围更小。
+
+### 测试与验证
+- 新增 `tests/test_secret_settlement_region.py` 7 项 + 夹具 `tests/fixtures/secret/secret_reward_page_2026-10-12.png`（事故帧）：面板范围从画面测出；秘闻选区为底部区；生产 `_start_settlement_session` 采样 1000 次全部在底部区、面板下沿以下、落在地面像素上；结果页 → 奖励页时旧默认区锚点被强制重采样；同一帧上通用选区仍是默认区且会落进面板；RealmRaid / Orochi 仍用通用方法。
+- 变异：删掉覆盖方法被 4 项抓到，文件按 md5 还原。
+- GeneralBattle 结算 / L1 / L2 相关 354 项 OK；登记册内存重新生成与文档一致（1099 / policy 38）；全量 **2179 → 2186 OK**；`compileall` 通过；`git diff --check` 干净。未启动 MuMu / 游戏。
+
+### 未做 / 待真机
+- Level C PENDING（清单见 ROADMAP）。
+- 范围外：秘闻结果页（若出现）仍按通用默认区点击，是否也有该面板未核实；「同一状态同一锚点多次无响应就换点」属 D025 合同调整，本轮不做。
+
+## 2026-10-12 - SixRealms 孔雀国：唤息确认 / 退出孔雀国确认适配新版公共双按钮弹窗 + 唤息失败循环保护
+
+### 背景
+- 2026-10-12 oas1 六道之门：16:38:26 `GameTooManyClickError: MS_M_STORE_ACTIVITY, UI_UI_CANCEL`（`log/error/oas1_1791794306723/`），重跑后 16:39:43 `GameStuckError: Wait too long`（`log/error/oas1_1791794383582/`），第三次运行又进入同样的唤息循环。
+- 只读调查：两个弹窗都是新版公共双按钮，公共 `I_UI_CONFIRM` 0.919 / 1.000、`I_UI_CANCEL` 1.000 都正常；失效的是六道自己的两处。
+
+### 根因
+- 唤息：`_use_breath` → `_confirm_store_entry` 等 `I_PK_STORE_STILLIN`（旧按钮「进入」，ROI 固定 (670,398)），新版确认键是「确认」(664,406)，旧模板 0.028（全图 0.61）；5 秒超时后 `run_on_pk_store_confirm` 兜底 `goto_page(page_pk_main)`，这条边点 `I_UI_CANCEL`；回主界面唤息条件不变 → 再唤息，6 轮后 TooManyClick。10-06 / 10-07 旧「进入」15 次全部成功。
+- 退出：点「退出主界面」后新弹出「是否离开孔雀国？」（`I_PK_EXIT_MAIN` 在框上 0.26），到不了孔雀国页；导航失败分支先跑目标页进入失败 hook `handle_enter_peacock_kingdom`，其 `ui_click(I_SR_SWITCH, I_SR_TO_PEACOCK_KINGDOM)` 无超时，在弹窗上只截图不点击，60 秒后 GameStuck。
+
+### 修改
+- `tasks/SixRealms/peacock_kingdom/peacock_kingdom.py`：新增 `_confirm_breath_dialog`（有界；唤息弹窗正文 `I_MS_CHECK_OPEN_STORE` 命中才点 `I_UI_CONFIRM`，看到旧「进入」交回兼容分支）；`_confirm_store_entry` 新版优先、旧版「进入」兜底；新增 `breath_failed`（`before_run` 重置），确认失败后本轮 `_should_use_breath` / `_summon_store` 不再唤息；`run_on_pk_store_confirm` 先有界等 1.5 秒，弹窗已关不算失败、仍在才取消并置位。
+- `tasks/SixRealms/peacock_kingdom/page.py`：`page_pk_exit → page_peacock_kingdom` 边新增 `on_leave_failure=[PK_EXIT_DIALOG_CONFIRM]`（`all_of(I_UI_CONFIRM, I_UI_CANCEL, not_(I_MS_CHECK_OPEN_STORE))` 时点「确定」），排在目标页空等 hook 之前；排除唤息弹窗，不会误确认花费相铃。
+- `tasks/SixRealms/peacock_kingdom/base_peacock_kingdom.py`：`before_run` 重置 `breath_failed`。
+- 没动：GlobalGame Confirm 图片 / ROI / 阈值、GeneralBattle、导航器、其它任务、月之海。
+- L2：新增 1 个点击调用点 `_confirm_breath_dialog#1`（rule/R8 KEEP_IMMEDIATE，同 10-07 `_confirm_skill_purchase` 先例）；原 4 个 C0 唤息点位保留。登记册 1099 → 1100、KEEP_IMMEDIATE 632 → 633、rule 900 → 901，`--write` 重新生成并更新 `tests/test_l2_c0_registry.py` 两处钉住值与注释。
+- 改动在被 import 的模块里，需重启 OAS 进程才生效。
+
+### 测试与验证
+- 新增 `tests/test_six_realms_breath_and_exit_confirm.py` 13 项 + 夹具 `tests/fixtures/six_realms/`（唤息弹窗、离开孔雀国弹窗两张事故帧，生产 `ImageRuntime`）。
+- 变异 5 组（改回旧「进入」逻辑 / 去掉 `_should_use_breath` 保护 / 去掉 `_summon_store` 保护 / 去掉退出 hook / 去掉唤息弹窗排除）全部被抓到，文件按 md5 还原。第一次变异脚本经 shell heredoc 传参丢了一个反斜杠，结果作废，改为写入文件后重跑。
+- SixRealms / L1 / L2 相关 249 项 OK；全量 **2186 → 2199 OK**；`compileall` 通过；`git diff --check` 干净。未启动 MuMu / 游戏。
+
+### 未做 / 待真机
+- Level C PENDING（清单见 ROADMAP）。
+- `handle_enter_peacock_kingdom` 的 `ui_click` 仍无超时；月之海唤息流程本轮未核对。
+- 同日 16:41 oas2 秘闻结果页卡死（§4.106 的范围外项已复现）需单独开任务。
+
+## 2026-10-12 - SixRealms 孔雀国轰雷购买：按期望扣费 200 核对，金币稳定后才比较
+
+### 背景
+- 2026-10-12 oas1 17:46:38：第二次刷新后点击 `PK_PK_STORE_SKILL_THUNDER`，确认弹窗点掉 0.2 秒后 `Purchase verified, coin 600 -> 500`，`Skill level: 1`；0.3 秒后 `Current coin: 200`。实际扣费 ≥300，不是轰雷；之后孔雀国所有商店 `skip shopping`。
+- 先做只读审查（用户「先审查，再修改」）：同期 6 次轰雷购买另外 5 次都正好扣 200（10-07 15:31 / 15:35，10-12 16:37 / 17:51 / 17:54）；刷新每次 100；刷新确认后 0.2 秒左右的金币与剩余次数读数会滞后（16:37 第二次刷新后仍是 600 / 「剩2次」）。
+
+### 根因
+- D028 的成功判据只要求金币下降，不看降多少；金币 HUD 有递减动画，中间帧 500 就满足了「下降」。
+
+### 修改
+- `tasks/SixRealms/common.py`：`buy_skill` / `_confirm_skill_purchase` 新增可选 `expected_cost=None`（不传时与原逻辑一致）。传了时：每轮读金币后 `_wait_coin_stable`（新私有方法，连续两次 OCR 相同、`BUY_COIN_TIMEOUT` 上限、只截图 + OCR）；购买后金币连续两帧相同且低于点击前才比较，等于 `expected_cost` 计数；不等 / 一直不稳定返回 `None`（日志 `Skill purchase cost mismatch: expected=200 actual=…` / `Purchase coin not stable`），`buy_skill` 不计数、重读金币、`<商品名> purchase verification failed, skip current shop.` 后结束本次购买。
+- `tasks/SixRealms/peacock_kingdom/peacock_kingdom.py`：新增 `PK_SKILL_THUNDER_COST = 200`，`run_on_pk_store` 传 `expected_cost`；门槛 300、`buy_num=1` 不变。
+- 没动：月之海、技能页选择、商店模板 / ROI / OCR、点击坐标、刷新逻辑。L2 无新增调用点。
+- 改动在被 import 的模块里，需重启 OAS 进程才生效。
+- 日志文本说明：用户要求记录 `Thunder purchase verification failed, skip current shop.`；`common.py` 是孔雀国 / 月之海共用的，所以用商品名开头，孔雀国实际输出 `PK_PK_STORE_SKILL_THUNDER purchase verification failed, skip current shop.`。
+
+### 测试与验证
+- 新增 `tests/test_six_realms_thunder_cost_verify.py` 19 项（复用 `test_six_realms_buy_verify` 虚拟商店，加金币递减动画与刷新后 HUD 滞后），覆盖用户给的 5 个场景、同店不再点、下一次进店重买、不稳定、没花钱的失败仍按 D028 重试、刷新后滞后值不当起点、调用方参数、结构守卫。既有 26 项零改动通过。
+- 变异 8 组（去掉购买前稳定读数 / 去掉购买后稳定要求 / 去掉扣费比较 / 对不上落回 D028 重试 / 不稳定改为重试 / 对不上返回旧金币 / 孔雀国不传 `expected_cost` / 孔雀国把门槛 300 当扣费传）全部被抓到，文件按 md5 还原。
+- SixRealms / L1 / L2 相关 373 项 OK；L2 登记册 1100 不变（内存重新生成与现有文档逐字一致）；全量 **2199 → 2218 OK**；`compileall` 通过；`git diff --check` 干净。未启动 MuMu / 游戏。
+
+### 未做 / 待真机
+- Level C PENDING（清单见 ROADMAP）。
+- 刷新确认后 HUD 滞后若超过两帧，真实轰雷可能被判 `actual=300` 并跳过本店（只少记，不误记），Level C 重点看。
+- 买入门槛 300 未动（AI_CONTEXT §8 ③）。

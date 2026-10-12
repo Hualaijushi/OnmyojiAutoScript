@@ -27,6 +27,10 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
     # 按钮位置稳定等待最多 2.5 秒），加上最后一次确认；取 30 秒，并且小于 Device 的 60 秒无点击卡死判定。
     # 只在控制权回到循环时才检查，不能中断底层某次永久阻塞的调用。
     SWITCH_CLASS_TIMEOUT = 30
+    # `set_shikigami` 传入 `slot_images` 时（好友结界寄养）点过确认后的边界：只观察不再点式神的时长，
+    # 以及确认框反复出现时最多点几次。provisional，需 Level C 调整（正常样本确认后 0.45 秒内空位就变化）。
+    SET_CONFIRM_SETTLE = 3.0
+    SET_CONFIRM_MAX_CLICKS = 3
 
     def in_shikigami_growth(self, screenshot=False) -> bool:
         # 判定是否在式神育成界面
@@ -108,12 +112,18 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
                 self.appear_then_click(self.I_RS_LEVEL_MAX, interval=0.5)
         logger.info('Unset all shikigami max lv')
 
-    def set_shikigami(self, shikigami_order: int = 7, stop_image: RuleImage = None):
+    def set_shikigami(self, shikigami_order: int = 7, stop_image: RuleImage = None, *,
+                      slot_images: tuple = None, empty_slots: int = 0):
         """
         要求在式神育成的界面
         选择式神 1-7
         :param stop_image:  结束的图片，如果不出现就结束
         :param shikigami_order:
+        :param slot_images: 只给好友结界寄养用的空寄养位图标；不传时行为与原来完全一致。传入时：
+            结束条件改成「这些图标的命中数比 empty_slots 少」（两格都空时游戏先放右数第二格，右数第一格
+            一直空着，单看一格永远等不到），并且点过确认后不再点式神，只在有界时间内观察就退出，
+            寄养是否成功由调用方回育成页判断
+        :param empty_slots: 进场时的空寄养位数
         :return:
         """
         # 选择式神
@@ -129,6 +139,9 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
         start_time = time.time()   # 记录起始时间
         click_interval_timer = Timer(1.5).start()  # 点击选择式神间隔
         clicked = False
+        slot_mode = slot_images is not None
+        confirm_clicks = 0
+        confirmed_at = None
         while 1:
             # ——1. 先做超时检查——
             if time.time() - start_time > TIMEOUT_SEC:
@@ -138,10 +151,22 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
             if click_interval_timer.reached_and_reset():
                 clicked = False
             self.screenshot()
-            if self.appear_then_click(self.I_U_CONFIRM_SMALL, interval=0.5):
+            if (not slot_mode or confirm_clicks < self.SET_CONFIRM_MAX_CLICKS) and \
+                    self.appear_then_click(self.I_U_CONFIRM_SMALL, interval=0.5):
                 clicked = False  # 点击了确认, 恢复选式神的操作
+                confirm_clicks += 1
+                confirmed_at = monotonic()
                 continue
-            if not self.appear(stop_image):
+            if slot_mode:
+                if sum(self.appear(image) for image in slot_images) < empty_slots:
+                    break
+                if confirmed_at is not None:
+                    # 已经点过确认：寄养多半已生效、选择面板已关，再点式神坐标就是盲点
+                    if monotonic() - confirmed_at >= self.SET_CONFIRM_SETTLE:
+                        logger.warning(f'确认后 {self.SET_CONFIRM_SETTLE}s 内空寄养位没有减少，退出选择流程')
+                        break
+                    continue
+            elif not self.appear(stop_image):
                 break
             # 与下方点击第7个式神操作互斥, 防止确认按钮还没有出现被下方取消掉
             if not clicked and self.click(click_match, interval=1.5):

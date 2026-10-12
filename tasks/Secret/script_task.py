@@ -33,6 +33,16 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
     def _exit_matcher(self) -> ExitMatcher:
         return self.I_SE_FIRE
 
+    def _select_reward_region(self) -> RuleClick:
+        """秘闻奖励页的结算推进区域：固定用面板下方的 `C_RANDOM_SAVE_BOTTOM`。
+
+        秘闻奖励页同样有奖励宝袋（`I_GET_BATTLE_REWARD` 0.998），通用逻辑会选 `C_RANDOM_DEFAULT`；
+        但它右下多了「本次通关时间 / 分享」面板（约 x 855~1245、y 546~622），占默认区约两成且会吃掉点击，
+        锚点落进去后同一状态一直复用，2026-10-12 oas2 点满 9 次后 GameStuckError。右侧区会碰到「分享」按钮，
+        也不能用。只覆盖本任务的选区，通用结算流程不变。
+        """
+        return self.C_RANDOM_SAVE_BOTTOM
+
     @cached_property
     def match_layer(self) -> dict:
         return {

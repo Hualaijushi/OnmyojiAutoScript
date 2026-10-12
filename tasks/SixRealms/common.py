@@ -128,7 +128,8 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
         return True
 
     def buy_skill(self, skill_rule: RuleImage, skill_price: int, coin_num_rule: RuleOcr,
-                  fresh_rule: RuleImage, refresh_times_rule: RuleOcr, buy_num: int = 99) -> tuple[int, int]:
+                  fresh_rule: RuleImage, refresh_times_rule: RuleOcr, buy_num: int = 99,
+                  expected_cost: int = None) -> tuple[int, int]:
         """
         购买技能
         :param skill_rule: 技能图标
@@ -137,6 +138,8 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
         :param fresh_rule: 刷新图标
         :param refresh_times_rule: 刷新次数文本
         :param buy_num: 最大购买次数
+        :param expected_cost: 期望扣费。None（默认）按 D028 只要求金币下降；给定时购买前后都取稳定读数，
+            扣费不等于它就不计数并结束本次购买（已经花了钱、买到的东西不确定，不在同一家店里再点）
         :return: (剩余金币数量, 已验证成功的购买次数)；点击但没买成的尝试不计入
         """
         coin_num = coin_num_rule.ocr(self.device.image)
@@ -151,6 +154,8 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
                 continue
             buy_interval_timer.reset()
             coin_num = coin_num_rule.ocr(self.device.image)
+            if expected_cost is not None:
+                coin_num = self._wait_coin_stable(coin_num_rule, coin_num)
             logger.info(f'Current coin: {coin_num}')
             if buy_cnt >= buy_num:
                 logger.info(f'Buy {skill_rule.name} done')
@@ -167,9 +172,14 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
                 buy_region = ClickRegion((x - 60, y + (-height) // 2, 26, height + 1), f'{skill_rule.name}_buy_left')
                 logger.info(f'Try to buy {skill_rule.name}, coin before: {coin_num}')
                 execute_single_click(self.device, buy_region, control_name=skill_rule.name)
-                if self._confirm_skill_purchase(coin_num_rule, coin_num):
+                if (verified := self._confirm_skill_purchase(coin_num_rule, coin_num, expected_cost)):
                     buy_cnt += 1
                     failed_cnt = 0
+                elif verified is None:
+                    # 返回值取购买后的稳定读数，而不是点击前的旧值
+                    coin_num = coin_num_rule.ocr(self.device.image)
+                    logger.warning(f'{skill_rule.name} purchase verification failed, skip current shop.')
+                    break
                 else:
                     failed_cnt += 1
                     if failed_cnt >= self.BUY_MAX_FAILED_ATTEMPTS:
@@ -184,14 +194,17 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
         logger.info(f'Finish purchase {skill_rule.name} times: {buy_cnt}')
         return coin_num, buy_cnt
 
-    def _confirm_skill_purchase(self, coin_num_rule: RuleOcr, coin_before: int) -> bool:
+    def _confirm_skill_purchase(self, coin_num_rule: RuleOcr, coin_before: int,
+                                expected_cost: int = None) -> Optional[bool]:
         """
         点击商品后的购买事务：购买确认弹窗出现并被点掉，且金币确实下降，才算买成。
         两段等待都有上限，超时按「未买成」返回，不抛异常、不等全局卡死检测兜底。
         :param coin_num_rule: 金币数量文本
-        :param coin_before: 点击商品那一帧的金币。HUD 滞后只会让它偏高；只有弹窗已出现并被点掉才会比较金币，
-            所以偏高最多让真实购买更容易被验证，不会让真实购买漏判
-        :return: 验证买成True, 否则False
+        :param coin_before: 点击商品那一帧的金币。不带 expected_cost 时 HUD 滞后只会让它偏高，最多让真实购买更容易
+            被验证；带 expected_cost 时偏高会算错扣费，所以调用方传的是稳定读数
+        :param expected_cost: 期望扣费。给定时金币要连续两帧相同（HUD 有递减动画，真机读到过 600 -> 500 -> 200）
+            才比较扣费
+        :return: 验证买成 True；弹窗没出现 / 金币没降 False；金币降了但扣费对不上或一直不稳定 None
         """
         confirm_timer = Timer(self.BUY_CONFIRM_TIMEOUT).start()
         while True:
@@ -204,15 +217,48 @@ class SixRealmsCommon(GameUi, SixRealmsAssets):
                 logger.warning(f'Purchase confirm not appeared in {self.BUY_CONFIRM_TIMEOUT}s, keep buy_cnt unchanged')
                 return False
         coin_timer = Timer(self.BUY_COIN_TIMEOUT).start()
+        coin_last = None
         while True:
             self.screenshot()
             coin_after = coin_num_rule.ocr(self.device.image)
-            if coin_after < coin_before:
-                logger.info(f'Purchase verified, coin {coin_before} -> {coin_after}')
-                return True
+            if expected_cost is None:
+                if coin_after < coin_before:
+                    logger.info(f'Purchase verified, coin {coin_before} -> {coin_after}')
+                    return True
+            elif coin_after < coin_before and coin_after == coin_last:
+                cost = coin_before - coin_after
+                if cost == expected_cost:
+                    logger.info(f'Purchase verified, coin {coin_before} -> {coin_after}, cost {cost}')
+                    return True
+                logger.warning(f'Skill purchase cost mismatch: expected={expected_cost} actual={cost}')
+                return None
+            coin_last = coin_after
             if coin_timer.reached():
+                if expected_cost is not None and coin_after < coin_before:
+                    logger.warning(f'Purchase coin not stable, coin {coin_before} -> {coin_after}')
+                    return None
                 logger.warning(f'Purchase not verified, coin {coin_before} -> {coin_after}, keep buy_cnt unchanged')
                 return False
+
+    def _wait_coin_stable(self, coin_num_rule: RuleOcr, coin_num: int) -> int:
+        """
+        购买前取稳定金币读数（连续两次 OCR 相同），只给带 expected_cost 的购买用：刷新确认后 HUD 会滞后
+        （真机 16:37 第二次刷新后仍读到 600，实际已是 500），拿旧值当起点会把真实扣费算错。
+        有上限；超时返回最后一次读数，由购买后的扣费比对兜底（对不上只会少记、结束本次购买，不会误记）。
+        :param coin_num_rule: 金币数量文本
+        :param coin_num: 当前帧已读到的金币
+        :return: 稳定的金币读数
+        """
+        stable_timer = Timer(self.BUY_COIN_TIMEOUT).start()
+        while True:
+            self.screenshot()
+            coin_now = coin_num_rule.ocr(self.device.image)
+            if coin_now == coin_num:
+                return coin_now
+            if stable_timer.reached():
+                logger.warning(f'Coin not stable before purchase, last reading: {coin_now}')
+                return coin_now
+            coin_num = coin_now
 
     def get_remain_turns(self, remain_rule: RuleOcr) -> int:
         """

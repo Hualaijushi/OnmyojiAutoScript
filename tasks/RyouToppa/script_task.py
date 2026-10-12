@@ -75,6 +75,10 @@ RYOU_TOPPA_ACTION_RETRIES = 2
 RYOU_TOPPA_TICKET_OCR_RETRIES = 3
 RYOU_TOPPA_MAIN_FAILURE_LIMIT = 2
 RYOU_TOPPA_AREA_CONTENT_STD = 8.0
+# 点击进攻后等待进入准备 / 战斗页的上限（秒）。点击后游戏先把列表压暗转圈（遮罩下 I_FIRE 0.956、
+# I_TOPPA_RECORD 0.993 仍能匹配，和正常弹窗分不开），再全屏加载，最后才进战斗；2026-10-11 实测正常进入
+# 最长 1.33 秒，也有超过 1.3 秒仍在过渡的样本。provisional，需 Level C 调整。
+RYOU_TOPPA_ATTACK_ENTER_TIMEOUT = 6
 
 
 class AreaAttackResult(Enum):
@@ -170,6 +174,25 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             if self.appear(self.I_TOPPA_RECORD, threshold=0.85):
                 list_seen = True
         return 'list' if list_seen else 'unknown'
+
+    def _wait_for_battle_after_fire(self, timeout: float = RYOU_TOPPA_ATTACK_ENTER_TIMEOUT) -> str:
+        """点击进攻后有界等待进入战斗，期间不点击任何东西。
+
+        压暗转圈和全屏加载都是正常过渡：前者 I_FIRE 仍能匹配，后者什么都匹配不到，两者都只继续等，
+        不算「按钮仍存在」也不算异常；一看到准备 / 战斗页就返回。到时仍未进入战斗，按最后一帧返回与
+        `_wait_for_attack_state` 相同的状态，交给原有的重试 / 异常处理。
+        """
+        timer = Timer(timeout).start()
+        while 1:
+            self.screenshot()
+            if self.is_in_battle(False):
+                return 'battle'
+            if timer.reached():
+                if self.appear(RealmRaidAssets.I_FIRE, threshold=0.8):
+                    return 'fire'
+                if self.appear(self.I_TOPPA_RECORD, threshold=0.85):
+                    return 'list'
+                return 'unknown'
 
     def _wait_for_ryou_toppa_list(self, timeout: float = RYOU_TOPPA_STATE_TIMEOUT) -> bool:
         timer = Timer(timeout).start()
@@ -651,7 +674,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
                 if self.is_in_battle(False):
                     return self._finish_area_battle(index)
                 if not self.appear(RealmRaidAssets.I_FIRE, threshold=0.8):
-                    state = self._wait_for_attack_state()
+                    # 上一次点击后按钮才消失：多半正在进入战斗，按点击后的同一规则有界等待
+                    state = self._wait_for_battle_after_fire()
                     if state == 'battle':
                         return self._finish_area_battle(index)
                     if state == 'list' and attempt < RYOU_TOPPA_ACTION_RETRIES:
@@ -676,13 +700,18 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
                     logger.warning(f'寮突破：区域{index + 1}等待点击期间返回目标列表，准备重新点击区域')
                     continue
                 logger.warning(f'寮突破：等待点击期间进攻按钮状态已变化，第{attempt}次重新识别')
+                # 按钮消失但还没进战斗，可能是上一次点击正在生效：先有界等待，不直接算交互异常
+                if self._wait_for_battle_after_fire() == 'battle':
+                    return self._finish_area_battle(index)
                 continue
             self.appear_then_click(RealmRaidAssets.I_FIRE, interval=0, threshold=0.8)
-            state = self._wait_for_attack_state()
+            # 点击后的压暗转圈 / 全屏加载都是正常过渡：等待窗口内不重点进攻
+            state = self._wait_for_battle_after_fire()
             if state == 'battle':
                 return self._finish_area_battle(index)
             if state == 'fire':
-                logger.warning(f'寮突破：区域{index + 1}进攻按钮点击后仍存在，第{attempt}次重试')
+                logger.warning(f'寮突破：区域{index + 1}进攻按钮点击后{RYOU_TOPPA_ATTACK_ENTER_TIMEOUT}秒仍存在，'
+                               f'第{attempt}次重试')
                 continue
             if state == 'list' and attempt < RYOU_TOPPA_ACTION_RETRIES:
                 reopen_area = True

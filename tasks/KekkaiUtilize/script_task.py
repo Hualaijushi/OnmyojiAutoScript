@@ -1029,15 +1029,16 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 f'进入好友结界失败: {type(error).__name__}'
             )
         # 判断好友的有两个位置还是一个坑位
-        stop_image = None
         self.screenshot()
-        if self.appear(self.I_U_ADD_1):  # 右侧第一个有（无论左侧有没有）
+        slot_1 = self.appear(self.I_U_ADD_1)
+        slot_2 = self.appear(self.I_U_ADD_2)
+        if slot_1:  # 右侧第一个有（无论左侧有没有）
             logger.info('Right side has one')
-            stop_image = self.I_U_ADD_1
-        elif self.appear(self.I_U_ADD_2) and not self.appear(self.I_U_ADD_1):  # 右侧第二个有 但是最左边的没有，这表示只留有一个坑位
+        elif slot_2:  # 右侧第二个有 但是最左边的没有，这表示只留有一个坑位
             logger.info('Right side has two')
-            stop_image = self.I_U_ADD_2
-        if not stop_image:
+        empty_slots = int(slot_1) + int(slot_2)
+        logger.info(f'好友结界空寄养位: {empty_slots}')
+        if not empty_slots:
             # 没有坑位可能是其他人的手速太快了抢占了
             self.save_image(content='没有坑位了', wait_time=0, push_flag=False, image_type='png')
             logger.warning('没有坑位可能是其他人的手速太快了抢占了')
@@ -1047,7 +1048,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
             # 按下面的软失败处理，不在这里另外安排重试
             self.switch_shikigami_class(shikigami_class, deadline=self._utilize_deadline())
             # 上式神
-            self.set_shikigami(shikigami_order, stop_image)
+            self.set_shikigami(shikigami_order, slot_images=(self.I_U_ADD_1, self.I_U_ADD_2),
+                               empty_slots=empty_slots)
         except (GamePageUnknownError, GameStuckError) as error:
             return self._record_utilize_failure(
                 f'式神寄养失败: {type(error).__name__}'

@@ -1786,6 +1786,21 @@ provisional，调整时不需要改本条 ADR 的分层决定，只需在 `docs/
 - **取舍**：`GameTooManyClickError` 不被 `run_utilize` 捕获，所以「本地上限先于 Device 点击兜底」是本设计的关键；但 `click_record` 在多次失败之间不清零（本轮不动
   Device），历史点击仍可能让 Device 先触发——那种情况维持原来的重启路径。
 
+**补记（五）（2026-10-11，好友结界放置：结束条件看空位数、确认后不再点式神）**：2026-10-06 / 10-09 / 10-10 oas1 三次
+`GameTooManyClickError: shikigami_left_2` 是同一根因：好友结界两个寄养位都空时，`run_utilize` 把右数第一格 `I_U_ADD_1` 当
+`set_shikigami` 的结束图片，游戏却先放右数第二格，右数第一格一直空着，确认后继续盲点式神；寄养其实已经成功（重跑 10 秒内读到
+5:59:2x）。本补记固化：
+
+- **放置的结束条件是「空寄养位数比进场时少」**：`run_utilize` 进场时分别判断 `I_U_ADD_1` / `I_U_ADD_2` 得到空位数，传给
+  `set_shikigami(order, slot_images=(I_U_ADD_1, I_U_ADD_2), empty_slots=n)`；不能再挑其中一格当结束图片。
+- **点过 `I_U_CONFIRM_SMALL` 之后不再点式神坐标**：确认框还在只允许有界重点确认（`SET_CONFIRM_MAX_CLICKS = 3`），空位没减少也只观察
+  `SET_CONFIRM_SETTLE = 3` 秒就退出（两个数值 provisional，需 Level C）。`set_shikigami` 只负责退出选择流程。
+- **寄养成功的唯一裁决仍是 `check_utilize_add`**：育成页 `I_UTILIZE_ADD` 消失 + 有效剩余时间。`set_shikigami` 里不加剩余时间 OCR、
+  不复制 `I_UTILIZE_ADD` 判断；观察期满仍无变化就交给下一圈复核，由既有收敛保护兜底。
+- **公共函数只加仅限关键字的可选参数**：不传 `slot_images` 时 `set_shikigami` 的执行路径与原来逐行一致（`check_max_lv` 的
+  `stop_image=I_RS_NO_ADD`、Exploration 继承都不受影响）。复用原循环里的点击调用点，不新增调用点，L2 审计清单与登记册不变。
+  没有把新循环写成 KekkaiUtilize 自己的方法：那样会新增 5 个点击调用点，需要改 L2 审计清单和 L1/L2 测试钉住的总数。
+
 ## D024 后端 config bool 字段 = 前端自动出现的开关：OASX 是纯 schema-driven 表单，业务能力退休一律走「开关，不删代码」
 
 状态：Accepted
@@ -2245,3 +2260,12 @@ BehaviorTrace 记录坐标与真机点击位置一致。
 - **范围外（明确未动，各有真机待验项）**：价格 300（孔雀国 3 次真实购买金币差都是 200，月之海是 300，共用 `skill_price` 参数）、金币闸门先于商品识别、刷新确认后首帧过早识别（HUD 滞后 5/14）、`wait_animate_stable` 的位置与 ROI、`refresh_time` 只取第一位数字、路线 / 唤息 / 召唤 / Boss、模板 / ROI / OCR、L1 / L2 / `ClickSampler`。点击当时为什么没触发弹窗仍**不确认**（最可能是点击落在刷新后重新发牌的动画期间：两次落空都在刷新确认后约 0.36 秒，样本很少）。
 
 **Level C**：2026-10-07 用户真机运行观察正常，暂时收口（未逐项跑完专项清单）；后续观察项见 `docs/ROADMAP.md`「SixRealms 购买确认 P0 Level C 验收」——正常购买与点击落空两条核心路径，以及落空时的前后画面 / 完整商店网格 / 购买弹窗截图。
+
+**补记（2026-10-12，孔雀国轰雷：按期望扣费核对，只对传了 `expected_cost` 的调用生效）**：
+- **背景**：2026-10-12 oas1 17:46:38，第二次刷新后点击 `PK_PK_STORE_SKILL_THUNDER`，确认弹窗点掉 0.2 秒后金币读到 500（HUD 递减动画的中间帧），本 ADR 的「下降即买成」当场通过、`skill_roaring_thunder` 置 1；再过 0.3 秒金币稳定在 200，实际扣费 ≥300（点击前 600 本身也可能是刷新后的滞后值），不是轰雷。同期 6 次轰雷购买里另外 5 次都正好扣 200（10-07 两次、10-12 三次）。
+- **决定**：
+  - `buy_skill` / `_confirm_skill_purchase` 新增可选参数 `expected_cost=None`。**不传时行为与本 ADR 原文逐条一致**（任何下降都算买成，月之海 `skill_101` 继续如此），所以「不钉死扣多少」仍是默认契约；只有调用方明确知道扣费时才传。目前只有孔雀国轰雷传 `PeacockKingdom.PK_SKILL_THUNDER_COST = 200`；**买入门槛 300 不动**（与验证无关，门槛问题仍按 `docs/AI_CONTEXT.md` §8 待真机）。
+  - 传了 `expected_cost` 时：① 购买前取稳定读数——`_wait_coin_stable` 连续两次 OCR 相同才作为 `coin_before`（10-12 16:37 第二次刷新确认后 0.19 秒仍读到 600，实际已是 500；旧值当起点会把真实扣费算成 300）；② 购买后金币连续两帧相同且低于 `coin_before` 才比较，降幅等于 `expected_cost` 才计数；③ 降幅不等（`Skill purchase cost mismatch: expected=… actual=…`）或窗口内一直不稳定 → 返回 `None`，`buy_skill` **不计数、结束本次购买**（`<商品名> purchase verification failed, skip current shop.`），返回值取买后读数。
+  - 结束本次购买而不是按本 ADR 的失败语义重试，是因为这时**已经花了钱、买到的东西不确定**：再点同一位置可能再买一次别的商品。孔雀国状态不变，下一次进店重新找轰雷；真买到了的话战斗 HUD `I_PK_BATTLE_THUNDER` 仍会置位。弹窗没出现 / 金币没降（没花钱）仍按原失败语义重试、3 次收口，不受影响。
+  - 不新增点击调用点（稳定读数只截图 + OCR），L2 登记册不变。等待上限：购买前的稳定读数是新增的独立有界循环 `_wait_coin_stable`（上限 `BUY_COIN_TIMEOUT`，超时返回最后一次读数）；购买后的稳定判断没有新增循环，复用 `_confirm_skill_purchase` 原有的金币等待段与它的 `BUY_COIN_TIMEOUT` 计时器，只在该段里加了「连续两帧相同」与扣费比较。两者上限数值相同，但不是同一个实现。
+- **取舍（不掩盖）**：刷新确认后 HUD 滞后若超过两帧，两次滞后读数会被当成稳定值，真实轰雷会被判 `actual=300` 并跳过本店（偏保守：少记一次，不会误记）；Level C 重点看刷新后紧接着购买的日志。

@@ -1,6 +1,6 @@
-from tasks.GameUi.action import sequence
+from tasks.GameUi.action import conditional_action, sequence
 from tasks.GameUi.default_pages import random_click, page_battle, page_battle_prepare, page_battle_result, page_reward
-from tasks.GameUi.matcher import any_of, all_of
+from tasks.GameUi.matcher import any_of, all_of, not_
 from tasks.GameUi.page_definition import Page
 from tasks.GlobalGame.assets import GlobalGameAssets
 from tasks.SixRealms.assets import SixRealmsAssets
@@ -52,7 +52,15 @@ page_pk_map.connect(page_pk_main, GlobalGameAssets.I_UI_BACK_BLUE, key="page_pk_
 
 # 主界面退出弹窗
 page_pk_exit = Page(SixRealmsAssets.I_PK_EXIT_MAIN, category="peacock_kingdom", priority=88)
-page_pk_exit.connect(page_peacock_kingdom, SixRealmsAssets.I_PK_EXIT_MAIN, key="page_pk_exit->page_moon_sea")
+# 2026-10-10 起点「退出主界面」后还会弹出新版「是否离开孔雀国？」确认框（公共双按钮）。4 秒内到不了孔雀国页时，
+# 先点「确定」；它必须是边级 on_leave_failure（排在目标页的进入失败 hook 之前，那个 hook 的 ui_click 在弹窗上会
+# 一直空等到 GameStuck）。条件排除唤息弹窗正文，不会误确认花费相铃。
+PK_EXIT_DIALOG_CONFIRM = conditional_action(
+    all_of(GlobalGameAssets.I_UI_CONFIRM, GlobalGameAssets.I_UI_CANCEL, not_(SixRealmsAssets.I_MS_CHECK_OPEN_STORE)),
+    GlobalGameAssets.I_UI_CONFIRM,
+)
+page_pk_exit.connect(page_peacock_kingdom, SixRealmsAssets.I_PK_EXIT_MAIN, key="page_pk_exit->page_moon_sea",
+                     on_leave_failure=[PK_EXIT_DIALOG_CONFIRM])
 page_pk_exit.connect(page_pk_shop_land, random_click(ltrb=(True, True, True, True)), key="page_pk_exit->page_pk_shop_land")
 page_pk_exit.connect(page_pk_main, random_click(ltrb=(True, True, True, True)), key="page_pk_exit->page_pk_main")
 page_pk_exit.connect(page_pk_chaos_land, random_click(ltrb=(True, True, True, True)), key="page_pk_exit->page_pk_chaos_land")

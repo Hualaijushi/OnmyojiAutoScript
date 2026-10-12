@@ -43,6 +43,7 @@ class BasePeacockKingdom(GeneralBattle, SixRealmsCommon):
     def before_run(self):
         self.coin_num = 0
         self.skill_roaring_thunder = 0
+        self.breath_failed = False
         pages.page_battle = self.navigator.resolve_page(pages.page_battle)
         pages.page_battle.recognizer = pages.any_of(self.I_BOSS_SKIP, pages.page_battle.recognizer)
         pages.page_battle_result = self.navigator.resolve_page(pages.page_battle_result)
