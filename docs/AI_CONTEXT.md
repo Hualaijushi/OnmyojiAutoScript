@@ -42,7 +42,7 @@
   2. `139f3bcd` fix: improve KekkaiUtilize reliability and shikigami switching bounds（§4.78~§4.81）；
   3. fix: improve GlobalGame configuration handling（§4.75~§4.76；即当前 HEAD，本节随该 commit 一起提交，故不写自身 hash——以 `git log -1` 为准）。
 - 拆分方式：只按整文件 / 整块暂存，文档中间版本只整块删除其它主题的章节，不改写文字；每个 commit 提交前都把暂存区导出到仓库外独立目录跑 compileall + 全量 unittest（C1 1909 / C1+C2 2018 / C1+C2+C3 2044，全 OK）。
-- 工作区（2026-10-07 更新）：SwitchSoul V1 / V2（§4.99 / §4.100）与 SixRealms 购买确认 P0（§4.101）已按主题拆成两个本地 commit（2026-10-13 已 push，hash 以 `git log` 为准）；2026-10-10：FrogBoss（§4.93 ~ §4.98）与 Orochi「发现宝藏」两份未提交 WIP 按用户决定放弃、已从工作区删除（删除前在仓库外 `D:\oas_xy\wip_backup_20261010\` 留了完整备份：全部 tracked 改动的 binary patch + 未跟踪文件 + 当时的文档）；2026-10-10 游戏 UI 更新适配（§4.102 / §4.103）作为一个本地 commit 提交（2026-10-13 已 push）。工作区另外保留两样未提交内容：用户 16:46 ~ 16:57 用 annotator 重截的 ActivityShikigami 新活动模板（climb / 入口 / 主页标题等，尚未审查），以及一张没有任何 json 引用的重复图 `tasks/GlobalGame/ui/ui_ui_reward_1.png`。2026-10-12：KekkaiUtilize 好友结界寄养「确认后继续点式神」修复（§4.104，10-11）、RyouToppa 点击进攻后的过渡等待修复（§4.105）、Secret 秘闻奖励页结算选区修复（§4.106）、SixRealms 孔雀国唤息 / 退出确认修复（§4.107）、SixRealms 孔雀国轰雷购买扣费核对（§4.108）已完成 Level A/B 与提交前审查，合成 commit `bdffc4eb`（`fix: improve automation reliability after UI update`）；2026-10-13 连同此前的 `364ea3f9` / `96797089` / `e2d459d8` 以普通 push（非 force，快进）推到 `origin/master`。五项 Level C 于 2026-10-13 按真机日志部分核对：§4.104 ~ §4.107 的主路径 PASS，§4.107 离开孔雀国与 §4.108 轰雷扣费尚未在真机上触发（逐项见 ROADMAP，均未标 VERIFIED）。2026-10-13：契灵组队队员计数收尾修复（§4.109）在工作区，未提交。`tasks/Component/ReplaceShikigami/rs/supplement.json` 在工作区显示为修改，但只是行尾 CRLF / LF 差异、没有内容变化，未纳入提交。`config/oas*.json`、`log/` 等本地文件仍由 `.gitignore` 排除，未纳入版本控制。
+- 工作区（2026-10-07 更新）：SwitchSoul V1 / V2（§4.99 / §4.100）与 SixRealms 购买确认 P0（§4.101）已按主题拆成两个本地 commit（2026-10-13 已 push，hash 以 `git log` 为准）；2026-10-10：FrogBoss（§4.93 ~ §4.98）与 Orochi「发现宝藏」两份未提交 WIP 按用户决定放弃、已从工作区删除（删除前在仓库外 `D:\oas_xy\wip_backup_20261010\` 留了完整备份：全部 tracked 改动的 binary patch + 未跟踪文件 + 当时的文档）；2026-10-10 游戏 UI 更新适配（§4.102 / §4.103）作为一个本地 commit 提交（2026-10-13 已 push）。工作区另外保留两样未提交内容：用户 16:46 ~ 16:57 用 annotator 重截的 ActivityShikigami 新活动模板（climb / 入口 / 主页标题等，尚未审查），以及一张没有任何 json 引用的重复图 `tasks/GlobalGame/ui/ui_ui_reward_1.png`。2026-10-12：KekkaiUtilize 好友结界寄养「确认后继续点式神」修复（§4.104，10-11）、RyouToppa 点击进攻后的过渡等待修复（§4.105）、Secret 秘闻奖励页结算选区修复（§4.106）、SixRealms 孔雀国唤息 / 退出确认修复（§4.107）、SixRealms 孔雀国轰雷购买扣费核对（§4.108）已完成 Level A/B 与提交前审查，合成 commit `bdffc4eb`（`fix: improve automation reliability after UI update`）；2026-10-13 连同此前的 `364ea3f9` / `96797089` / `e2d459d8` 以普通 push（非 force，快进）推到 `origin/master`。五项 Level C 于 2026-10-13 按真机日志部分核对：§4.104 ~ §4.107 的主路径 PASS，§4.107 离开孔雀国与 §4.108 轰雷扣费尚未在真机上触发（逐项见 ROADMAP，均未标 VERIFIED）。2026-10-13：契灵组队队员计数收尾修复（§4.109）已提交到本地 commit `298f466d`（`fix: restore bondling member count completion`），本节由其后的文档同步 commit 更新；截至该文档 commit 尚未 push。`tasks/Component/ReplaceShikigami/rs/supplement.json` 在工作区显示为修改，但只是行尾 CRLF / LF 差异、没有内容变化，未纳入提交。`config/oas*.json`、`log/` 等本地文件仍由 `.gitignore` 排除，未纳入版本控制。
 
 ### 2.1 已失效的 2026-09-02 工作区清单（历史记录）
 
@@ -3881,7 +3881,7 @@ master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
 
 ### 4.109 BondlingFairyland 契灵组队：队员按自己的战斗次数收尾
 
-2026-10-13。修复同日 oas1 队长 / oas2 队员（`limit_count=100`）队员打满后仍等邀请约 2 分钟。**未 commit / push**。只改任务自己的 `script_task.py`，下一次契灵即生效、不需要重启。
+2026-10-13。修复同日 oas1 队长 / oas2 队员（`limit_count=100`）队员打满后仍等邀请约 2 分钟。当前修复已完成本地提交（`298f466d`），等待远程同步；Level C 仍待验证。只改任务自己的 `script_task.py`，下一次契灵即生效、不需要重启。
 
 - **根因（只读调查已证实）**：队长 `run_leader` 打满后「拉队员进房再退出」（12:27:06）；队员 `run_member` 的同一计数检查自上游 `bab92bac`（2025-09-30）起被注释（残留 `breakpush_n`），只能靠房间信号或邀请计时器结束。上游 `ba0e8d46`（2026-07-17）让 `wait_battle` 把「回到契灵主界面」判为「接受邀请过慢」（返回 `None`、继续等）；队长退房后队员看到的是同一个画面，于是 12:27:09 记 `Late invitation`，等到 12:28:58「队员等待超时:120.04」才退出。改动前（`upstream/mine`）同一画面判 `Room destroyed`，队员立即退出。
 - **修改**：`run_member` 主循环在邀请计时器判断之后、接受邀请之前恢复 `current_count >= limit_count` → 「契灵队员次数:N已完成,退出」→ `break`，交给原有收尾（退房 / 退战斗，纯队员回庭院并排下次运行）；删除注释块与 `breakpush_n`。`wait_battle`（含 07-17 的接受邀请过慢）、队长流程、GeneralBattle / GeneralInvite、资产 / 配置都没动；不新增点击调用点，L2 登记册不变。
@@ -3955,7 +3955,7 @@ Easy Install 当前主要预置 medium OCR 模型；small 模型可能首次自�
 
 ## 7. 测试与验证状态
 
-**当前基线（2026-10-13，工作区口径：`bdffc4eb` 之上加 §4.109 契灵队员计数收尾，未提交；工作区里另有未提交的 ActivityShikigami 新活动模板）**：
+**当前基线（2026-10-13，commit 口径 `298f466d`，尚未 push：`bdffc4eb` 之上加 §4.109 契灵队员计数收尾；全量是提交前在工作区跑的，当时工作区里另有未提交的 ActivityShikigami 新活动模板，提交时没有再单独导出运行）**：
 `toolkit/python.exe -m unittest discover -s tests` = **2231/2231 OK**（`2218 → 2231` = §4.109 新增 `tests/test_bondling_fairyland_member_limit_count.py` 13 项，改 0 个既有测试，删除 0；L2 登记册 1100 / policy 38 不变）。凌晨在 KekkaiUtilize 静默窗口里跑会多 1 个 ERROR，见 §8。
 
 **上一基线（2026-10-12，commit 口径 `bdffc4eb`，2026-10-13 已 push：在 2026-10-10 commit 之上加 §4.104 KekkaiUtilize 好友结界放置修复、§4.105 RyouToppa 进攻过渡修复、§4.106 Secret 秘闻结算选区修复、§4.107 SixRealms 孔雀国确认修复、§4.108 SixRealms 轰雷扣费核对，随本次本地 commit 提交；不含工作区里未提交的 ActivityShikigami 新活动模板——开发时全量在包含它的工作区上跑，提交前把暂存区导出到仓库外单独跑，同为 2218 OK（skipped=1：导出树没有本地 `config/`））**：
