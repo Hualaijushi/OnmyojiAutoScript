@@ -249,9 +249,11 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                 logger.info(f"队员等待超时:{wait_timer.current()}, 退出")
                 break
 
-            # if self.current_count >= self.limit_count:
-            #     logger.info('Orochi count limit out')
-            #     breakpush_n
+            # 队员按自己的战斗次数收尾。队长打满后「拉进房间再退出」的信号在队员侧会被 wait_battle
+            # 判成「接受邀请过慢」（同样回到契灵主界面，画面无法区分），不能再靠它结束。
+            if self.current_count >= self.limit_count:
+                logger.info(f'契灵队员次数:{self.current_count}已完成,退出')
+                break
             if datetime.now() - self.start_time >= self.limit_time:
                 logger.info('BondlingFairyland time limit out')
                 break

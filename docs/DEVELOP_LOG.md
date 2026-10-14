@@ -10042,3 +10042,41 @@ Settlement Micro-Burst 的 anchor 跨调用复用模型在"弹窗刚消失、真
 - Level C PENDING（清单见 ROADMAP）。
 - 刷新确认后 HUD 滞后若超过两帧，真实轰雷可能被判 `actual=300` 并跳过本店（只少记，不误记），Level C 重点看。
 - 买入门槛 300 未动（AI_CONTEXT §8 ③）。
+
+## 2026-10-13 - UI 更新五项修复：push 与 Level C 日志核对
+
+### 背景
+- `bdffc4eb`（§4.104 ~ §4.108）提交后，用户决定不等轰雷扣费的真机验证，先 push；轰雷与离开孔雀国之后单独验证。
+
+### push
+- push 前 `git fetch`：`origin/master` 仍为 `67d4d0a3`，快进推送 4 个 commit（`364ea3f9` / `96797089` / `e2d459d8` / `bdffc4eb`），普通 push，非 force。push 范围内的 ActivityShikigami 改动只有 `e2d459d8` 已审查的 `I_ACTIVITY_AWARD`，工作区里未审查的新活动模板没有进入。
+- clean `git archive HEAD` 导出跑全量：2218 项 1 个 ERROR，是 KekkaiUtilize 静默窗口的时钟依赖用例（凌晨 01:02 跑）；`origin/master` 同一时刻同样失败，判为既有问题，记入 AI_CONTEXT §8。
+
+### Level C（只读日志核对：没有启动或触发任务、没有改配置；均未标 VERIFIED）
+- 先核对每项修复的生效时间：代码最后修改时间早于对应 OAS 进程的启动时间，或任务每次运行都重新加载自己的 `script_task.py`。
+- §4.104 KekkaiUtilize、§4.105 RyouToppa、§4.106 Secret 奖励页、§4.107 唤息：主路径 PASS，逐项写在 ROADMAP 各条的「Level C 记录（2026-10-13）」。
+- 未覆盖：§4.107 离开孔雀国（没有触发）、§4.108 轰雷扣费（修复后还没跑过孔雀国，oas1 下次 10-19）；§4.108 ⑥ 月之海默认路径 PASS（13:26:41 oas2 `Purchase verified, coin 500 -> 200`，不带 `cost`）。
+- 新发现（未调查）：13:13 ~ 13:20 oas2 SixRealms 连续 3 次开局识别为 `page_battle`、导航失败后 `Game page unknown` 并重启，第 4 次正常；已列入 ROADMAP 待只读调查。
+
+## 2026-10-13 - BondlingFairyland 契灵组队：队员按自己的战斗次数收尾
+
+### 背景
+- 10-13 oas1 队长 / oas2 队员（`limit_count=100`）：两边同一场打到 `Current count: 100`，队长 12:27:06 退出，队员 12:28:58 才「队员等待超时:120.04, 退出」。
+
+### 根因（只读调查已证实）
+- 队长 `run_leader` 打满后拉人进房再退出；队员 `run_member` 的同一检查自上游 `bab92bac`（2025-09-30）起被注释（残留 `breakpush_n`）。
+- 上游 `ba0e8d46`（2026-07-17）让 `wait_battle` 把「回到契灵主界面」判为「接受邀请过慢」（返回 `None` 继续等）；队长退房后队员看到的是同一画面，12:27:09 记 `Late invitation`，只能等 2 分钟邀请计时器。改动前同一画面判 `Room destroyed`，队员立即退出。
+
+### 修改（只动 `tasks/BondlingFairyland/script_task.py`）
+- `run_member` 主循环在邀请计时器判断之后、接受邀请之前恢复 `current_count >= limit_count` → 「契灵队员次数:N已完成,退出」→ `break`，交给原有收尾；删除注释块与 `breakpush_n`。
+- 没动：`wait_battle`（保留 07-17 的接受邀请过慢）、队长流程、GeneralBattle / GeneralInvite、资产、配置；不新增点击调用点。
+- handoff：`limit_count //= 2` 之后队员阶段按一半场数结束并转队长，与原设计一致；本轮没有 handoff 真机样本。
+
+### 测试与验证
+- 新增 `tests/test_bondling_fairyland_member_limit_count.py` 13 项（驱动真实 `run_member`）。
+- 变异 5 组（恢复原注释 / `>` 差一 / 检查后不 `break` / 先接受邀请再检查 / 接受邀请过慢改成退出）全部被抓到，文件按 md5 还原。第一版变异脚本按 CRLF 匹配失败（Git Bash 的 `grep -c $'\r$'` 把 LF 文件误报成 CRLF），断言在写入前拦下，改成 LF 后重跑。
+- 契灵 / 组队 / L1 / L2 相关 387 项 OK；L2 登记册 1100 不变（内存重新生成与文档逐字一致）；全量 **2218 → 2231 OK**；`compileall` 通过；`git diff --check` 干净。没有启动 MuMu / 游戏。
+
+### 未做 / 待真机
+- Level C PENDING（清单见 ROADMAP）。
+- 本次队员 100 场全记为 `Battle result: Lose`（队长 17 胜 83 负），队员侧胜负判定是否有偏差没有调查；不影响计数。

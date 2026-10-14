@@ -42,7 +42,7 @@
   2. `139f3bcd` fix: improve KekkaiUtilize reliability and shikigami switching bounds（§4.78~§4.81）；
   3. fix: improve GlobalGame configuration handling（§4.75~§4.76；即当前 HEAD，本节随该 commit 一起提交，故不写自身 hash——以 `git log -1` 为准）。
 - 拆分方式：只按整文件 / 整块暂存，文档中间版本只整块删除其它主题的章节，不改写文字；每个 commit 提交前都把暂存区导出到仓库外独立目录跑 compileall + 全量 unittest（C1 1909 / C1+C2 2018 / C1+C2+C3 2044，全 OK）。
-- 工作区（2026-10-07 更新）：SwitchSoul V1 / V2（§4.99 / §4.100）与 SixRealms 购买确认 P0（§4.101）已按主题拆成两个本地 commit（未 push，hash 以 `git log` 为准）；2026-10-10：FrogBoss（§4.93 ~ §4.98）与 Orochi「发现宝藏」两份未提交 WIP 按用户决定放弃、已从工作区删除（删除前在仓库外 `D:\oas_xy\wip_backup_20261010\` 留了完整备份：全部 tracked 改动的 binary patch + 未跟踪文件 + 当时的文档）；2026-10-10 游戏 UI 更新适配（§4.102 / §4.103）作为一个本地 commit 提交（未 push）。工作区另外保留两样未提交内容：用户 16:46 ~ 16:57 用 annotator 重截的 ActivityShikigami 新活动模板（climb / 入口 / 主页标题等，尚未审查），以及一张没有任何 json 引用的重复图 `tasks/GlobalGame/ui/ui_ui_reward_1.png`。2026-10-12：KekkaiUtilize 好友结界寄养「确认后继续点式神」修复（§4.104，10-11）、RyouToppa 点击进攻后的过渡等待修复（§4.105）、Secret 秘闻奖励页结算选区修复（§4.106）、SixRealms 孔雀国唤息 / 退出确认修复（§4.107）、SixRealms 孔雀国轰雷购买扣费核对（§4.108）已完成 Level A/B 与提交前审查，合成一个本地 commit `fix: improve automation reliability after UI update` 提交（本节随该 commit 一起提交，hash 以 `git log` 为准；未 push）；五项的 Level C 均仍待真机验证（见 ROADMAP）。`tasks/Component/ReplaceShikigami/rs/supplement.json` 在工作区显示为修改，但只是行尾 CRLF / LF 差异、没有内容变化，未纳入提交。`config/oas*.json`、`log/` 等本地文件仍由 `.gitignore` 排除，未纳入版本控制。
+- 工作区（2026-10-07 更新）：SwitchSoul V1 / V2（§4.99 / §4.100）与 SixRealms 购买确认 P0（§4.101）已按主题拆成两个本地 commit（2026-10-13 已 push，hash 以 `git log` 为准）；2026-10-10：FrogBoss（§4.93 ~ §4.98）与 Orochi「发现宝藏」两份未提交 WIP 按用户决定放弃、已从工作区删除（删除前在仓库外 `D:\oas_xy\wip_backup_20261010\` 留了完整备份：全部 tracked 改动的 binary patch + 未跟踪文件 + 当时的文档）；2026-10-10 游戏 UI 更新适配（§4.102 / §4.103）作为一个本地 commit 提交（2026-10-13 已 push）。工作区另外保留两样未提交内容：用户 16:46 ~ 16:57 用 annotator 重截的 ActivityShikigami 新活动模板（climb / 入口 / 主页标题等，尚未审查），以及一张没有任何 json 引用的重复图 `tasks/GlobalGame/ui/ui_ui_reward_1.png`。2026-10-12：KekkaiUtilize 好友结界寄养「确认后继续点式神」修复（§4.104，10-11）、RyouToppa 点击进攻后的过渡等待修复（§4.105）、Secret 秘闻奖励页结算选区修复（§4.106）、SixRealms 孔雀国唤息 / 退出确认修复（§4.107）、SixRealms 孔雀国轰雷购买扣费核对（§4.108）已完成 Level A/B 与提交前审查，合成 commit `bdffc4eb`（`fix: improve automation reliability after UI update`）；2026-10-13 连同此前的 `364ea3f9` / `96797089` / `e2d459d8` 以普通 push（非 force，快进）推到 `origin/master`。五项 Level C 于 2026-10-13 按真机日志部分核对：§4.104 ~ §4.107 的主路径 PASS，§4.107 离开孔雀国与 §4.108 轰雷扣费尚未在真机上触发（逐项见 ROADMAP，均未标 VERIFIED）。2026-10-13：契灵组队队员计数收尾修复（§4.109）在工作区，未提交。`tasks/Component/ReplaceShikigami/rs/supplement.json` 在工作区显示为修改，但只是行尾 CRLF / LF 差异、没有内容变化，未纳入提交。`config/oas*.json`、`log/` 等本地文件仍由 `.gitignore` 排除，未纳入版本控制。
 
 ### 2.1 已失效的 2026-09-02 工作区清单（历史记录）
 
@@ -3786,7 +3786,7 @@ master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
   真实事故帧上旧条件仍命中、空位数已从 2 变 1。两组变异（去掉确认后保护 / 改回单图结束条件）各被 3 项抓到，文件按 md5 还原。
 - **运行注意**：OAS 每次运行任务只重新加载该任务自己的 `script_task.py`，`ReplaceShikigami` 用进程里缓存的模块。**改动生效前必须重启 OAS 进程**，
   否则新的 `run_utilize` 会用新参数调旧的 `set_shikigami` 抛 `TypeError`。
-- **Level A/B PASS；Level C PENDING**（见 ROADMAP「KekkaiUtilize 好友结界放置」条）。
+- **Level A/B PASS；Level C 部分 PASS**（2026-10-13 日志核对：两格都空、一格空各一次成功，另一种一格空布局未遇到；见 ROADMAP「KekkaiUtilize 好友结界放置」条，未标 VERIFIED）。
 
 ### 4.105 RyouToppa 点击进攻后的过渡状态：有界等待进入战斗，不重点进攻、不判交互异常
 
@@ -3810,7 +3810,7 @@ master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
   点击没生效时窗口过后才重试、最后一次尝试按钮消失仍等战斗、尝试开头按钮已消失时等过 4 秒加载。变异：三处各自撤回都被抓到，
   三处全撤回（原始逻辑）7 项失败，文件按 md5 还原。
 - **已知边界**：遮罩如果持续超过 6 秒，到时仍按「按钮还在」交回原逻辑，第 2 次尝试会再点一次进攻（有界，最多 `RYOU_TOPPA_ACTION_RETRIES` 次）。
-- **Level A/B PASS；Level C PENDING**（见 ROADMAP「RyouToppa 进攻过渡」条）。
+- **Level A/B PASS；Level C 部分 PASS**（2026-10-13 日志核对：跨 0 点两场共 234 次进攻都一次进入战斗、没有重复点击；「6 秒仍存在」与失败 / 邻近区域路径未遇到；见 ROADMAP「RyouToppa 进攻过渡」条，未标 VERIFIED）。
 
 ### 4.106 Secret 秘闻奖励页：结算推进只用面板下方的 `C_RANDOM_SAVE_BOTTOM`
 
@@ -3830,7 +3830,7 @@ master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
   锚点被强制重采样到底部区；同一帧上通用选区仍是默认区，且默认区采样会落进面板；RealmRaid / Orochi 等仍用通用方法。删掉覆盖方法的变异被 4 项抓到。
 - **范围外**：秘闻若先出现结果页（`I_SE_BATTLE_WIN` 加进了 `page_battle_result`），结果页仍按通用逻辑点 `C_RANDOM_DEFAULT`；本次事故没有经过结果页，
   结果页是否也有该面板未核实。
-- **Level A/B PASS；Level C PENDING**（见 ROADMAP「Secret 秘闻奖励页结算」条）。
+- **Level A/B PASS；Level C 部分 PASS**（2026-10-13 日志核对：10-12 16:32 oas2 第 3 ~ 9 层奖励页都在底部区推进；第 10 层结果页卡死是已知的范围外问题；见 ROADMAP「Secret 秘闻奖励页结算」条，未标 VERIFIED）。
 
 ### 4.107 SixRealms 孔雀国：唤息确认与退出孔雀国确认适配新版公共双按钮弹窗 + 唤息失败循环保护
 
@@ -3861,7 +3861,7 @@ master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
   弹窗已关不算失败、成功路径不受影响；退出边动作不变且带离开失败 hook、真实离开弹窗上点「确定」、唤息弹窗上绝不确认、hook 顺序在空等 hook 之前。
   变异 5 组全部被抓到，文件按 md5 还原。
 - **已知边界**：`handle_enter_peacock_kingdom` 的 `ui_click` 仍无超时（本轮只保证确认先发生）；确认后弹窗关闭动画超过 1 秒且仍被识别时，可能再点一次确认位置。
-- **Level A/B PASS；Level C PENDING**（见 ROADMAP「SixRealms 孔雀国唤息 / 退出确认」条）。
+- **Level A/B PASS；Level C 部分 PASS**（2026-10-13 日志核对：10-12 17:44 ~ 17:56 oas1 唤息 9 次都点了「确认」；离开孔雀国路径未触发；见 ROADMAP「SixRealms 孔雀国唤息 / 退出确认」条，未标 VERIFIED）。
 
 ### 4.108 SixRealms 孔雀国轰雷购买：按期望扣费 200 核对，金币稳定后才比较
 
@@ -3877,7 +3877,19 @@ master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
 - **测试**：新增 `tests/test_six_realms_thunder_cost_verify.py` 19 项（复用 `test_six_realms_buy_verify` 的时间驱动虚拟商店，加金币递减动画和刷新后 HUD 滞后）：用户给的 5 个场景（扣 200 / 扣 400 / 600→500→400→400 / 600→500→200→200 / 不传 `expected_cost` 任何下降都算）、对不上后同一家店不再点且不刷新、孔雀国状态不变且下一次进店买成、一直不稳定按对不上处理、没花钱的失败仍按 D028 重试与收口、刷新后的滞后值不当 `coin_before`、稳定读数有界且稳定时只多一帧、调用方参数（孔雀国 200 / 门槛 300 / 月之海不传）、结构守卫（新等待有界无点击、只在 `expected_cost` 时运行、对不上分支 `break` 不计数）。既有 `test_six_realms_buy_verify.py` 26 项零改动通过。变异 8 组全部被抓到，文件按 md5 还原。
 - **预期副作用**：等稳定读数会多截图，所以 `buy_skill` 随后的金币门槛判断与商品识别用的是稳定读数之后的那一帧，孔雀国每轮约晚一帧（约 0.3 秒）。只发生在传了 `expected_cost` 的孔雀国轰雷路径；模板 / ROI / 阈值 / 点击调用点都没变，不是架构变化。D028 记录过刷新确认后 0.21~0.26 秒那一帧的商品识别不可靠，所以这个后移预期无害。
 - **已知边界**：刷新确认后 HUD 滞后若超过两帧，两次滞后读数会被当成稳定值，真实轰雷会被判 `actual=300` 并跳过本店（只会少记、下一店重买，不会误记）；买入门槛 300 仍未动（§8 ③）。
-- **Level A/B PASS；Level C PENDING**（见 ROADMAP「SixRealms 孔雀国轰雷扣费核对」条）。
+- **Level A/B PASS；Level C PENDING**（截至 2026-10-13 修复后还没跑过孔雀国：oas1 按排程下次 10-19，oas2 跑的是月之海；只有 ⑥ 月之海默认路径已核对；见 ROADMAP「SixRealms 孔雀国轰雷扣费核对」条）。
+
+### 4.109 BondlingFairyland 契灵组队：队员按自己的战斗次数收尾
+
+2026-10-13。修复同日 oas1 队长 / oas2 队员（`limit_count=100`）队员打满后仍等邀请约 2 分钟。**未 commit / push**。只改任务自己的 `script_task.py`，下一次契灵即生效、不需要重启。
+
+- **根因（只读调查已证实）**：队长 `run_leader` 打满后「拉队员进房再退出」（12:27:06）；队员 `run_member` 的同一计数检查自上游 `bab92bac`（2025-09-30）起被注释（残留 `breakpush_n`），只能靠房间信号或邀请计时器结束。上游 `ba0e8d46`（2026-07-17）让 `wait_battle` 把「回到契灵主界面」判为「接受邀请过慢」（返回 `None`、继续等）；队长退房后队员看到的是同一个画面，于是 12:27:09 记 `Late invitation`，等到 12:28:58「队员等待超时:120.04」才退出。改动前（`upstream/mine`）同一画面判 `Room destroyed`，队员立即退出。
+- **修改**：`run_member` 主循环在邀请计时器判断之后、接受邀请之前恢复 `current_count >= limit_count` → 「契灵队员次数:N已完成,退出」→ `break`，交给原有收尾（退房 / 退战斗，纯队员回庭院并排下次运行）；删除注释块与 `breakpush_n`。`wait_battle`（含 07-17 的接受邀请过慢）、队长流程、GeneralBattle / GeneralInvite、资产 / 配置都没动；不新增点击调用点，L2 登记册不变。
+- **handoff**：`run()` 对 handoff1 / handoff2 先 `limit_count //= 2`，两个账号各当一半队长、一半队员。恢复后 handoff2 的队员阶段打满 `limit//2` 场就结束并返回 `run()` 转队长，handoff1 在 `run_leader` 结尾的队员阶段同理——这是 `//= 2` 的原意；改前队员阶段只能等对方退房（07-17 后被判成接受邀请过慢）或 2 分钟计时器。handoff 模式本轮没有真机样本。
+- **设计约束**：不要回退 `ba0e8d46`，也不要再把「回到契灵主界面」当成队长已结束的信号；队员以自己的次数结束，邀请计时器 / 总时长 / 房间销毁仍是兜底。
+- **已知边界**：队员若因接受邀请过慢少打了几场，计数到不了上限，仍按 2 分钟计时器退出（与改前相同，不会更差）；队长打满后最后那次「拉人」邀请可能在队员收尾时弹出：不会被接受（收尾后不再调用 `check_then_accept`；全局 `_burst` 只处理中间的好友邀请，且两边配置为 ignore），弹窗停留到过期；是否干扰回庭院导航需要 Level C 观察。
+- **测试**：新增 `tests/test_bondling_fairyland_member_limit_count.py` 13 项（驱动真实 `run_member`，只替换截图 / 识别 / 邀请 / 房间 / 战斗 / 导航）：已到上限不接邀请、不等战斗；第 N 场打完立刻收尾；队长秒开分支同样收尾；未到上限继续等；接受邀请过慢仍继续等（07-17）；过慢后再打满照常收尾；房间销毁与邀请计时器兜底不变；handoff2 队员阶段返回、不结束任务；结构守卫（检查在计时器之后、接受邀请之前，以 `break` 结束；过慢分支 `continue`；`wait_battle` 判断不变；队长「判断 → 拉人 → 3 秒 → 退出」顺序不变）。变异 5 组全部被抓到，文件按 md5 还原。
+- **Level A/B PASS；Level C PENDING**（见 ROADMAP「BondlingFairyland 队员计数收尾」条）。
 
 ## 5. 已确认保留的 upstream 修改
 
@@ -3943,10 +3955,13 @@ Easy Install 当前主要预置 medium OCR 模型；small 模型可能首次自�
 
 ## 7. 测试与验证状态
 
-**当前基线（2026-10-12，commit 口径：在 2026-10-10 commit 之上加 §4.104 KekkaiUtilize 好友结界放置修复、§4.105 RyouToppa 进攻过渡修复、§4.106 Secret 秘闻结算选区修复、§4.107 SixRealms 孔雀国确认修复、§4.108 SixRealms 轰雷扣费核对，随本次本地 commit 提交；不含工作区里未提交的 ActivityShikigami 新活动模板——开发时全量在包含它的工作区上跑，提交前把暂存区导出到仓库外单独跑，同为 2218 OK（skipped=1：导出树没有本地 `config/`））**：
+**当前基线（2026-10-13，工作区口径：`bdffc4eb` 之上加 §4.109 契灵队员计数收尾，未提交；工作区里另有未提交的 ActivityShikigami 新活动模板）**：
+`toolkit/python.exe -m unittest discover -s tests` = **2231/2231 OK**（`2218 → 2231` = §4.109 新增 `tests/test_bondling_fairyland_member_limit_count.py` 13 项，改 0 个既有测试，删除 0；L2 登记册 1100 / policy 38 不变）。凌晨在 KekkaiUtilize 静默窗口里跑会多 1 个 ERROR，见 §8。
+
+**上一基线（2026-10-12，commit 口径 `bdffc4eb`，2026-10-13 已 push：在 2026-10-10 commit 之上加 §4.104 KekkaiUtilize 好友结界放置修复、§4.105 RyouToppa 进攻过渡修复、§4.106 Secret 秘闻结算选区修复、§4.107 SixRealms 孔雀国确认修复、§4.108 SixRealms 轰雷扣费核对，随本次本地 commit 提交；不含工作区里未提交的 ActivityShikigami 新活动模板——开发时全量在包含它的工作区上跑，提交前把暂存区导出到仓库外单独跑，同为 2218 OK（skipped=1：导出树没有本地 `config/`））**：
 `toolkit/python.exe -m unittest discover -s tests` = **2218/2218 OK**（`2199 → 2218` = §4.108 新增 `tests/test_six_realms_thunder_cost_verify.py` 19 项，改 0 个既有测试，删除 0，L2 登记册不变；`2186 → 2199` = §4.107 新增 `tests/test_six_realms_breath_and_exit_confirm.py` 13 项，改 `tests/test_l2_c0_registry.py` 两处登记册钉住值；L2 登记册 1099 → 1100）；（`2179 → 2186` = §4.106 新增 `tests/test_secret_settlement_region.py` 7 项；`2167 → 2179` = §4.105 新增 `tests/test_ryoutoppa_attack_transition.py` 12 项；`2154 → 2167` = §4.104 新增 `tests/test_kekkai_utilize_set_shikigami_slots.py` 13 项；这两轮都改 0 个既有测试，删除 0）；L2 登记册 1100 / policy 38（§4.104 ~ §4.106 不变，§4.107 +1，§4.108 不变）。
 
-**上一基线（2026-10-10，commit 口径：在 §4.99 ~ §4.101 之上提交 2026-10-10 UI 更新适配 §4.102 / §4.103；不含工作区里未提交的 ActivityShikigami 新活动模板）**：
+**更早基线（2026-10-10，commit 口径：在 §4.99 ~ §4.101 之上提交 2026-10-10 UI 更新适配 §4.102 / §4.103；不含工作区里未提交的 ActivityShikigami 新活动模板）**：
 `toolkit/python.exe -m compileall -q tasks tests dev_tools` 通过；
 `toolkit/python.exe -m unittest discover -s tests` = **2154/2154 OK**（`2134 → 2154` = §4.102 新增 `tests/test_ui_assets_2026_10_10.py` 7 项 + §4.103 新增 `tests/test_general_battle_exit_ensure.py` 13 项，改 0 个既有测试，删除 0；`2044 → 2134` = §4.99 新增 `tests/test_switch_soul_numeric_v1.py` 33 项 + `tests/test_l1_l2_integration.py` 的 `test_post_c1_consumers_match_the_source_exactly` 1 项、§4.100 新增 `tests/test_switch_soul_group_top_v2.py` 30 项、§4.101 新增 `tests/test_six_realms_buy_verify.py` 26 项，删除 0；§4.99 ~ §4.101 正文里的 2160 / 2194 / 2224 / 2250 与登记册 1094 → 1096 → 1097 是开发时工作区（含未提交 FrogBoss WIP）的口径；`1996 → 2044` = §4.89~§4.92 各节累计新增，增量见各节自述；`1980 → 1996` = §4.88 新增
 `tests/test_l2_c0_registry.py` 16 项，改 2 个既有测试的钉住值，删除 0；`1948 → 1980` = §4.87 新增
@@ -4173,6 +4188,7 @@ primitive 本体未改，`tests/test_base_task_confirm_click.py`（5）继续锁
 
 ## 8. 已知非阻断问题
 
+- **全量测试里有一个时钟依赖用例（2026-10-13 发现，自 2026-09-25 `139f3bcd` 起就存在）**：`tests/test_kekkai_utilize_convergence.py` 的 `test_case10_system_errors_are_not_swallowed_by_the_guard` 直接调 `run()`，没有 stub `_guard_quiet_window`；本机时间落在 KekkaiUtilize 静默窗口（凌晨，窗口由配置给出）时 `run()` 先 `raise TaskEnd`，测试期望的 `GameStuckError` 走不到，全量多 1 个 ERROR。白天全绿；同一时刻 `origin/master` 同样失败，不是回归。修法：case10 里 patch `_guard_quiet_window` 返回 False 或固定时钟（未改）。
 - **SixRealms 商店 P1/P2（2026-10-07 孔雀国六道轰雷漏买专项确认，P0 已由 §4.101 修复；2026-10-12 §4.108 只动了 ③ 的验证侧，并在轰雷路径上缓解了 ① 的金币读数滞后，其余未动）**：① 刷新确认后 0.21~0.26 秒就用同一帧做商品识别 + 金币 / 剩余次数 OCR，14 次刷新里有 5 次 HUD 数字仍是旧值（该帧上的商品识别结果不可信，下一步直接再刷新，那一套商品从未被可靠地看过）——§4.108 只在带 `expected_cost` 的孔雀国轰雷路径上改为取稳定金币读数（商品识别因此晚约一帧），刷新等待与识别本身未动；② `refresh_store` 的 `wait_animate_stable(timeout=1.5)` 在点刷新图标之后、确认弹窗出现时就返回（约 0.75 秒），根本没等到「确认之后真正重新发牌」的动画，且 `C_STORE_ANIMATE_KEEP` ROI (825,87,317,466) 盖不到商店第 3 行（y>553）和第 1 列；③ 价格写死 300，孔雀国 3 次真实购买金币差都是 200（月之海是 300）——2026-10-12 §4.108 只把**验证**改成按 200 核对（`PK_SKILL_THUNDER_COST`），买入门槛仍是 300；④ `coin < price` 的闸门排在 `appear(skill)` 之前，金币 200~299 时轰雷看得见也没机会被识别 / 购买；⑤ `refresh_time = int(matches.group()[1])` 只取第一位数字（现在最多 3 次，不触发）；⑥ 战斗 HUD `I_PK_BATTLE_THUNDER` 置位 `skill_roaring_thunder = 1` 没有日志。这些要等真机帧（点击前后 +0.0 / +0.3 / +0.8 / +1.4 秒、完整商店网格、购买弹窗）再动，不能凭推测改。
 - `tasks/Component/CostumeShikigami/assets.py` 存在 20 处 upstream 生成注释行尾空格，会触发 `git diff --check` 提示。当前决定是不为此单独修改生成文件。
 - Image frame 注册发生在部分方向修正前。
