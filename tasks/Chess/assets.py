@@ -116,7 +116,7 @@ class ChessAssets:
 	#  
 	O_BADGE_AREA = RuleOcr(roi=(181,650,945,46), area=(181,650,945,46), mode="Single", method="Default", keyword="", name="badge_area")
 	#  
-	O_COIN = RuleOcr(roi=(141,659,87,25), area=(141,659,87,25), mode="DigitCounter", method="Default", keyword="", name="coin")
+	O_COIN = RuleOcr(roi=(406,660,87,25), area=(406,660,87,25), mode="DigitCounter", method="Default", keyword="", name="coin")
 	#  
 	O_NOW_TIME = RuleOcr(roi=(768,0,32,28), area=(768,0,32,28), mode="Single", method="Default", keyword="", name="now_time")
 	#  

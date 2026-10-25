@@ -31,6 +31,15 @@ class ScriptTask(
 
     conf: Chess = None
 
+    def _burst(self) -> bool:
+        """棋局任务的所有截图均检查红叉，关闭遮挡操作的浮窗。"""
+        if super()._burst():
+            return True
+        if self.appear_then_click(self.I_CHESS_CLOSE_RED, interval=0.8):
+            logger.info('Chess: close floating window with red cross')
+            return True
+        return False
+
     def _wait_chess_action_state(self, condition) -> bool:
         """在单次动作后限时轮询目标图标状态。"""
         deadline = time.monotonic() + self.ACTION_ICON_WAIT_TIMEOUT
