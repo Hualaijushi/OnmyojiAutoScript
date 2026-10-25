@@ -1763,7 +1763,7 @@ class ChessHandOperationsMixin:
                 f'Cannot run emergency Chess hand cleanup in mode={mode}'
             )
             return None
-        if not self._ensure_shop_closed():
+        if not self._ensure_shop_closed(allowed_modes=('备', '战')):
             logger.warning(
                 'Cannot run emergency Chess hand cleanup: '
                 'shop could not be closed'
@@ -1806,7 +1806,7 @@ class ChessHandOperationsMixin:
     ) -> dict | None:
         """购买受阻时统一清理；清理后重试仍手满才出售阵容卡。"""
         if sell_lineup:
-            if not self._ensure_shop_closed():
+            if not self._ensure_shop_closed(allowed_modes=('备', '战')):
                 return None
             self.screenshot()
             result = self.sell_one_lineup_hand_card()

@@ -726,6 +726,9 @@ class ChessEconomyMixin:
             click_rule,
             expected_name=matched_name,
         )
+        # A target missing before any click is not a confirmed purchase.
+        if current_match is None:
+            return False
         attempts = 0
         emergency_cleanup_done = False
         lineup_sale_done = False
@@ -753,14 +756,29 @@ class ChessEconomyMixin:
                 f'attempt={attempts}, source={current_match["source"]}, '
                 f'identity_score={current_match["score"]:.3f})'
             )
-            self.click(click_rule)
-            time.sleep(self.SCREENSHOT_INTERVAL)
-            self.screenshot()
+            clicked_and_gone = self.ui_click_until_disappear(
+                click_rule,
+                click_target=click_rule,
+                visible=lambda: self._recognize_shop_slot(
+                    slot_index, click_rule, expected_name=matched_name,
+                ) is not None,
+                guard=lambda: self._is_purchase_allowed() and not self.appear(self.I_SELECT_GRIGRI),
+                interval=0.3,
+                timeout=min(2.0, max(0.0, deadline-time.monotonic())),
+                confirm_frames=2,
+            )
+            if clicked_and_gone:
+                return True
+            if not self._is_purchase_allowed() or self.appear(self.I_SELECT_GRIGRI):
+                return False
             current_match = self._recognize_shop_slot(
                 slot_index,
                 click_rule,
                 expected_name=matched_name,
             )
+            if current_match is None:
+                # Timeout or pre-click disappearance did not pass two-frame confirmation.
+                return False
             if current_match is not None:
                 if not self._is_purchase_allowed():
                     logger.debug(
