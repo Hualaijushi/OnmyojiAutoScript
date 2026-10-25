@@ -10080,3 +10080,55 @@ Settlement Micro-Burst 的 anchor 跨调用复用模型在"弹窗刚消失、真
 ### 未做 / 待真机
 - Level C PENDING（清单见 ROADMAP）。
 - 本次队员 100 场全记为 `Battle result: Lose`（队长 17 胜 83 负），队员侧胜负判定是否有偏差没有调查；不影响计数。
+
+## 2026-10-25 - 百鬼棋局：上游第一批功能的选择性移植（购买判据 / 手牌恢复 / 点击记录）
+
+### 目标
+把上游 `xylolit-mu/OnmyojiAutoScript` 里三项棋局购买相关的修复按代码块适配到本地实现；不整体合并、不 cherry-pick、不整文件覆盖。完整来源与逐功能吸收清单见 `docs/AI_CONTEXT.md` §4.134。
+
+### 修改
+- `tasks/Chess/runtime/hand_operations.py`：`_free_one_hand_slot_for_purchase` 在紧急清理既没装配也没卖非阵容卡时，确认阶段仍是「备」后直接 `sell_one_lineup_hand_card`（来源 `0501cb195c1b403bd4eec4230c075bd239c10701`）。
+- `tasks/Chess/runtime/economy.py`：`_buy_shop_slot` 重写成功判据与点击预算——点击前目标缺失返回 False；只有实际点击过且 `_confirm_shop_purchase_result` 多帧确认才算买到；一次目标购卡合计最多 3 次实际点击（恢复不重置，限流不计数）；恢复后重新识别目标；恢复标志按 `type == 'lineup'` 置位（`0501cb195c…`、思想参考 `d944d411bd8fe3932b45f43e80358d28b019c8ba` 与 `631968c6ecee7e992350b3c3713bdf3f7a3bed3f`）；确认买到后清该格点击记录、刷新确认后只清变化的格（`47a3a3bc6173e6560ab8cc3658d3e55bc2c80287`）。
+- `tasks/Chess/runtime/settings.py`：新增 `SHOP_BUY_MAX_CLICKS` / `SHOP_BUY_CONFIRM_FRAMES` / `SHOP_BUY_CONFIRM_TIMEOUT` 三个类常量；没有用户配置项。
+- 没动：`tasks/base_task.py`、`tasks/Chess/assets.py`、`tasks/Chess/c/ocr.json`、`tasks/Chess/script_task.py`、`tasks/GameUi/*`。`90a03025cc6af474f013e1a995a1002df254af1c`（红叉 / 鼬乐币 OCR）因缺少截图证据暂缓。
+
+### 测试
+- 新增 `tests/test_chess_shop_purchase.py` 30 项，详见 AI_CONTEXT §4.134。
+
+### 验证
+- 全量 `toolkit/python.exe -m unittest discover -s tests` 2957 项 OK（2927 → 2957）；`compileall -q tasks/Chess tests/test_chess_shop_purchase.py` 通过；改动文件 `git diff --check` 无问题。`dev_tools/click_callsite_register.py` 只读运行，未 `--write`，登记册无需重新生成（没有新增 / 删除点击点）。
+- 离线模拟，不是真机验证。修改前的原始副本与哈希在 `D:\Codex\workspace\oas-chess-sync-20261025-164124`（项目之外）。
+
+## 2026-10-25 - 百鬼棋局：撤销手写移植，改为只合入上游原始补丁 `0501cb19`
+
+### 目标
+按用户要求：直接用 Git 合入上游已有代码，不根据提交说明重新实现。完整的逐提交吸收清单见 `docs/AI_CONTEXT.md` §4.134（已取代同日早先版本）。
+
+### 做法
+- 先在 `D:\Codex\workspace\oas-chess-upstream-merge-20261025-170426` 建恢复材料，再在其中的隔离克隆里验证：克隆 = 本地 HEAD + 当前未提交工作区的完整快照提交（3923 个文件与原工作区逐字节核对）；基线测试先跑（撤销手写内容后 2927 项）。
+- 用上一轮记录的差异反向应用撤销手写内容，并证明 `tasks/Chess` 与移植前 HEAD 逐字相同。
+- 从固定的上游 `self`（`47a3a3bc6173e6560ab8cc3658d3e55bc2c80287`）取候选提交，用 `git merge-tree` 逐个试合：`0501cb19` 无冲突，`git cherry-pick -x` 合入；其余冲突或依赖 `631968c6` 的 Frame 重构，暂缓。
+- 工作区只应用经验证的增量补丁（`git apply`），不进暂存区、不提交；应用后 `tasks/Chess` 差异与隔离结果逐字节一致。
+
+### 修改
+- `tasks/Chess/runtime/economy.py`、`hand_operations.py`：仅 `0501cb195c1b403bd4eec4230c075bd239c10701` 的原始改动（+14 / -2）。
+- 撤销：上一轮手写的 `economy.py` / `hand_operations.py` / `settings.py` / `tasks/Chess/README.md` 改动与 `tests/test_chess_shop_purchase.py`（30 项）。
+- 新增 `tests/test_chess_hand_recovery_upstream_0501cb19.py` 10 项（验证用，非上游代码）。
+- 文档：§4.134、D036（标 Superseded）、ROADMAP 条目随之更正；新增 D037。
+
+### 验证
+- 隔离克隆与原工作区全量 `toolkit/python.exe -m unittest discover -s tests` 均为 2937 项 OK（2927 → 2937）；`compileall -q tasks/Chess tests/...` 通过；本轮改动文件 `git diff --check` 无问题。
+- 离线模拟，不是真机验证。
+
+## 2026-10-25 - 百鬼棋局：完成上游选择性合入并提交（631968c6 前置 + 0501cb19 + d944d411 + 47a3a3bc + 90a03025）
+
+### 做法
+- 恢复材料：`D:\Codex\workspace\oas-chess-merge-complete-20261025-174223`。隔离克隆里在 HEAD `8a82cb8f` 上依上游顺序建提交：函数级提取 631968c6 的 4 个函数（替换前后都与上游逐字核对）→ `cherry-pick -x` 0501cb19 / d944d411 / 47a3a3bc（增删行与上游逐行一致）→ 90a03025 适配提交 → 测试与文档提交。
+- 工作区验证：另建分支 = 当前未提交工作区的完整快照 + 同一组改动（`base_task.py` 与工作区 L2 `policy` 的冲突手工合并），全量测试通过后才把提交落到 master，并把合并后的文件写回工作区；未提交的其他改动逐文件核对保持不变。
+
+### 修改
+- 见 `docs/AI_CONTEXT.md` §4.134 的逐提交表与「冲突适配」。
+- 新增 `tests/test_chess_upstream_selective_merge.py` 30 项；重新生成 `docs/L2_CALLSITE_REGISTER.md`；`tests/test_l2_c0_registry.py` 记点位变化；`tasks/Chess/README.md` 更新购买与红叉说明。
+
+### 验证
+- 见下方提交说明与 `docs/AI_CONTEXT.md` §7；离线模拟，不是真机验证。

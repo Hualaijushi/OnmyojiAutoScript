@@ -3891,6 +3891,41 @@ master 的最终状态。规则见 D026（L1）与 D001 补记（L2）。
 - **测试**：新增 `tests/test_bondling_fairyland_member_limit_count.py` 13 项（驱动真实 `run_member`，只替换截图 / 识别 / 邀请 / 房间 / 战斗 / 导航）：已到上限不接邀请、不等战斗；第 N 场打完立刻收尾；队长秒开分支同样收尾；未到上限继续等；接受邀请过慢仍继续等（07-17）；过慢后再打满照常收尾；房间销毁与邀请计时器兜底不变；handoff2 队员阶段返回、不结束任务；结构守卫（检查在计时器之后、接受邀请之前，以 `break` 结束；过慢分支 `continue`；`wait_battle` 判断不变；队长「判断 → 拉人 → 3 秒 → 退出」顺序不变）。变异 5 组全部被抓到，文件按 md5 还原。
 - **Level A/B PASS；Level C PENDING**（见 ROADMAP「BondlingFairyland 队员计数收尾」条）。
 
+### 4.134 百鬼棋局：从上游 `self` 选择性合入购买 / 手牌恢复 / 点击记录 / 红叉浮窗 / 鼬乐币 OCR
+
+2026-10-25。**已提交到 master（未推送）。Level A/B（离线）PASS；Level C 待验。** 这是**选择性合入**，不是「同步至某个上游 SHA」：只有下表列出的部分进入了本地，`ce476e8943bb981c2cd91865cd734865c957c91d..47a3a3bc6173e6560ab8cc3658d3e55bc2c80287` 之间其余触及棋局的上游提交（08-31 荒川阵容 / 符咒选取 / 快速匹配、09-09 结算点击、09-20 状态决策流程、09-29 / 09-30 点击与 `profile` 统一、主动投掷与新阵容等）**都没有合入**。固定上游目标 `47a3a3bc6173e6560ab8cc3658d3e55bc2c80287`（当日 `git ls-remote` 核对）。
+
+| 来源（完整 SHA） | 合入方式 | 结论 | 实际范围 |
+|---|---|---|---|
+| `631968c6ecee7e992350b3c3713bdf3f7a3bed3f` | 函数级提取（本地提交「chess: 选择性提取上游 631968c6 的购买与紧急清理前置」） | **部分合入（仅前置）** | 只取 4 个函数：`economy._buy_shop_slot`、`base_task.ui_click_until_disappear`、`hand_operations.emergency_cleanup_hand`、`hand_operations._free_one_hand_slot_for_purchase`。替换前本地这 4 个函数与上游父提交 `00c083e83a6ad8a258b05536dab8454a77e20325` 逐字相同（脚本校验），替换后与 631968c6 逐字相同；不含相邻函数的改动。其余 1243 个文件（Frame 卡牌识别重写、`ui_click_until_appear` 等新方法、`profile` / Scatter、资源再生成、几十个无关任务）不合入。 |
+| `0501cb195c1b403bd4eec4230c075bd239c10701` | `git cherry-pick -x` | **已合入** | 增删行与上游逐行一致。 |
+| `d944d411bd8fe3932b45f43e80358d28b019c8ba` | `git cherry-pick -x` | **已合入** | 含 `tasks/base_task.py` 的 `max_clicks`。增删行与上游逐行一致。 |
+| `47a3a3bc6173e6560ab8cc3658d3e55bc2c80287` | `git cherry-pick -x` | **已合入（两段都在）** | 增删行与上游逐行一致。 |
+| `90a03025cc6af474f013e1a995a1002df254af1c` | 适配提交（本地提交「chess: 合入上游 90a03025 …」） | **已合入（有命名与 profile 适配）** | `_burst()` 覆盖、红叉原图 `page_close_red.png`（逐字节相同）、红叉模板条目、`O_COIN` ROI。见下方「冲突适配」。 |
+| `51dbf56475dcbb63ddd46f8f99fe6f90982c8620` | 不合入 | 未合入 | 上游用它把 GeneralBuff 的 `I_CLOSE_RED` 改名来解决与红叉的重名；它还混有寮宴会第二种旗帜等无关改动。本地改为给棋局一侧命名（见下）。 |
+| `a8af52233157ac5a0177c1e232746f78b3cae674` / `dd72b786d4e2ecea034173f5026bc23d4efbbea3` / `d856707abb83e3daf3a6d3e2f9f3e7c3f0588a8f` / `521e1a8d151bd3f804bbb3975b2a08912e3ca684` | 不合入 | 本轮范围外 | 主动投掷 / 黄金复制 / 新阵容 / 站位替换。 |
+
+**购买的最终语义（上游原样）**：
+- `_buy_shop_slot` 进入时识别不到目标 → 返回 False，不点击。
+- 每一轮调用 `ui_click_until_disappear(click_target=该格, interval=0.3, timeout≤2s, confirm_frames=2, max_clicks=3, guard=允许购买且无符咒弹窗)`：至少点过一次、且该格连续两帧识别不到原目标才返回 True（上游判据**不额外检查商店是否仍展开**）；guard 失败（鬼阶段 / 符咒弹窗）→ 购买返回 False；超时或点满 3 次仍在 → 回到外层。
+- 外层：重新识别仍是目标 → 检查金币 → 恢复（先紧急清理；清理既没装配也没卖非阵容卡时直接卖一张最右侧已识别阵容卡；已清理过则卖阵容卡）→ 下一轮；清理 + 卖阵容卡之后仍买不到 → 「cancel current purchase」返回 False；重新识别不到 → False。
+- **点击上限是「每轮最多 3 次」，不是整次购买的总预算**：初始 + 最多两次恢复 = 最多 3 轮，一个目标最多 9 次点击（无腾位直接卖卡时最多 6 次）；另有 `SHOP_BUY_TIMEOUT = 30` 秒总时限。
+- 确认买到后 `click_record_remove(该格)`；刷新确认成功（≥3 格变化）后只清确认变化的格子。失败 / 未确认不清，不清其他按钮。
+- 紧急清理与卖阵容卡的关店现在允许「备」「战」两个阶段（631968c6 的前置），战斗阶段的购买恢复不再在关店处失败。
+
+**冲突适配**（只在冲突处，业务逻辑不改）：
+- `tasks/base_task.py::ui_click_until_disappear`：提交里是上游原样（HEAD 上该函数还没有 `policy`）。工作区里的未提交 L2 改动给它加了 `policy`，合并后的工作区签名是 `(click, interval=1, policy=None, *, click_target, visible, guard, timeout, confirm_frames, max_clicks)`：`policy` 仍是第 3 个位置参数，旧调用不变；两个点击分支都用 `**_policy_kw(policy)` 透传，`policy=None` 时与上游完全一致。
+- 红叉资产名 `I_CLOSE_RED` → `I_CHESS_CLOSE_RED`（`image_chess.json` 的 `itemName` 由 `close_red` 改为 `chess_close_red`）：上游原名会生成 `GameUiAssets.I_CLOSE_RED`，实测在 20 个任务类（Exploration / Hunt / Secret / ActivityShikigami / Chess 等）的 MRO 中遮蔽 `GeneralBuffAssets.I_CLOSE_RED`（加成开关）。上游另用 `51dbf564` 改 GeneralBuff 一侧，本次不引入。
+- 不写 `profile="High"`：本地 `RuleImage` 没有该参数；上游它只传给 `RuleClick` 作 Scatter 点击密度，与识别无关；本地点击走 L1 采样。`GameUi/assets.py` 由 `dev_tools/assets_extract.py` 生成（在 HEAD 上对 GameUi 逐字节可复现），只多出红叉一行。
+- 上游 `_burst` 写在 `ChessLegacyScriptTask`，本地棋局类是 `ScriptTask`。
+
+**同日早先两版的处理**：先手写过一版购买判据 / 预算 / 点击记录（D036，已撤销，代码不在仓库），后又只合入过 `0501cb19`；本版取代两者。上一版验证测试 `tests/test_chess_hand_recovery_upstream_0501cb19.py`（未跟踪）已并入新的测试模块后删除。
+
+**保留**：七套本地阵容（默认荒川）、保段位规则、L1 / L2 点击采样与反应、拖动时序、匹配 / 结算 / 退出、`tasks/GameUi/chess_battle.py`、其余任务。
+
+**测试**：新增 `tests/test_chess_upstream_selective_merge.py` 30 项（驱动真实 `_buy_shop_slot` + `BaseTask.ui_click_until_disappear`、`_free_one_hand_slot_for_purchase` / `sell_one_lineup_hand_card`、`_click_shop_refresh_and_confirm_slots`、`Device.click_record_remove`、棋局 `ScriptTask._burst`；只替换点击 / 截图 / 识别 / 阶段 OCR / 时钟）；`policy` 透传一项只在带 `policy` 的工作区版本运行，在仅含提交的 HEAD 上跳过。在合入前代码上运行，21 项失败 / 报错。`docs/L2_CALLSITE_REGISTER.md` 重新生成；`tests/test_l2_c0_registry.py` 记一笔点位变化（总数 +2、KEEP_SPECIAL +1、PRIMITIVE +1，均为规则分类）。
+- **未验证**：红叉模板、新 `O_COIN` 位置在当前界面上的识别效果；`_burst` 对棋局任务每次截图都检查右上 (1077,19,151,144) 区域，若别的界面在此处有红叉按钮也会被点；真机购买两帧确认与 9 次点击上限的实际节奏；战斗阶段关店清理。
+
 ## 5. 已确认保留的 upstream 修改
 
 ### 5.1 NemuIPC 与 scrcpy

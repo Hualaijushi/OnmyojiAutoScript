@@ -155,20 +155,25 @@ class C0RegistryTest(TestCase):
         # 里面 1 处唤息弹窗正文命中后的 `appear_then_click(I_UI_CONFIRM, interval=1)`（Timer 循环里，R8）；
         # 原 4 个 C0 唤息点位（含 `_confirm_store_entry` 的 `I_PK_STORE_STILLIN`）都保留。
         # 净变化：总数 1099 → 1100、KEEP_IMMEDIATE 632 → 633
-        self.assertEqual(self.summary['total'], 1100)
+        # 2026-10-25 百鬼棋局上游选择性合入（631968c6 前置 / d944d411 / 90a03025）：`ui_click_until_disappear`
+        # 新增 click_target 分支的 `click`（PRIMITIVE，R0）；棋局 `ScriptTask._burst` 关红叉的 `appear_then_click`
+        # （KEEP_SPECIAL，R3）；`_buy_shop_slot` 原来的直接 `click` 改成调用 `ui_click_until_disappear`，仍是 1 个
+        # KEEP_SPECIAL 点位。净变化：总数 1100 → 1102、KEEP_SPECIAL +1、PRIMITIVE +1（均为规则分类）
+        self.assertEqual(self.summary['total'], 1102)
         self.assertEqual({k: d[k] for k in ('MIGRATE', 'ALREADY_L2', 'KEEP_IMMEDIATE', 'KEEP_SPECIAL', 'NEEDS_C', 'DEFERRED', 'PRIMITIVE', 'EXCLUDED')},
-                         {'MIGRATE': 7, 'ALREADY_L2': 39, 'KEEP_IMMEDIATE': 633, 'KEEP_SPECIAL': 235, 'NEEDS_C': 7,
-                          'DEFERRED': 6, 'PRIMITIVE': 35, 'EXCLUDED': 138})
+                         {'MIGRATE': 7, 'ALREADY_L2': 39, 'KEEP_IMMEDIATE': 633, 'KEEP_SPECIAL': 236, 'NEEDS_C': 7,
+                          'DEFERRED': 6, 'PRIMITIVE': 36, 'EXCLUDED': 138})
 
     def test_basis_counts_are_reconciled_and_c0_reviewed_is_a_separate_dimension(self):
         basis = self.summary['by_basis']
-        self.assertEqual(sum(basis.values()), 1100)
+        self.assertEqual(sum(basis.values()), 1102)
         # basis = 决定来源（互斥）：GeneralInvite / GeneralBattle 的 7 点沿用 L2-2 人工结论，所以 c0 basis = 4 + 6 + 3 + 4 = 17，
         # human 182（179 + 本轮新增 3 处 appear_then_click 人工登记行）；rule 897（+1，新增
         # execute_single_click 走规则分类；→ 899：SwitchSoul V1 净增 2 个规则分类点；→ 900：SixRealms 购买确认事务净增 1 个；
         # → 901：孔雀国唤息确认事务净增 1 个）；
+        # → 903：2026-10-25 百鬼棋局上游选择性合入净增 2 个规则分类点；
         # c0_reviewed = 24 是另一个维度（不与 basis 相加）
-        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (182, 17, 901))
+        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (182, 17, 903))
         self.assertEqual(self.summary['c0_reviewed'], 24)
         self.assertEqual(sum(1 for s in self.c0 if s['basis'] == 'human'), 7)
 
