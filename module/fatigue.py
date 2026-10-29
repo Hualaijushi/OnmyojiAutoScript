@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
 from math import exp
 from threading import Lock
@@ -134,6 +135,22 @@ class FatigueManager:
             self._end_scheduler_idle_session()
             self._start_active_segments(self._clock())
         self._global_activity_depth += 1
+
+    @contextmanager
+    def suspend_active(self):
+        """业务等待（如福利道馆的主动离线）期间不累计活跃时长，也不产生任何恢复。
+
+        只暂停 / 恢复活跃计时，不改 `_active_break_kind`，因此不会被当成疲劳休息、不触发
+        rest / idle 恢复。不在全局活动内、或已处于休息中时什么也不做。
+        """
+        suspended = self._global_activity_depth > 0 and self._active_break_kind is None
+        if suspended:
+            self._pause_for_break()
+        try:
+            yield
+        finally:
+            if suspended:
+                self._resume_after_break()
 
     def end_global_activity(self) -> None:
         if self._global_activity_depth <= 0:

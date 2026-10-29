@@ -468,7 +468,7 @@ class ConvertedSitesGuardTest(unittest.TestCase):
         ('tasks/Component/QuickLoadout/quick_loadout.py', '_select_group'),
         ('tasks/Component/QuickLoadout/quick_loadout.py', '_equip_quick_loadout_souls'),
         ('tasks/Component/QuickLoadout/quick_loadout.py', '_deploy_quick_loadout'),
-        ('tasks/Component/SwitchSoul/switch_soul.py', 'ocr_appear_click_by_rule'),
+        ('tasks/Component/SwitchSoul/switch_soul.py', '_click_line'),
         ('tasks/Dokan/page.py', 'map_enter_dokan'),
         ('tasks/Dokan/script_task.py', 'find_challengeable'),
         ('tasks/EternitySea/script_task.py', 'check_layer'),
@@ -619,7 +619,7 @@ class MigratedSitesBehaviourTest(unittest.TestCase):
         target = SimpleNamespace(coord=Mock(return_value=(10, 222)), name='O_SS_TEAM_NAME')
         action = SimpleNamespace(coord=Mock(return_value=(640, 5)))
         with _forbid_sampling():
-            self.assertTrue(SwitchSoul.ocr_appear_click_by_rule(fake, target, action, interval=1.5))
+            SwitchSoul._click_line(fake, target, action)
         target.coord.assert_called_once_with()
         action.coord.assert_called_once_with()
         fake.device.click.assert_called_once_with(x=640, y=222, control_name='O_SS_TEAM_NAME')

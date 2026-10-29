@@ -34,6 +34,11 @@ from tasks.GlobalGame.config_emergency import FriendInvitation
 from typing import Union
 
 
+def _policy_kw(policy: InteractionPolicy | None) -> dict:
+    # 不传 policy 时不往下传这个参数：子类 / 测试替身里 click、appear_then_click 的旧签名没有 policy
+    return {} if policy is None else {'policy': policy}
+
+
 # ---------------------------------------------------------------------------
 # list_find 翻页后「等列表滚动停稳」的 FrameWait 参数（W1 结构性 settle）。
 #
@@ -655,11 +660,14 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                 f'swipe_trajectory 非 minitouch 且 fallback=False，当前控制后端：{method}')
         self.device.swipe(p1=(sx, sy), p2=(ex, ey), control_name=control_name)
 
-    def click(self, click: Union[RuleClick, RuleLongClick, RuleImage, RuleOcr] = None, interval: float = None) -> bool:
+    def click(self, click: Union[RuleClick, RuleLongClick, RuleImage, RuleOcr] = None, interval: float = None,
+              policy: InteractionPolicy = None) -> bool:
         """
         点击或者长按
         :param interval:
         :param click:
+        :param policy: L2 InteractionPolicy；不传 / IMMEDIATE = 原立即点击。这里点的是固定区域，没有能在新截图里
+            再确认的目标，所以只在点击前加一段反应时间
         :return: 返回值不是click是否成功，而是interval是否设置以及是否到时间
         """
         if not click:
@@ -677,6 +685,9 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             if not self.interval_timer[click.name].reached():
                 return False
 
+        reaction = resolve_reaction_range(policy)
+        if reaction is not None:
+            sleep(random_delay(*reaction))
         x, y = click.coord()
         if isinstance(click, RuleLongClick):
             execute_long_click(self.device, FinalPoint(x, y), click.duration / 1000, control_name=click.name)
@@ -867,21 +878,26 @@ class BaseTask(GlobalGameAssets, CostumeBase):
     #  ---------------------------------------------------------------------------------------------------------------
     #
     #  ---------------------------------------------------------------------------------------------------------------
-    def ui_reward_appear_click(self, screenshot=False) -> bool:
+    def ui_reward_appear_click(self, screenshot=False, policy: InteractionPolicy = None) -> bool:
         """
         如果出现 ‘获得奖励’ 就点击
+        :param policy: L2 InteractionPolicy，透传给 appear_then_click；不传 = 原立即点击
         :return:
         """
         if screenshot:
             self.screenshot()
-        return self.appear_then_click(self.I_UI_REWARD, action=self.C_UI_REWARD, interval=0.4, threshold=0.6)
+        return self.appear_then_click(self.I_UI_REWARD, action=self.C_UI_REWARD, interval=0.4, threshold=0.6,
+                                      **_policy_kw(policy))
 
-    def ui_get_reward(self, click_image: RuleImage | RuleOcr | RuleClick, click_interval: float = 1):
+    def ui_get_reward(self, click_image: RuleImage | RuleOcr | RuleClick, click_interval: float = 1,
+                      policy: InteractionPolicy = None, close_policy: InteractionPolicy = None):
         """
         传进来一个点击图片 或是 一个ocr， 会点击这个图片，然后等待‘获得奖励’，
         最后当获得奖励消失后 退出
         :param click_interval:
         :param click_image:
+        :param policy: 点 click_image 用的 L2 InteractionPolicy（RuleOcr 分支不支持）；不传 = 原立即点击
+        :param close_policy: 关「获得奖励」用的 L2 InteractionPolicy；不传 = 原立即点击
         :return:
         """
         _timer = Timer(10)
@@ -889,7 +905,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         while 1:
             self.screenshot()
 
-            if self.ui_reward_appear_click():
+            if self.ui_reward_appear_click(**_policy_kw(close_policy)):
                 sleep(0.5)
                 while 1:
                     self.screenshot()
@@ -899,7 +915,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                         break
 
                     # 一直点击
-                    if self.ui_reward_appear_click():
+                    if self.ui_reward_appear_click(**_policy_kw(close_policy)):
                         continue
                 break
             if _timer.reached():
@@ -907,32 +923,33 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                 break
 
             if isinstance(click_image, RuleImage):
-                if self.appear_then_click(click_image, interval=click_interval):
+                if self.appear_then_click(click_image, interval=click_interval, **_policy_kw(policy)):
                     continue
             elif isinstance(click_image, RuleOcr):
                 if self.ocr_appear_click(click_image, interval=click_interval):
                     continue
             elif isinstance(click_image, RuleClick):
-                if self.click(click_image, interval=click_interval):
+                if self.click(click_image, interval=click_interval, **_policy_kw(policy)):
                     continue
 
         return True
 
-    def ui_click(self, click, stop, interval=1):
+    def ui_click(self, click, stop, interval=1, policy: InteractionPolicy = None):
         """
         循环的一个操作，直到出现stop
         :param click:
         :param stop:
         :parm interval
+        :param policy: L2 InteractionPolicy，透传给 appear_then_click / click（RuleOcr 分支不支持）；不传 = 原立即点击
         :return:
         """
         while 1:
             self.screenshot()
             if self.appear(stop):
                 break
-            if isinstance(click, RuleImage) and self.appear_then_click(click, interval=interval):
+            if isinstance(click, RuleImage) and self.appear_then_click(click, interval=interval, **_policy_kw(policy)):
                 continue
-            if isinstance(click, RuleClick) and self.click(click, interval=interval):
+            if isinstance(click, RuleClick) and self.click(click, interval=interval, **_policy_kw(policy)):
                 continue
             elif isinstance(click, RuleOcr) and self.ocr_appear_click(click, interval=interval):
                 continue
@@ -950,13 +967,14 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                 elif isinstance(click, RuleOcr) and self.ocr_appear_click(click, interval=interval):
                     continue
 
-    def ui_click_until_disappear(self, click, interval: float = 1, *,
+    def ui_click_until_disappear(self, click, interval: float = 1, policy: InteractionPolicy = None, *,
                                  click_target=None, visible=None, guard=None,
                                  timeout: float | None = None, confirm_frames: int = 1,
                                  max_clicks: int | None = None):
         """点击直到目标消失；可独立指定点击区、可见性判定和有界多帧确认。
 
         超时或 guard 不满足时返回 False；默认行为与旧调用一致。
+        :param policy: L2 InteractionPolicy，透传给点击；不传 = 原立即点击
         """
         from time import monotonic
         appear_and_clicked = False
@@ -977,15 +995,16 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             if max_clicks is not None and click_count >= max_clicks:
                 return False
             if click_target is not None:
-                if self.click(click_target, interval=interval):
+                if self.click(click_target, interval=interval, **_policy_kw(policy)):
                     appear_and_clicked = True
                     click_count += 1
-            elif self.appear_then_click(click, interval=interval):
+            elif self.appear_then_click(click, interval=interval, **_policy_kw(policy)):
                 appear_and_clicked = True
                 click_count += 1
         return False
 
-    def ui_click_until_appear_or_timeout(self, click, stop=None, interval: float = 1, timeout: float = 10) -> bool:
+    def ui_click_until_appear_or_timeout(self, click, stop=None, interval: float = 1, timeout: float = 10,
+                                         policy: InteractionPolicy = None) -> bool:
         """
         在UI中点击某个元素，直到目标元素出现或达到超时时间。
 
@@ -993,6 +1012,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         :param stop: 可选参数，出现此元素时停止点击。如果为None，则一直点击直到超时。
         :param interval: 每次点击之间的间隔时间（秒）。默认为1秒。
         :param timeout: 总的超时时间（秒）。默认为10秒。
+        :param policy: L2 InteractionPolicy，透传给 appear_then_click / click（RuleOcr 分支不支持）；不传 = 原立即点击
         :return: 如果在超时时间内找到目标元素，则返回True，否则返回False。
         """
         timeout_timer = Timer(timeout).start()
@@ -1000,9 +1020,9 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             self.screenshot()
             if self.appear(stop):
                 return True
-            if isinstance(click, RuleImage) and self.appear_then_click(click, interval=interval):
+            if isinstance(click, RuleImage) and self.appear_then_click(click, interval=interval, **_policy_kw(policy)):
                 continue
-            if isinstance(click, RuleClick) and self.click(click, interval=interval):
+            if isinstance(click, RuleClick) and self.click(click, interval=interval, **_policy_kw(policy)):
                 continue
             elif isinstance(click, RuleOcr) and self.ocr_appear_click(click, interval=interval):
                 continue

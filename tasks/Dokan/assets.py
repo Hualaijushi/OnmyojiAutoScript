@@ -92,7 +92,7 @@ class DokanAssets:
 	I_RYOU_DOKAN_IN_FIELD2 = RuleImage(roi_front=(1131,562,88,48), roi_back=(1131,562,88,48), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_in_field2.png")
 	# 馆主战,第一阵容 
 	I_RYOU_DOKAN_BATTLE_MASTER_FIRST = RuleImage(roi_front=(1113,205,50,28), roi_back=(1080,180,160,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_master_first.png")
-	# 馆主战,第二阵容
+	# 馆主战,第二阵容 
 	I_RYOU_DOKAN_BATTLE_MASTER_SECOND = RuleImage(roi_front=(1114,208,48,25), roi_back=(1080,180,160,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_master_second.png")
 	# 状态：战斗结算，可能是打完小朋友了，也可能是失败了。 
 	I_RYOU_DOKAN_BATTLE_OVER = RuleImage(roi_front=(571,503,106,49), roi_back=(571,503,106,49), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_over.png")
@@ -162,6 +162,14 @@ class DokanAssets:
 	I_RYOU_DOKAN_CHEERING_GRAY = RuleImage(roi_front=(65,601,71,33), roi_back=(44,568,112,100), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_cheering_gray.png")
 	#  
 	I_RYOU_DOKAN_HAVE_DOKAN = RuleImage(roi_front=(240,600,94,90), roi_back=(240,600,94,90), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_have_dokan.png")
+	# 找鑫鑫子道馆 
+	I_FIND_XIN = RuleImage(roi_front=(1153,351,19,34), roi_back=(1077,0,171,602), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_find_xin.png")
+	# 道馆阵容御魂一键预设 
+	I_DOKAN_TEAM = RuleImage(roi_front=(364,618,45,45), roi_back=(247,596,193,98), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_dokan_team.png")
+	# 道馆御魂一键预设 
+	I_DOKAN_TEAM_PRESET = RuleImage(roi_front=(1089,89,24,25), roi_back=(1071,72,56,63), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_dokan_team_preset.png")
+	# 再次进入道馆识别 
+	I_DOKAN_AGAIN_ENTER = RuleImage(roi_front=(264,346,18,32), roi_back=(0,90,1280,520), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_dokan_again_enter.png")
 
 
 	# List Rule Assets
@@ -190,4 +198,7 @@ class DokanAssets:
 	# Swipe Rule Assets
 	# 道馆选择界面 右侧侧边栏 手指向上滑动 
 	S_DOKAN_LIST_UP = RuleSwipe(roi_front=(1100,420,30,21), roi_back=(1240,240,30,21), mode="default", name="dokan_list_up")
+	# 福利道馆 右侧候选列表 手指竖直向上滑动（起终点都在列表内） 
+	S_DOKAN_WELFARE_LIST_UP = RuleSwipe(roi_front=(1110,450,70,20), roi_back=(1110,270,70,20), mode="default", name="dokan_welfare_list_up")
+
 

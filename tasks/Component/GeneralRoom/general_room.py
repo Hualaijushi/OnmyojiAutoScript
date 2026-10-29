@@ -41,15 +41,22 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 return True
         return False
 
-    def ensure_private(self) -> bool:
+    def ensure_private(self, exit_when: RuleImage = None) -> bool:
         """
         确认私人房间, 不公开仅邀请
-        :return:
+        :param exit_when: 可选的退出标志（例如「已经在房间里」）。每次新截图后先检查它，出现就立刻返回 False，
+                          不再等私人设置标志。返回 False 只表示「没有确认私人」，不表示已经验证了什么；
+                          调用方要自己区分是超时还是因为退出标志出现（`appear(exit_when)` 在最后一帧上仍成立）。
+                          默认 None：行为与原来完全一致。
+        :return: True = 看到了私人设置标志（已验证私人）
         """
         logger.info('Ensure private')
         timeout = Timer(15).start()
         while 1:
             self.screenshot()
+            if exit_when is not None and self.appear(exit_when):
+                logger.info('Ensure private stopped: exit marker appeared, private state is not verified')
+                return False
             if timeout.reached():
                 logger.warning('Ensure private timeout')
                 return False

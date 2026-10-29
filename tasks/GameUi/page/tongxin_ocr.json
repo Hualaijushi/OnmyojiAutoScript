@@ -1,0 +1,38 @@
+[
+  {
+    "itemName": "num_tongxin",
+    "roiFront": "1071,147,61,18",
+    "roiBack": "1071,147,61,18",
+    "mode": "DigitCounter",
+    "method": "Default",
+    "keyword": "",
+    "description": "同心之兰次数"
+  },
+  {
+    "itemName": "name_tongxin_friend",
+    "roiFront": "612,100,200,34",
+    "roiBack": "612,100,200,34",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "好友详情头部的名字（核对置顶好友就是对端别名）"
+  },
+  {
+    "itemName": "name_tongxin_inviter",
+    "roiFront": "232,222,225,32",
+    "roiBack": "232,222,225,32",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "同心之兰绑定邀请弹窗里的邀请人名字"
+  },
+  {
+    "itemName": "toast_tongxin",
+    "roiFront": "550,222,170,34",
+    "roiBack": "550,222,170,34",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "邀请已发送",
+    "description": "A 点购买后一闪而过的小字提示「邀请已发送。」（页面本身不变）"
+  }
+]

@@ -251,7 +251,7 @@ GeneralBattle `_sample_settlement_click`（= `ClickRegion`）/ `_click_settlemen
 | L1M-010 | `tasks/Chess/runtime/hand_operations.py:1058`（`discover_souls_from_hand`） | D | 卡名 OCR 框中心直点 | `ClickBounds(卡名 OCR 框, CHESS_DISCOVER_CARD)` | 变 |
 | L1M-014 | `tasks/Component/GeneralRoom/general_room.py:165`（`check_zones`） | E | OCR 中心 + `randint(±5)`，无名 | `list_click_target` → `ClickBounds(OCR 框, GR_ZONE_<名>)`；图片列表 → `FinalPoint` | 变 |
 | L1M-015~018 | `tasks/Component/QuickLoadout/quick_loadout.py:331 / 344 / 388 / 402` | B | 面板锚点 + 布局常量交点 | `FinalPoint`（无识别到的按钮框，不随机） | 同 |
-| L1M-019 | `tasks/Component/SwitchSoul/switch_soul.py:284`（`ocr_appear_click_by_rule`） | A | 按钮列 `action.coord()` x × 队名 OCR `coord()` y | `FinalPoint(x, y1)`（两轴各已采样一次） | 同 |
+| L1M-019 | `tasks/Component/SwitchSoul/switch_soul.py`（`_click_line`，原 `ocr_appear_click_by_rule`，2026-10-27 改名） | A | 按钮列 `action.coord()` x × 队名 OCR `coord()` y | `FinalPoint(x, y1)`（两轴各已采样一次） | 同 |
 | L1M-020 | `tasks/Dokan/page.py:26`（`map_enter_dokan`） | B | OCR 框中心 x、框上方 20px | `FinalPoint`（框外业务偏移） | 同 |
 | L1M-021 | `tasks/Dokan/script_task.py:379`（`find_challengeable`） | C | 赏金图标匹配框**左上角**，无名 | `ClickBounds(匹配框, I_RIGHTPAD_POINT_BOUNTY.name)`，与正常路径同身份 | 变 |
 | L1M-022 | `tasks/EternitySea/script_task.py:247`（`check_layer`） | D | 文字列表 OCR 中心，无名 | `list_click_target` → `ClickBounds`，`ETERNITY_SEA_LAYER_<层>` | 变 |

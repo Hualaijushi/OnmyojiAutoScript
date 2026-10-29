@@ -7,6 +7,7 @@ from tasks.Script.config_device import Device
 from tasks.Script.config_error import Error
 from tasks.Script.config_optimization import Optimization
 from tasks.Script.config_antiban import AntiBan
+from tasks.Script.config_team_sync import TeamSync
 
 
 class Script(BaseModel):
@@ -14,3 +15,4 @@ class Script(BaseModel):
     error: Error = Field(default_factory=Error)
     optimization: Optimization = Field(default_factory=Optimization)
     anti_ban: AntiBan = Field(default_factory=AntiBan)
+    team_sync: TeamSync = Field(default_factory=TeamSync)

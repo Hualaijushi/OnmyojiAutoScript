@@ -393,9 +393,11 @@ class FireContractStaticTest(TestCase):
                                               fromlist=['GeneralInvite']).GeneralInvite)
         for forbidden in ('self.config', 'script_name', 'config_name', 'read_json'):
             self.assertNotIn(forbidden, gi_src)
-        for rel, task in (('tasks/Orochi/script_task.py', 'orochi'), ('tasks/EvoZone/script_task.py', 'evo_zone')):
+        # 御魂队长的两处邀请合并进 _leader_fight_once（循环的可信计数），调用点由 2 个变成 1 个
+        for rel, task, expected in (('tasks/Orochi/script_task.py', 'orochi', 1),
+                                    ('tasks/EvoZone/script_task.py', 'evo_zone', 2)):
             text = (_REPO / rel).read_text(encoding='utf-8')
-            self.assertEqual(text.count(f'fire_reaction=self.config.{task}.fire_reaction'), 2)
+            self.assertEqual(text.count(f'fire_reaction=self.config.{task}.fire_reaction'), expected)
 
 
 class TimingOwnershipTest(TestCase):
@@ -490,6 +492,12 @@ class TimingOwnershipTest(TestCase):
             'tasks/SixRealms/common.py': 2,
             # SwitchSoul V1（数字模式）：队伍首次点击 NORMAL、确认框首次点击 CONFIRM；恢复重试仍是立即点击
             'tasks/Component/SwitchSoul/switch_soul.py': 2,
+            # 2026-10-23 用户决定：每日琐事 / 狩猎战 / 集体任务所有点击接入 L2（每日琐事 41 处原有点击 + 满级弹窗取消 1 处；
+            # ui_get_reward 的 close_policy 不在这里计数，由 tests/test_l2_helper_policy.py 的静态守卫检查）
+            # 2026-10-29 领取邮件：弹窗取消 1 处 + 获得插画 1 处 + 红色关闭叉 2 处（全屏页关闭、领完后退出邮箱）：42 → 46
+            'tasks/DailyTrifles/script_task.py': 46,
+            'tasks/Hunt/script_task.py': 6,
+            'tasks/CollectiveMissions/script_task.py': 11,
         }
         actual = {}
         for path in (_REPO / 'tasks').rglob('*.py'):

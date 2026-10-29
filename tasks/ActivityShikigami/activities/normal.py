@@ -6,7 +6,7 @@ from module.atom.click import RuleClick
 from module.base.timer import Timer
 from module.base.utils.random import random_delay, random_int
 from module.click_pipeline import FinalPoint, execute_single_click
-from module.exception import GamePageUnknownError
+from module.exception import GamePageUnknownError, GameStuckError
 from module.logger import logger
 from module.interaction_policy import fire_reaction_range
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
@@ -43,6 +43,10 @@ ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT = 20
 # （普通确认类动作），但**不走** `InteractionPolicy` / `appear_then_click(policy=)`——本事务的
 # timing 由本状态机自己拥有（`InteractionPolicy.SPECIAL` 语义），只允许这一层 reaction。
 ACTIVITY_SETTLEMENT_REACTION = (0.45, 0.85)
+# 队伍锁定同步的墙钟上限（秒，PROVISIONAL）。2026-10-20 真机事故：首领页锁 / 开锁都认不出时，原
+# `ui_click` 无上限空等，挑战键一直轮不到。点击间隔沿用原来的 1.5s，10 秒内最多 7 次点击，低于 Device
+# 单按钮 10 次连点兜底，也远低于 60 秒卡死判定；确认不了就抛 `GameStuckError`，不带着未知状态去挑战。
+ACTIVITY_TEAM_LOCK_TIMEOUT = 10
 
 
 class NormalClimbAct:
@@ -158,7 +162,7 @@ class NormalClimbAct:
 
         self.switch_soul_for(
             action_type,
-            self.I_BATTLE_MAIN_TO_RECORDS,
+            self._climb_records_entry(action_type),
             return_page=destination,
         )
         entered = self._enter_climb_battle(action_type)
@@ -175,6 +179,10 @@ class NormalClimbAct:
 
     def _climb_fire_rule(self, action_type: str):
         return self.I_AS_BOSS_FIRE if action_type == 'boss' else self.I_ACT_FIRE
+
+    def _climb_records_entry(self, action_type: str):
+        # 首领页的式神录入口和体力 / 门票页位置不同（2026-10-20 从首领页重截），其余页面共用一个
+        return self.I_BOSS_MAIN_TO_RECORD if action_type == 'boss' else self.I_BATTLE_MAIN_TO_RECORDS
 
     # ------------------------------------------------------------------------------------
     # 爬塔线专用结算单击（2026-09-23）：只在 `_climb_owns_settlement_single_click` 为真
@@ -592,15 +600,24 @@ class NormalClimbAct:
     def _sync_climb_team_lock(self, action_type: str):
         enable = self.battle_config(action_type).lock_team_enable
         if action_type == 'boss':
-            lock_rule, unlock_rule = self.I_LOCK, self.I_UNLOCK
+            # 首领页的锁在 (907,651)；旧 I_LOCK / I_UNLOCK 与体力那对是同一张图（锁在 801）裁的，首领页两种状态都认不出
+            lock_rule, unlock_rule = self.I_BOSS_LOCK, self.I_BOSS_UNLOCK
         else:
             lock_rule, unlock_rule = self.I_AP_LOCK, self.I_AP_UNLOCK
         if enable:
             logger.info(f'Lock {action_type} team')
-            self.ui_click(unlock_rule, stop=lock_rule, interval=1.5)
+            target_rule = lock_rule
+            synced = self.ui_click_until_appear_or_timeout(unlock_rule, stop=lock_rule, interval=1.5,
+                                                           timeout=ACTIVITY_TEAM_LOCK_TIMEOUT)
         else:
             logger.info(f'Unlock {action_type} team')
-            self.ui_click(lock_rule, stop=unlock_rule, interval=1.5)
+            target_rule = unlock_rule
+            synced = self.ui_click_until_appear_or_timeout(lock_rule, stop=unlock_rule, interval=1.5,
+                                                           timeout=ACTIVITY_TEAM_LOCK_TIMEOUT)
+        if not synced:
+            logger.warning(f'Climb {action_type}: team lock state {target_rule.name} '
+                           f'not confirmed in {ACTIVITY_TEAM_LOCK_TIMEOUT}s')
+            raise GameStuckError(f'ActivityShikigami climb {action_type}: team lock state not confirmed')
 
     def _climb_resource_available(self, action_type: str) -> bool:
         logger.hr(f'Check {action_type} resource')

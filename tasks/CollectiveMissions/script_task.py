@@ -8,10 +8,11 @@ import random
 import re
 from cached_property import cached_property
 from enum import Enum
-from datetime import timedelta
+from datetime import datetime, timedelta
 from module.atom.image import RuleImage
 
 from module.exception import TaskEnd, RequestHumanTakeover
+from module.interaction_policy import InteractionPolicy
 from module.logger import logger
 from module.base.timer import Timer
 from module.atom.ocr import RuleOcr
@@ -27,6 +28,12 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
     """阴阳寮集体任务"""
 
     current_mission: MC = None
+    # 「换一个」免费不限次（用户 2026-10-23 确认），一直换到指定任务出现；
+    # 连续这么多次读到同一个任务名才算换不动（刷新是随机的，连着两三次相同很正常）
+    SWITCH_STUCK = 4
+    # 只防目标根本不在池子里时死循环；每次约 1.5 秒，300 秒约 200 次
+    SELECT_TIMEOUT = 300
+    RETRY = timedelta(hours=1)
 
     def run(self):
         self.goto_page(page_collective_missions)
@@ -36,10 +43,13 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
             self.goto_page(page_main)
             self.set_next_run(task='CollectiveMissions', success=True)
             raise TaskEnd
-        self.select_and_update_cur_mission(self.config.collective_missions.missions_config.missions_select)
-        if self.current_mission is None:
+        target = self.config.collective_missions.missions_config.missions_select
+        if not self._select_target_mission(target):
+            # 以前这里不看结果，照着最后读到的那个任务去做，于是会捐到不是指定的材料
+            retry = datetime.now() + self.RETRY
+            logger.warning(f'Target mission {target.value} not available, do nothing and retry at {retry}')
             self.goto_page(page_main)
-            self.set_next_run(task='CollectiveMissions', success=False)
+            self.set_next_run(task='CollectiveMissions', target=retry, server=False)
             raise TaskEnd
         match self.current_mission:
             case MC.FEED:
@@ -52,43 +62,46 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
         self.set_next_run(task='CollectiveMissions', success=True)
         raise TaskEnd
 
-    def select_and_update_cur_mission(self, mission: MC) -> bool:
-        """尝试选择对应任务并更新当前任务, 若选择失败(无法切换)则会停留在当前任务
-        :return: 成功选择返回True
+    def _select_target_mission(self, mission: MC) -> bool:
+        """一直点「换一个」直到第一个任务槽出现指定任务；换不动或时间保护到点返回 False。
+
+        只有返回 True 时 current_mission 才会被设成（且一定是）指定任务。
         """
+        self.current_mission = None
         pre_mission = ''
-        switch_fail_cnt, max_retry = 0, random.randint(2, 3)  # 点了没反应, 可能之前已经做了其他任务导致无法切换
-        switch_cnt, max_switch = 0, random.randint(12, 15)  # 尝试最多15次内能中奖找到对应任务
+        unchanged = 0  # 连续读到同一个任务名的次数：点了没反应，可能之前已经做了其他任务导致无法切换
+        switch_cnt = 0
+        timer = Timer(self.SELECT_TIMEOUT).start()
         while True:
-            if switch_fail_cnt >= max_retry:
-                logger.warning(f'Cannot switch next mission, stop select and try run')
-                return False
-            if switch_cnt >= max_switch:
-                logger.warning(f'Cannot find target mission: {mission.value}, exit')
-                return False
             self.screenshot()
             # 识别当前任务
             mission_text = self.O_CM_2.ocr(self.device.image)
             try:
                 detect_mission = MC(mission_text)
                 logger.info(f"Current: {detect_mission.value}, target: {mission.value}")
-                self.current_mission = detect_mission
                 if detect_mission == mission:
-                    logger.info(f"Success select mission[{mission_text}]")
+                    self.current_mission = detect_mission
+                    logger.info(f"Success select mission[{mission_text}] after {switch_cnt} switches")
                     return True
             except ValueError as e:
                 logger.warning(f'Unknown {mission_text}, skip')
-            logger.info("Try switch to next mission")
-            switch_fail_cnt = 0 if pre_mission != mission_text else (switch_fail_cnt + 1)
+            unchanged = 0 if pre_mission != mission_text else (unchanged + 1)
             pre_mission = mission_text
-            if self.appear_then_click(self.I_CM_SWITCH, interval=0.6):
+            if unchanged >= self.SWITCH_STUCK:
+                logger.warning(f'Cannot switch next mission, give up selecting {mission.value}')
+                return False
+            if timer.reached():
+                logger.warning(f'Cannot find target mission {mission.value} after {switch_cnt} switches')
+                return False
+            logger.info("Try switch to next mission")
+            if self.appear_then_click(self.I_CM_SWITCH, interval=0.6, policy=InteractionPolicy.NORMAL):
                 sleep(random.uniform(0.6, 1.2))
                 switch_cnt += 1
                 self.device.click_record_clear()
 
     def _donate(self):
         """捐材料"""
-        self.ui_click(self.C_CM_1, self.I_CM_PRESENT, interval=1.5)
+        self.ui_click(self.C_CM_1, self.I_CM_PRESENT, interval=1.5, policy=InteractionPolicy.NORMAL)
         logger.info('Start to donate')
         # 判断哪一个的材料最多
         self.screenshot()
@@ -128,7 +141,7 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
                 logger.info('Swipe to the most matter failed')
                 logger.info('Please check your game resolution')
                 break
-            if window_control and self.click(random.choice(random_click), interval=0.7):
+            if window_control and self.click(random.choice(random_click), interval=0.7, policy=InteractionPolicy.FAST):
                 click_count += 1
                 continue
             if not window_control and swipe_count >= 5:
@@ -142,7 +155,7 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
 
     def _soul(self):
         """提交御魂"""
-        self.ui_click(self.C_CM_1, self.I_SL_SUBMIT)
+        self.ui_click(self.C_CM_1, self.I_SL_SUBMIT, policy=InteractionPolicy.NORMAL)
         while 1:
             self.screenshot()
             number_text = self.O_SL_NUMBER.ocr(self.device.image)
@@ -152,9 +165,9 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
             if self.ocr_appear(self.O_SL_LEVEL):
                 # 如果没有识别到这个，那就说明没有御魂可以提交了，要退出
                 logger.warning('No soul can be submit')
-                self.ui_click(self.I_UI_BACK_RED, self.I_CM_RECORDS)
+                self.ui_click(self.I_UI_BACK_RED, self.I_CM_RECORDS, policy=InteractionPolicy.NAVIGATION)
                 return False
-            if self.click(self.L_SL_LONG, interval=2.5):
+            if self.click(self.L_SL_LONG, interval=2.5, policy=InteractionPolicy.NORMAL):
                 time.sleep(1)
                 continue
         logger.info('Start to collect soul rewards')
@@ -165,7 +178,7 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
     def _feed(self):
         """提交N卡"""
         logger.info('Start to feed N')
-        self.ui_click(self.C_CM_1, self.I_FEED_HEAP)
+        self.ui_click(self.C_CM_1, self.I_FEED_HEAP, policy=InteractionPolicy.NORMAL)
         logger.info('Submit to feed N')
         click_list = random.sample([self.L_FEED_CLICK_1, self.L_FEED_CLICK_2, self.L_FEED_CLICK_3, self.L_FEED_CLICK_4], 2)
         while 1:
@@ -173,7 +186,7 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
             if self.appear(self.I_FEED_SUBMIT):
                 break
             for click in click_list:
-                self.click(click)
+                self.click(click, policy=InteractionPolicy.FAST)
         logger.info('Start to collect feed N rewards')
         self.get_reward_and_close(self.I_FEED_SUBMIT)
         logger.info('Finish to collect feed N rewards')
@@ -213,12 +226,12 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
             self.screenshot()
             if reward_number >= 2:
                 break
-            if self.ui_reward_appear_click(False):
+            if self.ui_reward_appear_click(False, policy=InteractionPolicy.NAVIGATION):
                 reward_number += 1
                 continue
-            if self.appear_then_click(target, interval=1):
+            if self.appear_then_click(target, interval=1, policy=InteractionPolicy.NORMAL):
                 continue
-        self.ui_reward_appear_click(True)  # 兜底再尝试领取一次
+        self.ui_reward_appear_click(True, policy=InteractionPolicy.NAVIGATION)  # 兜底再尝试领取一次
 
 
 if __name__ == '__main__':

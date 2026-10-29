@@ -440,6 +440,10 @@ class OrochiEvoZoneCompatTest(TestCase):
         from tasks.EvoZone.script_task import ScriptTask as EvoZone
         for cls in (Orochi, EvoZone):
             src = _src(cls.run_leader)
+            if cls is Orochi:
+                # 御魂队长的邀请 + 战斗收在 _leader_fight_once（循环的可信计数要在同一处记录），run_leader 两处调用它
+                self.assertEqual(src.count('self._leader_fight_once('), 2)
+                src += _src(Orochi._leader_fight_once)
             self.assertIn('self.run_invite(', src)
             self.assertNotIn('random_delay(*REACTION_FIRE)', src)
             self.assertNotIn('click_fire', src)

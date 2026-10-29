@@ -489,6 +489,16 @@ window_background >>> DroidCast_raw >  ADB_nc >> DroidCast > uiautomator2 ~= ADB
 	<message><source>user_status_help</source><translation>可选队长、队员、单独刷（野队还不打算实现）</translation></message>
 	<message><source>layer_help</source><translation> </translation></message>
 	<message><source>soul_buff_enable_help</source><translation>会在庭院开始的时候设置加成</translation></message>
+	<message><source>LoopConfig</source><translation>御魂→个人突破循环</translation></message>
+	<message><source>Start Loop</source><translation>开始循环（一次性）</translation></message>
+	<message><source>Rounds</source><translation>循环轮数</translation></message>
+	<message><source>Target Min</source><translation>每批御魂最少场数</translation></message>
+	<message><source>Target Max</source><translation>每批御魂最多场数</translation></message>
+	<message><source>start_loop_help</source><translation>打开后脚本在当前任务结束后读到它，立刻自动关回，只提交这一次循环请求：御魂打一批 → 个人突破 → 御魂 … 共「循环轮数」轮，最后一轮个人突破双方都完成后结束，回到普通调度。
+两个实例都要在各自的八岐大蛇设置里打开（一个队长、一个队员），并在脚本设置的「组队同步」里互相填对方实例名且都开启组队同步；第一轮由你分别手动打开，先打开的一边会一直等对方。</translation></message>
+	<message><source>loop_rounds_help</source><translation>一轮 = 一批御魂 + 一次个人突破。</translation></message>
+	<message><source>loop_target_min_help</source><translation>每批开始前由队长在最少~最多场数之间随机一次，队员使用同一个数；循环里它替代普通的「限制挑战次数」和「限制运行时间」。</translation></message>
+	<message><source>loop_target_max_help</source><translation>不能小于最少场数。</translation></message>
 </context>	
 <context>
     <name>Args</name>

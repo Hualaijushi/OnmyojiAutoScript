@@ -444,9 +444,11 @@ class StaticStructureTest(TestCase):
                 self.assertNotIn('confirm_delay', keywords)
                 if 'policy' in keywords:
                     found.append((fn.name, ast.unparse(call.args[0]), keywords['policy']))
+        # 2026-10-25 起「确定」的 CONFIRM 点击抽成 `_press_sure`，预设确认框和契灵替换确认框共用这一处
+        # （点击点数量不变，见 `tests/test_switch_soul_replace_dialog.py`）；队伍点击的档位没变
         self.assertEqual(sorted(found), [
             ('_click_target_team', 'target_team', 'InteractionPolicy.NORMAL'),
-            ('_confirm_team_switch', 'self.I_SOU_SWITCH_SURE', 'InteractionPolicy.CONFIRM'),
+            ('_press_sure', 'self.I_SOU_SWITCH_SURE', 'InteractionPolicy.CONFIRM'),
         ])
 
     def test_reaction_never_stacks_with_a_local_random_delay_in_the_same_function(self):
@@ -474,18 +476,18 @@ class StaticStructureTest(TestCase):
         self.assertNotIn('self.swipe', calls)
         self.assertNotIn('sleep', calls)
 
-    def test_ocr_by_name_mode_is_untouched(self):
+    def test_ocr_by_name_confirm_loop_is_untouched(self):
+        # 2026-10-27：按名称的「找分组 / 找队伍」搜索阶段被新流程取代（固定 sleep 与 4 个旧 swipe 不再使用，
+        # 见 tests/test_switch_soul_name_search.py）；这里继续冻结没有改的部分：4 次队伍点击规则、1.5 秒间隔、
+        # 确认循环不带 InteractionPolicy、数字模式用的旧 swipe 资源仍是原来的四个。
         fn = _function(self.tree, 'switch_soul_by_name')
-        sleeps = [n.args[0].value for n in ast.walk(fn)
-                  if isinstance(n, ast.Call) and _call_name(n) == 'sleep' and n.args and isinstance(n.args[0], ast.Constant)]
-        self.assertEqual(sleeps, [2.5, 1.5, 2])
         self.assertIn('cnt_click >= 4', ast.unparse(fn))
-        swipes = [ast.unparse(n) for n in ast.walk(fn) if isinstance(n, ast.Call) and _call_name(n) == 'swipe']
-        self.assertEqual(swipes, ['self.swipe(self.S_SS_GROUP_SWIPE_UP, 2)', 'self.swipe(self.S_SS_GROUP_SWIPE_DOWN)',
-                                  'self.swipe(self.S_SS_TEAM_SWIPE_DOWN, 1.5)', 'self.swipe(self.S_SS_TEAM_SWIPE_UP, 0.3)'])
         text = ast.unparse(fn)
-        self.assertIn('self.ocr_appear_click_by_rule(self.O_SS_TEAM_NAME, self.I_SOU_CLICK_PRESENT, interval=1.5)', text)
+        self.assertIn('self._click_team_by_name(team, interval=1.5)', text)
         self.assertNotIn('policy', text)
+        self.assertNotIn('sleep(', text)             # 搜索阶段不再用固定 sleep 代替稳定等待
+        for name in ('S_SS_GROUP_SWIPE_UP', 'S_SS_GROUP_SWIPE_DOWN', 'S_SS_TEAM_SWIPE_UP', 'S_SS_TEAM_SWIPE_DOWN'):
+            self.assertTrue(hasattr(SwitchSoul, name), name)
 
     def test_fallback_and_check_block_are_kept(self):
         fn = _function(self.tree, 'switch_soul_one')

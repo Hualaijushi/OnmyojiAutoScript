@@ -154,32 +154,56 @@ class C0RegistryTest(TestCase):
         # 2026-10-12 孔雀国唤息确认：新版弹窗确认键改成公共「确认」，新增有界事务 `_confirm_breath_dialog`，
         # 里面 1 处唤息弹窗正文命中后的 `appear_then_click(I_UI_CONFIRM, interval=1)`（Timer 循环里，R8）；
         # 原 4 个 C0 唤息点位（含 `_confirm_store_entry` 的 `I_PK_STORE_STILLIN`）都保留。
-        # 净变化：总数 1099 → 1100、KEEP_IMMEDIATE 632 → 633
+        # 净变化：总数 1099 → 1100、KEEP_IMMEDIATE 632 → 633；
+        # 2026-10-22 每日琐事修复：吉闻改点下方空白关奖励（`click` +1）、关「好友羁绊提升」（`appear_then_click` +1），
+        # 去掉 `ui_reward_appear_click`（-1）；庭院事务照 synevo 加关奖励页的两处 `click`（+2）。DailyTrifles 整体是项目排除项，
+        # 净变化：总数 1100 → 1103、EXCLUDED 138 → 141；
+        # 2026-10-23 每日琐事领庭院体力寿司：`run_courtyard_sushi` 新增 1 处 `ui_get_reward`，
+        # 净变化：总数 1103 → 1104、EXCLUDED 141 → 142；
+        # 2026-10-23 狩猎战：kirin / netherworld「已挑战」后的两处 `ui_click_until_disappear`（R7）合并成有界的 `_back()`，
+        # 里面 1 处 `appear_then_click`（函数名带 back → R4），净变化：总数 1104 → 1103、KEEP_IMMEDIATE 633 → 631、KEEP_SPECIAL 235 → 236；
+        # 2026-10-23 每日琐事 / 狩猎战 / 集体任务所有点击接入 L2（用户决定，撤销「每日琐事不纳入 master L2」）：
+        # DailyTrifles 移出 EXCLUDED_MODULES（EXCLUDED 142 → 100）；三个任务 59 处带 `policy=`（每日琐事 41 + 新增庭院事务
+        # 满级弹窗取消 1 + 狩猎战 6 + 集体任务 11）→ ALREADY_L2 39 → 98；今忆召唤预设的 `execute_single_click` 前面手动加了
+        # NORMAL 反应时间，但静态规则看不到，仍按 R10 归 KEEP_IMMEDIATE（由 tests/test_l2_helper_policy.py 的静态守卫兜住）；
+        # 净变化：总数 1103 → 1104、KEEP_IMMEDIATE 631 → 619、KEEP_SPECIAL 236 → 232
         # 2026-10-25 百鬼棋局上游选择性合入（631968c6 前置 / d944d411 / 90a03025）：`ui_click_until_disappear`
         # 新增 click_target 分支的 `click`（PRIMITIVE，R0）；棋局 `ScriptTask._burst` 关红叉的 `appear_then_click`
         # （KEEP_SPECIAL，R3）；`_buy_shop_slot` 原来的直接 `click` 改成调用 `ui_click_until_disappear`，仍是 1 个
-        # KEEP_SPECIAL 点位。净变化：总数 1100 → 1102、KEEP_SPECIAL +1、PRIMITIVE +1（均为规则分类）
-        self.assertEqual(self.summary['total'], 1102)
+        # KEEP_SPECIAL 点位。净变化：总数 1104 → 1106、KEEP_SPECIAL +1、PRIMITIVE +1（均为规则分类）
+        # 2026-10-26 福利道馆模式（tasks/Dokan/welfare.py）新增 18 个点击调用点，全部是规则分类、默认保持立即点击：
+        # KEEP_IMMEDIATE 619 → 635、KEEP_SPECIAL 233 → 235；其中 3 个是 execute_single_click（候选馆 / 准备 / 返回徽章）；
+        # 净变化：总数 1106 → 1124，basis rule 907 → 925，human / c0 不变；
+        # 2026-10-27 SwitchSoul 按名称找分组改走精确 OCR + `_click_line`（去掉 `ocr_appear_click(O_SS_GROUP_NAME)` 一点），总数 1124 → 1123，rule 925 → 924
+        # 2026-10-28 悬赏封印新详情界面适配：去掉 4 处 `ui_click(I_TRACE_TRUE, I_TRACE_FALSE)`（无界、R7），
+        # 取消追踪改成有界事务 `cancel_wq_trace`（里面 2 处 `appear_then_click`，Timer 循环里，R8）；
+        # 净变化：总数 1123 → 1121、KEEP_IMMEDIATE 634 → 632，basis rule 924 → 922（均为规则分类）
+        # 2026-10-28 福利道馆接入我方建馆前置（D-02）：`ensure_dokan_created(strict=True)` 新增 1 个 `click`（建立入口，R6 固定图标位）
+        # 与 `creat_dokan(strict=True)` 里 1 个有界 `ui_click_until_disappear`（关信息页）：两点都是规则分类、保持立即点击；
+        # 净变化：总数 1121 → 1123、KEEP_IMMEDIATE 632 → 634，basis rule 922 → 924
+        # 2026-10-29 领取邮件新增 3 个带 policy 的规则分类点（弹窗取消 / 两处红色关闭叉）：总数 1123 → 1127（含获得插画点击），ALREADY_L2 98 → 102，rule 924 → 928
+        self.assertEqual(self.summary['total'], 1127)
         self.assertEqual({k: d[k] for k in ('MIGRATE', 'ALREADY_L2', 'KEEP_IMMEDIATE', 'KEEP_SPECIAL', 'NEEDS_C', 'DEFERRED', 'PRIMITIVE', 'EXCLUDED')},
-                         {'MIGRATE': 7, 'ALREADY_L2': 39, 'KEEP_IMMEDIATE': 633, 'KEEP_SPECIAL': 236, 'NEEDS_C': 7,
-                          'DEFERRED': 6, 'PRIMITIVE': 36, 'EXCLUDED': 138})
+                         {'MIGRATE': 7, 'ALREADY_L2': 102, 'KEEP_IMMEDIATE': 634, 'KEEP_SPECIAL': 235, 'NEEDS_C': 7,
+                          'DEFERRED': 6, 'PRIMITIVE': 36, 'EXCLUDED': 100})
 
     def test_basis_counts_are_reconciled_and_c0_reviewed_is_a_separate_dimension(self):
         basis = self.summary['by_basis']
-        self.assertEqual(sum(basis.values()), 1102)
+        self.assertEqual(sum(basis.values()), 1127)
         # basis = 决定来源（互斥）：GeneralInvite / GeneralBattle 的 7 点沿用 L2-2 人工结论，所以 c0 basis = 4 + 6 + 3 + 4 = 17，
         # human 182（179 + 本轮新增 3 处 appear_then_click 人工登记行）；rule 897（+1，新增
         # execute_single_click 走规则分类；→ 899：SwitchSoul V1 净增 2 个规则分类点；→ 900：SixRealms 购买确认事务净增 1 个；
-        # → 901：孔雀国唤息确认事务净增 1 个）；
-        # → 903：2026-10-25 百鬼棋局上游选择性合入净增 2 个规则分类点；
+        # → 901：孔雀国唤息确认事务净增 1 个；→ 904：每日琐事吉闻 / 庭院事务修复净增 3 个；→ 905：领庭院体力寿司净增 1 个；→ 904：狩猎战两处返回合并成一处；→ 905：庭院事务满级弹窗取消净增 1 个）；
+        # → 907：2026-10-25 百鬼棋局上游选择性合入净增 2 个规则分类点；
         # c0_reviewed = 24 是另一个维度（不与 basis 相加）
-        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (182, 17, 903))
+        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (182, 17, 928))   # 922：悬赏封印取消追踪改有界事务净减 2；924：福利建馆前置（D-02）净增 2 个规则分类点
         self.assertEqual(self.summary['c0_reviewed'], 24)
         self.assertEqual(sum(1 for s in self.c0 if s['basis'] == 'human'), 7)
 
     def test_only_the_four_completed_points_gained_a_policy_in_c1(self):
-        # 36 = 32 + C1 的 4 处；SwitchSoul V1 另外新增 2 处（不是 C0 复核点位，所以下面 `c0_with_policy` 仍恰好是 DONE）
-        self.assertEqual(self.summary['policy_sites'], 38)
+        # 36 = 32 + C1 的 4 处；SwitchSoul V1 另外新增 2 处（不是 C0 复核点位，所以下面 `c0_with_policy` 仍恰好是 DONE）；
+        # 97 = 38 + 2026-10-23 每日琐事 / 狩猎战 / 集体任务全部点击接入 L2 的 59 处（同样都不是 C0 复核点位）
+        self.assertEqual(self.summary['policy_sites'], 101)      # 2026-10-29 领取邮件 +4
         self.assertEqual(self.summary['c1_done'], 4)
         c0_with_policy = {_key(s) for s in self.c0 if s['policy']}
         self.assertEqual(c0_with_policy, set(DONE))

@@ -30,6 +30,9 @@ class Screenshot(Adb, DroidCast, Scrcpy, Window, NemuIpc):
     _last_save_time = {}
     image: np.ndarray
     image_frame_id: str | None = None
+    # 图像服务对每个 config_name 只保留一帧，注册会顶掉同名配置正在运行的脚本刚截的帧；
+    # 只做预览 / 截图、不做匹配的使用方（annotator 实时采集）要关掉，此时 image_frame_id 恒为 None
+    register_image_frame: bool = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -72,8 +75,11 @@ class Screenshot(Adb, DroidCast, Scrcpy, Window, NemuIpc):
                 self.screenshot_adb  # 第二个参数默认的是screenshot_adb
             )
             self.image = method()
-            frame_info = get_image_client().register_frame(self.image, self.config.config_name)
-            self.image_frame_id = frame_info["frame_id"]
+            if self.register_image_frame:
+                frame_info = get_image_client().register_frame(self.image, self.config.config_name)
+                self.image_frame_id = frame_info["frame_id"]
+            else:
+                self.image_frame_id = None
 
             # if self.config.Emulator_ScreenshotDedithering:
             #     # This will take 40-60ms

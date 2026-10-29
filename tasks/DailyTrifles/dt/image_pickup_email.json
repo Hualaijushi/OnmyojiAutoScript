@@ -52,5 +52,14 @@
     "method": "Template matching",
     "threshold": 0.9,
     "description": "右上角的邮件图标"
+  },
+  {
+    "itemName": "get_picture",
+    "imageName": "dt_get_picture.png",
+    "roiFront": "515,74,249,43",
+    "roiBack": "478,41,342,89",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "获得插画标识"
   }
 ]

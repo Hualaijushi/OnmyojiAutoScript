@@ -1,7 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 from datetime import datetime, time
 
@@ -49,6 +49,21 @@ class OrochiConfig(ConfigBase):
     # 是否御魂结束检测是否出现真蛇
     check_true_orochi_enable: bool = Field(default=False, description='check_true_orochi_enable_help')
 
+class LoopConfig(BaseModel):
+    """御魂 → 个人突破 循环。配对复用「组队同步」里的对方实例名，两个实例都要开组队同步。"""
+    # OASX 逐字段保存走 setattr；不开赋值校验时越界值会被存进文件，下次加载时 `ConfigBase` 会把整个 loop_config
+    # 组静默重置成默认值（轮数 / 最少 / 最多一起丢）。开了之后越界值保存失败（`script_set_arg` 返回 False），原值保留。
+    # 最少 ≤ 最多不在这里校验（改区间的过程中不能因先后顺序被卡住），打开「开始循环」时才检查。
+    model_config = ConfigDict(validate_assignment=True)
+
+    # 一次性开关：脚本读到后立刻关回，只提交本次循环请求
+    start_loop: bool = Field(default=False, description='start_loop_help')
+    rounds: int = Field(default=3, ge=1, le=100, description='loop_rounds_help')
+    # 每批御魂由队长在范围内随机一次目标场数，队员使用同一个值
+    target_min: int = Field(default=10, ge=1, le=999, description='loop_target_min_help')
+    target_max: int = Field(default=30, ge=1, le=999, description='loop_target_max_help')
+
+
 class SwitchSoulConfig(BaseSwitchSoulConfig):
     enable: bool = Field(default=False)
     switch_group_team: str = Field(default='-1,-1', description='switch_group_team_help')
@@ -69,6 +84,7 @@ class SwitchSoulConfig(BaseSwitchSoulConfig):
 class Orochi(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     orochi_config: OrochiConfig = Field(default_factory=OrochiConfig)
+    loop_config: LoopConfig = Field(default_factory=LoopConfig)
     invite_config: InviteConfig = Field(default_factory=InviteConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     fire_reaction: FireReactionConfig = Field(default_factory=FireReactionConfig)

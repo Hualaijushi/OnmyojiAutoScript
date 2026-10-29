@@ -30,6 +30,19 @@ class AppControl(Adb, Uiautomator2):
         logger.attr('Package_pid', result if result else 'None')
         return bool(result)
 
+    def app_process_exists(self, package_name=None) -> bool:
+        """目标应用进程是否存在；查询失败时**抛出异常**，不当作「不存在」。
+
+        与 `app_is_alive` 的区别：后者把查询异常吞成 False，只适合恢复判断；需要「确认已关闭」
+        的场景（福利道馆）必须区分「确认不存在」和「查不到」。
+        """
+        if not package_name:
+            package_name = self.package
+        result = self.adb_shell(['pidof', package_name])
+        result = result.strip(' \t\r\n')
+        logger.attr('Package_pid', result if result else 'None')
+        return bool(result)
+
     def app_is_running(self) -> bool:
         method = self.config.script.device.control_method
         # if self.is_wsa:

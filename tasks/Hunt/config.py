@@ -11,12 +11,14 @@ from tasks.Component.config_base import ConfigBase, Time, dynamic_hide
 
 class HuntTime(ConfigBase):
     # 自定义运行时间
-    kirin_time: Time = Field(default=Time(hour=19, minute=0, second=0))
-    netherworld_time: Time = Field(default=Time(hour=19, minute=0, second=0))
+    kirin_time: Time = Field(default=Time(hour=19, minute=0, second=0), description='kirin_time_help')
+    netherworld_time: Time = Field(default=Time(hour=19, minute=0, second=0), description='netherworld_time_help')
 
 
 class HuntConfig(BaseModel):
+    # 麒麟通用预设；周四的雷麒麟可单独配一套
     kirin_group_team: str = Field(default='-1,-1', description='switch_group_team_help')
+    thunder_kirin_group_team: str = Field(default='-1,-1', description='thunder_kirin_group_team_help')
     netherworld_group_team: str = Field(default='-1,-1')
 
 

@@ -25,10 +25,11 @@ from unittest.mock import Mock, patch
 
 from module.atom.image import RuleImage
 from module.click_pipeline import FinalPoint
-from module.exception import GamePageUnknownError
+from module.exception import GamePageUnknownError, GameStuckError
 from tasks.Component.config_fire_reaction import FireReactionConfig
 from tasks.Component.GeneralBattle.general_battle import BattleAction, GeneralBattle
 from module.reaction_profile import REACTION_FIRE, REACTION_NAVIGATION
+from tasks.ActivityShikigami import base_act as base_act_mod
 from tasks.ActivityShikigami import page as as_page
 from tasks.ActivityShikigami.activities import normal as normal_mod
 from tasks.ActivityShikigami.activities.normal import (
@@ -1310,6 +1311,455 @@ class CycleCompleteTest(TestCase):
         i_gb = src.index('run_general_battle(')
         i_drain = src.index('_drain_activity_settlement(')
         self.assertLess(i_gb, i_drain)
+
+
+# --------------------------------------------------------------------------------------
+# 7.1 首领爬塔适配（2026-10-20）：首领页自己的锁 / 式神录入口资产，锁定同步与式神录入口有界。
+# 事故：oas1 两次进入首领页后卡在 `_sync_climb_team_lock('boss')`——旧 I_LOCK / I_UNLOCK 在首领页
+# 两种状态都认不出，原 `ui_click` 无上限空等，挑战键一直轮不到。
+#
+# 沙盒：`ScriptTask.__new__` 出真实实例，真实 `_sync_climb_team_lock` / `switch_soul_for` /
+# `BaseTask.ui_click_until_appear_or_timeout` / `appear`（含 interval 门控）/ `appear_then_click` /
+# L1 点击管线照跑，只替换截图、`RuleImage.match`（按虚拟世界判定）与最底层 `device.click`。
+# 虚拟时钟替换 `module.base.timer.time`，所以超时与 interval 用的都是真实 `Timer`。
+# --------------------------------------------------------------------------------------
+
+
+class _LoopNotBounded(Exception):
+    """截图次数超过硬上限：被测循环没有收口。"""
+
+
+class _ClimbPageWorld:
+    """按虚拟时间演化的爬塔页，只模拟队伍锁图标和式神录入口。
+
+    - ``icons``：锁图标按哪一对资产显示（'boss' = 首领页那对，'ap' = 体力页那对），用来证明两种模式各认各的资产；
+    - ``lock_state``：'locked' / 'unlocked' / None（锁图标认不出来）；
+    - 点中当前显示的锁图标后 ``toggle_delay`` 秒切到相反状态；``click_effective`` 按点击次序给出这一下是否生效；
+    - ``records_entry``：当前页显示的式神录入口资产名（None = 认不出），点中后 ``records_delay`` 秒进入式神录。
+    """
+
+    LOCK_NAMES = {
+        'boss': {'locked': 'CLIMB_BOSS_LOCK', 'unlocked': 'CLIMB_BOSS_UNLOCK'},
+        'ap': {'locked': 'AS_AP_LOCK', 'unlocked': 'AS_AP_UNLOCK'},
+    }
+    SHOT_STEP = 0.3        # 与 screenshot_interval 一致
+    SHOT_LIMIT = 400       # 硬上限：远大于任何有界循环需要的截图数
+
+    def __init__(self, *, icons='boss', lock_state='locked', toggle_delay=0.5, click_effective=(True,),
+                 records_entry=None, records_delay=0.6, records_click_effective=True):
+        self.now = 1_000_000.0
+        self.icons = icons
+        self.lock_state = lock_state
+        self.toggle_delay = toggle_delay
+        self.click_effective = list(click_effective)
+        self.records_entry = records_entry
+        self.records_delay = records_delay
+        self.records_click_effective = records_click_effective
+        self.in_records = False
+        self.pending = []           # (生效时间, 动作)
+        self.clicks = []            # (虚拟时间, control_name)
+        self.shots = 0
+
+    # ---- 虚拟时钟（替换 module.base.timer.time）----
+    def time(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+    def _settle(self):
+        due = [p for p in self.pending if p[0] <= self.now]
+        self.pending = [p for p in self.pending if p[0] > self.now]
+        for _, action in due:
+            if action == 'toggle':
+                self.lock_state = {'locked': 'unlocked', 'unlocked': 'locked'}[self.lock_state]
+            elif action == 'records':
+                self.in_records = True
+
+    def screenshot(self):
+        self.shots += 1
+        if self.shots > self.SHOT_LIMIT:
+            raise _LoopNotBounded(f'screenshot > {self.SHOT_LIMIT}')
+        self.now += self.SHOT_STEP
+        self._settle()
+
+    def visible(self, name):
+        if self.in_records:
+            return name == 'PAGE_CHECK_RECORDS'
+        if name == self.records_entry:
+            return True
+        if self.lock_state is None:
+            return False
+        return name == self.LOCK_NAMES[self.icons][self.lock_state]
+
+    def on_click(self, x=None, y=None, control_name=None):
+        self.clicks.append((self.now, control_name))
+        if not self.in_records and control_name == self.records_entry:
+            if self.records_click_effective:
+                self.pending.append((self.now + self.records_delay, 'records'))
+            return
+        if self.lock_state is not None and control_name == self.LOCK_NAMES[self.icons][self.lock_state]:
+            effective = self.click_effective.pop(0) if self.click_effective else False
+            if effective:
+                self.pending.append((self.now + self.toggle_delay, 'toggle'))
+
+    def click_names(self):
+        return [name for _, name in self.clicks]
+
+
+def _climb_world_task(test, world, *, lock_enable=True):
+    """真实 ScriptTask 实例 + 虚拟世界；只替换外部边界。"""
+    from module.base import timer as timer_mod
+    patch.object(timer_mod, 'time', world).start()
+    patch.object(RuleImage, 'match',
+                 lambda rule, image, threshold=None, frame_id=None: world.visible(rule.name)).start()
+    test.addCleanup(patch.stopall)
+    t = ScriptTask.__new__(ScriptTask)
+    t.interval_timer = {}
+    t.device = SimpleNamespace(image='F', image_frame_id=None,
+                               get_image_batch_cache=lambda *a, **kw: None,
+                               click=world.on_click, click_record_clear=Mock())
+    t.screenshot = world.screenshot
+    t.battle_config = lambda action_type: SimpleNamespace(lock_team_enable=lock_enable)
+    return t
+
+
+class BossClimbAssetMappingTest(TestCase):
+    """首领模式用 annotator 新截的首领资产；体力 / 门票仍用原资产；资产定义与 annotator JSON 一致。"""
+
+    def _json_item(self, json_name, item_name):
+        import json
+        path = f'tasks/ActivityShikigami/as/climb/{json_name}'
+        with open(path, encoding='utf-8') as f:
+            items = {item['itemName']: item for item in json.load(f)}
+        return items[item_name]
+
+    def _assert_rule_matches_json(self, rule, json_name, item_name):
+        import cv2
+        import numpy as np
+        item = self._json_item(json_name, item_name)
+        self.assertTrue(rule.file.endswith(f"as/climb/{item['imageName']}"), rule.file)
+        self.assertEqual(list(rule.roi_front), [int(v) for v in item['roiFront'].split(',')])
+        self.assertEqual(list(rule.roi_back), [int(v) for v in item['roiBack'].split(',')])
+        self.assertEqual(rule.threshold, item['threshold'])
+        # 模板图片真实存在，尺寸与 roi_front 一致（只读，不落盘）
+        img = cv2.imdecode(np.fromfile(rule.file, np.uint8), cv2.IMREAD_COLOR)
+        self.assertIsNotNone(img, rule.file)
+        self.assertEqual((img.shape[1], img.shape[0]), tuple(rule.roi_front[2:]))
+
+    def test_boss_assets_match_annotator_json(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        self._assert_rule_matches_json(A.I_BOSS_LOCK, 'image.json', 'boss_lock')
+        self._assert_rule_matches_json(A.I_BOSS_UNLOCK, 'image.json', 'boss_unlock')
+        self._assert_rule_matches_json(A.I_BOSS_MAIN_TO_RECORD, 'pages.json', 'boss_main_to_record')
+
+    def test_task_resolves_boss_assets_without_shadowing(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        # 20 层继承里没有别的类遮蔽这些名字，任务实例取到的就是 annotator 生成的那几个对象
+        for name in ('I_BOSS_LOCK', 'I_BOSS_UNLOCK', 'I_BOSS_MAIN_TO_RECORD',
+                     'I_AP_LOCK', 'I_AP_UNLOCK', 'I_BATTLE_MAIN_TO_RECORDS', 'I_AS_BOSS_FIRE', 'I_ACT_FIRE'):
+            self.assertIs(getattr(ScriptTask, name), getattr(A, name), name)
+        self.assertTrue(A.I_AP_LOCK.file.endswith('as/climb/as_ap_lock.png'))
+        self.assertTrue(A.I_AP_UNLOCK.file.endswith('as/climb/as_ap_unlock.png'))
+        self.assertTrue(A.I_BATTLE_MAIN_TO_RECORDS.file.endswith('as/climb/as_battle_main_to_records.png'))
+
+    def test_records_entry_and_fire_key_per_climb_type(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        t = ScriptTask.__new__(ScriptTask)
+        self.assertIs(t._climb_records_entry('boss'), A.I_BOSS_MAIN_TO_RECORD)
+        self.assertIs(t._climb_fire_rule('boss'), A.I_AS_BOSS_FIRE)
+        for action_type in ('ap', 'pass', 'ap100'):
+            self.assertIs(t._climb_records_entry(action_type), A.I_BATTLE_MAIN_TO_RECORDS, action_type)
+            self.assertIs(t._climb_fire_rule(action_type), A.I_ACT_FIRE, action_type)
+        t.current_action_type = 'boss'
+        self.assertIs(t._exit_matcher(), A.I_AS_BOSS_FIRE)
+        t.current_action_type = 'ap'
+        self.assertIs(t._exit_matcher(), A.I_ACT_FIRE)
+
+    def test_boss_page_entry_and_recognizer(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        from tasks.GameUi.matcher import collect_rule_images
+        edges = [tr for tr in as_page.page_act.transitions if tr.destination is as_page.page_climb_boss]
+        self.assertEqual(len(edges), 1)
+        self.assertIs(edges[0].action, A.I_TO_BATTLE_BOSS)
+        self.assertEqual({r.name for r in collect_rule_images(as_page.page_climb_boss.recognizer)},
+                         {'AS_AS_BOSS_FIRE'})
+
+
+class ClimbTeamLockSyncTest(TestCase):
+    """真实驱动 `_sync_climb_team_lock`：目标已满足不点；相反状态只点必要的一下并确认结果；
+    认不出 / 点了不生效都在本地上限内抛 `GameStuckError`。"""
+
+    def _run(self, world, action_type='boss', *, lock_enable=True):
+        t = _climb_world_task(self, world, lock_enable=lock_enable)
+        start = world.now
+        t._sync_climb_team_lock(action_type)
+        return world.now - start
+
+    def test_boss_already_locked_no_click(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='locked')
+        self._run(world, lock_enable=True)
+        self.assertEqual(world.clicks, [])
+        self.assertEqual(world.shots, 1)
+
+    def test_boss_already_unlocked_no_click(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked')
+        self._run(world, lock_enable=False)
+        self.assertEqual(world.clicks, [])
+        self.assertEqual(world.shots, 1)
+
+    def test_boss_unlocked_to_locked_one_click_then_confirmed(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked', toggle_delay=0.5)
+        self._run(world, lock_enable=True)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_UNLOCK'])
+        self.assertEqual(world.lock_state, 'locked')
+
+    def test_boss_locked_to_unlocked_one_click_then_confirmed(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='locked', toggle_delay=0.5)
+        self._run(world, lock_enable=False)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_LOCK'])
+        self.assertEqual(world.lock_state, 'unlocked')
+
+    def test_lost_first_click_is_retried_after_interval(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked', click_effective=(False, True))
+        self._run(world, lock_enable=True)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_UNLOCK', 'CLIMB_BOSS_UNLOCK'])
+        # 第二下等满原来的 1.5 秒点击间隔才点
+        self.assertGreaterEqual(world.clicks[1][0] - world.clicks[0][0], 1.5)
+        self.assertEqual(world.lock_state, 'locked')
+
+    def test_unrecognized_lock_state_raises_bounded_without_click(self):
+        """事故复现：两种锁图标都认不出。原实现会无限等；现在有界抛错、一次都不点。"""
+        world = _ClimbPageWorld(icons='boss', lock_state=None)
+        t = _climb_world_task(self, world, lock_enable=False)
+        start = world.now
+        with self.assertRaises(GameStuckError):
+            t._sync_climb_team_lock('boss')
+        self.assertEqual(world.clicks, [])
+        elapsed = world.now - start
+        self.assertGreaterEqual(elapsed, normal_mod.ACTIVITY_TEAM_LOCK_TIMEOUT)
+        self.assertLess(elapsed, normal_mod.ACTIVITY_TEAM_LOCK_TIMEOUT + 1)
+
+    def test_ineffective_clicks_raise_before_device_guards(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked', click_effective=())
+        t = _climb_world_task(self, world, lock_enable=True)
+        start = world.now
+        with self.assertRaises(GameStuckError):
+            t._sync_climb_team_lock('boss')
+        names = world.click_names()
+        self.assertTrue(names and set(names) == {'CLIMB_BOSS_UNLOCK'}, names)
+        # 本地上限先于 Device 兜底：单按钮连点 < 10 次，耗时远小于 60 秒卡死判定
+        self.assertLess(len(names), 10)
+        self.assertLess(world.now - start, 60)
+
+    def test_boss_mode_does_not_use_ap_assets(self):
+        # 页面上只有体力那对锁图标：首领模式必须认不出（证明首领用的是自己的资产）
+        world = _ClimbPageWorld(icons='ap', lock_state='locked')
+        t = _climb_world_task(self, world, lock_enable=True)
+        with self.assertRaises(GameStuckError):
+            t._sync_climb_team_lock('boss')
+        self.assertEqual(world.clicks, [])
+
+    def test_ap_mode_keeps_ap_assets_and_behavior(self):
+        world = _ClimbPageWorld(icons='ap', lock_state='locked')
+        self._run(world, 'ap', lock_enable=True)
+        self.assertEqual(world.clicks, [])
+        world = _ClimbPageWorld(icons='ap', lock_state='unlocked', toggle_delay=0.5)
+        self._run(world, 'ap', lock_enable=True)
+        self.assertEqual(world.click_names(), ['AS_AP_UNLOCK'])
+        self.assertEqual(world.lock_state, 'locked')
+
+    def test_ap_mode_does_not_use_boss_assets(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='locked')
+        t = _climb_world_task(self, world, lock_enable=True)
+        with self.assertRaises(GameStuckError):
+            t._sync_climb_team_lock('ap')
+        self.assertEqual(world.clicks, [])
+
+    def test_bound_constant(self):
+        # 改这个值要连带更新 normal.py 的推导注释与 AI_CONTEXT §4.110
+        self.assertEqual(normal_mod.ACTIVITY_TEAM_LOCK_TIMEOUT, 10)
+
+
+class ClimbSwitchSoulRecordsEntryTest(TestCase):
+    """首领模式把首领页的式神录入口交给 `switch_soul_for`；入口认不出 / 点了不进式神录都有界失败。"""
+
+    def _switch_task(self, world):
+        t = _climb_world_task(self, world)
+        t.switched_soul = {'boss': False, 'ap': False}
+        t.conf = SimpleNamespace(switch_soul_config=SimpleNamespace(
+            enable_switch_boss=True, enable_switch_boss_by_name=False, boss_group_team='5,1',
+            enable_switch_ap=False, enable_switch_ap_by_name=False,
+            validate_switch_soul=Mock()))
+        t.run_switch_soul = Mock()
+        t.run_switch_soul_by_name = Mock()
+        t.goto_page = Mock()
+        t.exit_shikigami_records = Mock()
+        return t
+
+    def test_run_climb_action_passes_boss_records_entry_before_fire(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        t = ScriptTask.__new__(ScriptTask)
+        order = Mock()
+        t._climb_resource_available = Mock(return_value=True)
+        t.switch_soul_for = order.switch_soul_for
+        t._enter_climb_battle = Mock(side_effect=lambda action_type: order.enter(action_type) or True)
+        t._record_climb_consumption = Mock()
+        t.record_action = Mock()
+        t.battle_config = Mock(return_value='BOSS_CONF')
+        t.run_general_battle = Mock()
+        t._drain_activity_settlement = Mock()
+        t._run_climb_action('boss', as_page.page_climb_boss)
+        self.assertEqual(order.mock_calls[0].args, ('boss', A.I_BOSS_MAIN_TO_RECORD))
+        self.assertEqual(order.mock_calls[0].kwargs, {'return_page': as_page.page_climb_boss})
+        self.assertEqual(order.mock_calls[1].args, ('boss',))   # 切完御魂才点挑战
+        t.run_general_battle.assert_called_once_with('BOSS_CONF', battle_key='activity_boss')
+
+    def test_entry_recognized_opens_records_then_switches_and_returns(self):
+        world = _ClimbPageWorld(records_entry='CLIMB_BOSS_MAIN_TO_RECORD', records_delay=0.6)
+        t = self._switch_task(world)
+        t.switch_soul_for('boss', t._climb_records_entry('boss'), return_page=as_page.page_climb_boss)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_MAIN_TO_RECORD'])
+        t.run_switch_soul.assert_called_once_with('5,1')
+        t.goto_page.assert_called_once_with(as_page.page_climb_boss)
+
+    def test_entry_unrecognized_raises_bounded_without_switch(self):
+        world = _ClimbPageWorld(records_entry=None)
+        t = self._switch_task(world)
+        start = world.now
+        with self.assertRaises(GameStuckError):
+            t.switch_soul_for('boss', t._climb_records_entry('boss'), return_page=as_page.page_climb_boss)
+        self.assertEqual(world.clicks, [])
+        t.run_switch_soul.assert_not_called()
+        t.goto_page.assert_not_called()
+        elapsed = world.now - start
+        self.assertGreaterEqual(elapsed, base_act_mod.SWITCH_SOUL_RECORDS_TIMEOUT)
+        self.assertLess(elapsed, base_act_mod.SWITCH_SOUL_RECORDS_TIMEOUT + 1)
+
+    def test_entry_clicks_ineffective_raise_before_device_guards(self):
+        world = _ClimbPageWorld(records_entry='CLIMB_BOSS_MAIN_TO_RECORD', records_click_effective=False)
+        t = self._switch_task(world)
+        with self.assertRaises(GameStuckError):
+            t.switch_soul_for('boss', t._climb_records_entry('boss'), return_page=as_page.page_climb_boss)
+        names = world.click_names()
+        self.assertTrue(names and set(names) == {'CLIMB_BOSS_MAIN_TO_RECORD'}, names)
+        self.assertLess(len(names), 10)
+        t.run_switch_soul.assert_not_called()
+
+    def test_switch_disabled_does_nothing(self):
+        world = _ClimbPageWorld(records_entry='AS_BATTLE_MAIN_TO_RECORDS')
+        t = self._switch_task(world)
+        t.switch_soul_for('ap', t._climb_records_entry('ap'), return_page=as_page.page_climb_ap)
+        self.assertEqual((world.shots, world.clicks), (0, []))
+        t.run_switch_soul.assert_not_called()
+
+    def test_bound_constant(self):
+        self.assertEqual(base_act_mod.SWITCH_SOUL_RECORDS_TIMEOUT, 8)
+
+
+class BossRemainCountTest(TestCase):
+    """首领次数 = 「额外奖励 a/b」的 b − a，额外奖励打满就停（2026-10-20 用户决定）。
+
+    10-20 16:56 事故：`O_REMAIN_BOSS` 是 Digit 模式，`ocr_single` 返回整数 110，`ocr_digit_counter`
+    对整数做正则 → TypeError；识别框 (1169,668,70,30) 也只框到「1/10」。用户随后在 annotator 里把框改成
+    整行 (1063,669,208,31)、模式改成 DigitCounter。这里只替换最底层识别模型，模式分发 / 「a/b」解析 /
+    次数归一化都走真实代码。
+    """
+
+    def _rule(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        return A.O_REMAIN_BOSS
+
+    def _task(self, text, *, previous=-1, pending=0):
+        import numpy as np
+        rule = self._rule()
+        model = SimpleNamespace(ocr_single_line=Mock(return_value=(text, 0.99 if text else 0.0)),
+                                detect_and_ocr=Mock(return_value=[]))
+        # `model` 是 cached_property，按实例字典替换，结束后恢复，不影响其它用例
+        patch.dict(rule.__dict__, {'model': model}).start()
+        self.addCleanup(patch.stopall)
+        t = ScriptTask.__new__(ScriptTask)
+        t.device = SimpleNamespace(image=np.zeros((720, 1280, 3), np.uint8))
+        t.screenshot = Mock()
+        t.climb_consumable_count = {'boss': previous, 'penta_pass': -1}
+        t.climb_pending_consumption = {'boss': pending, 'penta_pass': 0}
+        return t, model
+
+    def test_asset_is_digit_counter_over_the_whole_line(self):
+        import json
+        from module.ocr.base_ocr import OcrMode
+        rule = self._rule()
+        self.assertIs(rule.mode, OcrMode.DIGITCOUNTER)
+        self.assertEqual(list(rule.roi), [1063, 669, 208, 31])
+        with open('tasks/ActivityShikigami/as/climb/ocr.json', encoding='utf-8') as f:
+            item = {i['itemName']: i for i in json.load(f)}['remain_boss']
+        self.assertEqual(item['mode'], 'DigitCounter')
+        self.assertEqual([int(v) for v in item['roiFront'].split(',')], list(rule.roi))
+
+    def test_first_entry_reads_remaining_extra_rewards(self):
+        t, model = self._task('额外奖励1/100')
+        self.assertIs(t._climb_resource_available('boss'), True)
+        self.assertEqual(t.climb_consumable_count['boss'], 99)
+        model.ocr_single_line.assert_called_once()
+
+    def test_extra_rewards_full_stops_boss(self):
+        t, _ = self._task('额外奖励100/100')
+        self.assertIs(t._climb_resource_available('boss'), False)
+        self.assertEqual(t.climb_consumable_count['boss'], 0)
+
+    def test_count_follows_one_battle_consumption(self):
+        t, _ = self._task('额外奖励2/100', previous=99, pending=1)
+        self.assertIs(t._climb_resource_available('boss'), True)
+        self.assertEqual(t.climb_consumable_count['boss'], 98)
+        self.assertEqual(t.climb_pending_consumption['boss'], 0)
+
+    def test_unreadable_count_does_not_crash(self):
+        # 读不出时 DigitCounter 回落 (0,0,0)：首次进入按「次数为 0」优雅停止，不抛异常
+        t, _ = self._task('')
+        self.assertIs(t._climb_resource_available('boss'), False)
+
+    def test_digit_mode_reproduces_the_crash(self):
+        """特征化：同样的读数换回 Digit 模式就是 16:56 的 TypeError，所以资产模式必须是 DigitCounter。"""
+        from module.ocr.base_ocr import OcrMode
+        t, _ = self._task('额外奖励1/100')
+        with patch.object(self._rule(), 'mode', OcrMode.DIGIT):
+            with self.assertRaises(TypeError):
+                t._climb_resource_available('boss')
+
+
+class BossClimbFlowTest(TestCase):
+    """首领走公共爬塔主循环：锁定同步成功后进入挑战；同步失败不进入挑战。"""
+
+    def _flow_task(self, world):
+        t = _climb_world_task(self, world, lock_enable=True)
+        t.goto_page = Mock()
+        t.get_current_page = Mock(return_value=as_page.page_climb_boss)
+        t._sync_climb_penta_pass = Mock()
+        t.prepare_next_action = Mock(return_value=True)
+        t._activity_challenge_safe_break = Mock(return_value=True)
+        t._run_climb_action = Mock(side_effect=StopIteration('probe: reached challenge'))
+        return t
+
+    def test_lock_synced_then_challenge_entered(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked', toggle_delay=0.5)
+        t = self._flow_task(world)
+        with self.assertRaises(StopIteration):
+            t._run_climb_type('boss')
+        t.goto_page.assert_called_once_with(as_page.page_climb_boss)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_UNLOCK'])
+        self.assertEqual(world.lock_state, 'locked')
+        t._activity_challenge_safe_break.assert_called_once_with(
+            'boss', as_page.page_climb_boss, repeat_completed=False)
+        t._run_climb_action.assert_called_once_with('boss', as_page.page_climb_boss)
+
+    def test_lock_unknown_never_reaches_challenge(self):
+        world = _ClimbPageWorld(icons='boss', lock_state=None)
+        t = self._flow_task(world)
+        with self.assertRaises(GameStuckError):
+            t._run_climb_type('boss')
+        t._activity_challenge_safe_break.assert_not_called()
+        t._run_climb_action.assert_not_called()
+        self.assertEqual(world.clicks, [])
 
 
 # --------------------------------------------------------------------------------------

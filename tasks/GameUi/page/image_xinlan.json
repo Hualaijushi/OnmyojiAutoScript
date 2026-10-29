@@ -1,0 +1,101 @@
+[
+  {
+    "itemName": "tongxin_ini",
+    "imageName": "page_tongxin_ini.png",
+    "roiFront": "1070,102,65,64",
+    "roiBack": "1070,102,65,64",
+    "method": "Template matching",
+    "threshold": 0.9,
+    "description": "同心之兰未发送的初始状态"
+  },
+  {
+    "itemName": "invite_tongxin",
+    "imageName": "page_invite_tongxin.png",
+    "roiFront": "870,97,49,59",
+    "roiBack": "831,53,132,135",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "同心之兰邀请/回赠页面"
+  },
+  {
+    "itemName": "purchase_tongxin",
+    "imageName": "page_purchase_tongxin.png",
+    "roiFront": "816,609,157,53",
+    "roiBack": "816,609,157,53",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "购买同心之兰"
+  },
+  {
+    "itemName": "repur_tongxin",
+    "imageName": "page_repur_tongxin.png",
+    "roiFront": "1117,616,50,51",
+    "roiBack": "1092,592,89,98",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "回赠同心之兰/判断是否已收到同心之兰"
+  },
+  {
+    "itemName": "acc_tongxin",
+    "imageName": "page_acc_tongxin.png",
+    "roiFront": "229,250,222,39",
+    "roiBack": "182,217,274,77",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "同心之兰邀请接受"
+  },
+  {
+    "itemName": "friend_same_open",
+    "imageName": "page_friend_same_open.png",
+    "roiFront": "458,164,30,22",
+    "roiBack": "450,158,50,34",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "同区好友列已展开（▼）；收起时不出现"
+  },
+  {
+    "itemName": "friend_same_close",
+    "imageName": "page_friend_same_close.png",
+    "roiFront": "458,162,30,26",
+    "roiBack": "450,156,50,38",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "同区好友列已收起（▶）；展开时不出现"
+  },
+  {
+    "itemName": "friend_list_sel",
+    "imageName": "page_friend_list_sel.png",
+    "roiFront": "139,92,104,58",
+    "roiBack": "139,92,104,58",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "好友列表选中好友"
+  },
+  {
+    "itemName": "friend_cur_unsel",
+    "imageName": "page_friend_cur_unsel.png",
+    "roiFront": "255,93,102,56",
+    "roiBack": "255,93,102,56",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "好友最近未选中"
+  },
+  {
+    "itemName": "friend_cur_sel",
+    "imageName": "page_friend_cur_sel.png",
+    "roiFront": "255,93,102,56",
+    "roiBack": "255,93,102,56",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "好友最近选中状态"
+  },
+  {
+    "itemName": "friend_list_unsel",
+    "imageName": "page_friend_list_unsel.png",
+    "roiFront": "139,92,102,56",
+    "roiBack": "139,92,104,58",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "好友列表未选中"
+  }
+]

@@ -9,7 +9,7 @@ from cached_property import cached_property
 from datetime import datetime
 from datetime import timedelta, time
 from module.base.timer import Timer
-from module.exception import TaskEnd
+from module.exception import GamePageUnknownError, TaskEnd
 from module.logger import logger
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.BondlingFairyland.config import BondlingMode, BondlingClass, BondlingSwitchSoul, BondlingConfig, UserStatus
@@ -127,52 +127,106 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
             case _:
                 logger.error(f'Unknown user status: {cong.bondling_config.user_status}')
 
+    # 点击「创建队伍」之后等待房间 / 私人设置页出现的有界窗口（秒）与窗口内都没动静时最多点几次创建。
+    # 实测点击后约 1~2 秒进入房间；窗口给慢设备留余量，不是固定等待：房间一出现就立刻退出。两者都是故障边界。
+    CREATE_OBSERVE_TIMEOUT = 8.0
+    CREATE_MAX_ATTEMPTS = 3
+
+    def _private_setting_visible(self) -> bool:
+        """当前帧是否在创建设置页（四个私人 / 公开设置标志任一出现；阈值与 `ensure_private` 一致）。"""
+        return any(self.appear(rule, threshold=0.7) for rule in (
+            self.I_ENSURE_PRIVATE, self.I_ENSURE_PRIVATE_2, self.I_ENSURE_PRIVATE_FALSE, self.I_ENSURE_PRIVATE_FALSE_2))
+
+    def _observe_after_create(self) -> str:
+        """点击「创建队伍」并确认点击已发出之后，用新截图区分页面状态（不使用点击前的旧画面）：
+
+        - 'room'：已经进入房间，直接交接邀请流程。**这只说明不必再等创建设置页，不代表房间私人状态已验证**：
+          10-22 ~ 10-27 的实例日志里 37 次点击创建，其中 36 次紧接着 `Ensure private timeout`、没有一次点到过私人设置标志（点击创建直接进房间），源码和资源里也没有「契灵创建入口固定为私人」的依据，
+          所以这里明确记「私人状态未验证」，不假装验证过；
+        - 'private'：仍在创建设置页，`ensure_private` 看到了私人标志（已验证私人）；
+        - 'pending'：窗口内既不是房间也不是设置页（页面过渡 / 点击没生效），由调用方决定是否再点。
+        私人设置没有确认时：`ensure_private` 带着「房间已出现就退出」的条件运行；返回 False 后若房间已出现，按「房间 / 私人未验证」继续；
+        否则还停在设置页 = 没能确认私人，抛 `GamePageUnknownError`（明确原因，不进入邀请）。设备 / 识别异常原样向上传播。
+        """
+        timer = Timer(self.CREATE_OBSERVE_TIMEOUT).start()
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_GI_IN_ROOM):
+                logger.info('Bondling room entered after create click; private state NOT verified (no setting page appeared)')
+                return 'room'
+            if self._private_setting_visible():
+                if self.ensure_private(exit_when=self.I_GI_IN_ROOM):
+                    logger.info('Bondling create: private setting verified')
+                    return 'private'
+                if self.appear(self.I_GI_IN_ROOM):
+                    logger.warning('Bondling room entered while ensuring private; private state NOT verified')
+                    return 'room'
+                message = 'Bondling create: private setting was not confirmed on the create page'
+                logger.error(message)
+                raise GamePageUnknownError(message)
+            if timer.reached():
+                logger.warning(f'Bondling create: neither room nor setting page within {self.CREATE_OBSERVE_TIMEOUT}s after click')
+                return 'pending'
+
+    def create_bond_team(self) -> bool:
+        """契灵队长创建队伍，返回 True = 已在房间里（交接邀请）；False = 求援已无球，任务结束。
+
+        点击「创建队伍」后不再用点击前的旧截图判断：点击确实发出（`appear_then_click` 返回 True）才进入有界观察
+        （`_observe_after_create`），没发出（限流 / 目标已消失）回到循环顶重新截图；窗口内房间一出现就退出，
+        不会像原来那样直接进私人设置的 15 秒等待；窗口内没有任何动静时才允许再点一次，最多 `CREATE_MAX_ATTEMPTS` 次，
+        再不行抛 `GamePageUnknownError`，不会默认创建成功。
+        """
+        click_count = 0
+        create_attempts = 0
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_GI_IN_ROOM):
+                return True
+            if click_count >= 6:
+                logger.error('Click fire failed')
+                logger.error(
+                    'You might need to check your bondling number. It most possibly arrived to the max 500')
+                raise BondlingNumberMax
+            if self.check_and_invite(True):
+                continue
+            # 某些活动的时候出现 “选择共鸣的阴阳师”
+            if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
+                continue
+            if self.appear(self.I_CREATE_TEAM, interval=1):
+                if create_attempts >= self.CREATE_MAX_ATTEMPTS:
+                    message = f'Bondling create: create button clicked {self.CREATE_MAX_ATTEMPTS} times but no room appeared'
+                    logger.error(message)
+                    raise GamePageUnknownError(message)
+                if not self.appear_then_click(self.I_CREATE_TEAM, interval=2):
+                    continue
+                create_attempts += 1
+                self._observe_after_create()
+                continue
+            # 求援
+            if self.appear(self.I_BALL_AREA, interval=1):
+                return False
+            if self.appear(self.I_BALL_HELP, interval=1):
+                cu, res, total = self.O_B_BALL_NUMBER.ocr(self.device.image)
+                logger.info(f'ball is cu {cu}, total {total}')
+                if cu <= 0 and total == 99:
+                    logger.info('ball is not enough')
+                    return False
+                if self.appear_then_click(self.I_BALL_HELP, interval=2):
+                    sleep(1)
+                    click_count += 1
+                    continue
+
     def run_leader(self):
         """  点击 求援， 组队模式  """
         logger.hr('Start run leader', 2)
         success = True
         is_first = True
         while 1:
-            def create_bond_team():
-                click_count = 0
-                while 1:
-                    self.screenshot()
-                    if self.appear(self.I_GI_IN_ROOM):
-                        return True
-                    if click_count >= 6:
-                        logger.error('Click fire failed')
-                        logger.error(
-                            'You might need to check your bondling number. It most possibly arrived to the max 500')
-                        raise BondlingNumberMax
-                    if self.check_and_invite(True):
-                        continue
-                    # 某些活动的时候出现 “选择共鸣的阴阳师”
-                    if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
-                        continue
-                    if self.appear(self.I_CREATE_TEAM, interval=1):
-                        self.appear_then_click(self.I_CREATE_TEAM, interval=2)
-                        if not self.appear(self.I_GI_IN_ROOM):
-                            self.ensure_private()
-                        continue
-                    # 求援
-                    if self.appear(self.I_BALL_AREA, interval=1):
-                        return False
-                    if self.appear(self.I_BALL_HELP, interval=1):
-                        cu, res, total = self.O_B_BALL_NUMBER.ocr(self.device.image)
-                        logger.info(f'ball is cu {cu}, total {total}')
-                        if cu <= 0 and total == 99:
-                            logger.info('ball is not enough')
-                            return False
-                        if self.appear_then_click(self.I_BALL_HELP, interval=2):
-                            sleep(1)
-                            click_count += 1
-                            continue
-
             self.screenshot()
 
             if success:
                 is_first = True
-                if not create_bond_team():
+                if not self.create_bond_team():
                     return True
 
             self.check_and_invite(True)
@@ -195,7 +249,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                 # 点击挑战
                 if not is_first:
                     if self.run_invite(config=self.config.bondling_fairyland.invite_config):
-                        success = self.run_general_battle(self.config.bondling_fairyland.battle_config)
+                        success = self.run_general_battle(self.team_battle_config())
                         is_first = False
                     else:
                         # 邀请失败，退出任务
@@ -211,7 +265,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                         break
                     else:
                         is_first = False
-                        success = self.run_general_battle(self.config.bondling_fairyland.battle_config)
+                        success = self.run_general_battle(self.team_battle_config())
                         continue
         # 当结束或者是失败退出循环的时候只有两个UI的可能，在房间或者是在组队界面
         # 如果在房间就退出
@@ -232,6 +286,9 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
 
     def run_member(self):
         logger.hr('Start run member', 2)
+        # 队员自己确认游戏内锁队状态（队长锁队不能证明队员也锁了）；本账号之前已经锁过（如 handoff 先当过队长）就不用重复观察
+        if not self.team_locked:
+            self.team_locked = self.confirm_team_locked()
         # 开始等待队长拉人
         wait_time = self.config.bondling_fairyland.invite_config.wait_time
         wait_timer = Timer(wait_time.minute * 60)
@@ -267,7 +324,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                     wait_time=self.config.bondling_fairyland.invite_config.wait_time
                 )
                 if battle_state is True:
-                    self.run_general_battle(self.config.bondling_fairyland.battle_config)
+                    self.run_general_battle(self.team_battle_config())
                     wait_timer.reset()
                     # 进入战斗流程
                     self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -280,7 +337,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                     break
             # 队长秒开的时候，检测是否进入到战斗中
             elif self.is_in_battle(False):
-                self.run_general_battle(self.config.bondling_fairyland.battle_config)
+                self.run_general_battle(self.team_battle_config())
                 wait_timer.reset()
                 # 进入战斗流程
                 self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -613,6 +670,12 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
         self.ui_click_until_disappear(self.I_CAPTION_ENSURE, interval=1)
         return None
 
+    # 本账号游戏内「锁定队伍」是否已被识别确认（看到了锁定图标）：只在 `lock_team` / `confirm_team_locked` 看到锁定图标时置位，
+    # 默认邀请、接受邀请都不会置位。组队战斗用它生成 `lock_team_enable`（见 `team_battle_config`）。
+    team_locked: bool = False
+    # 队员只观察锁队状态的有界窗口（秒）：所在页面看不到锁定 / 未锁定图标就不能确认，按未锁定处理（原行为）。
+    LOCK_CONFIRM_TIMEOUT = 6.0
+
     def lock_team(self):
         """
         锁定队伍(在探查或者是结契的界面)
@@ -628,6 +691,38 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                 continue
             if self.appear_then_click(self.I_BF_UNLOCK, interval=1):
                 continue
+        # 只有看到锁定图标才会走到这里：游戏内已锁队，这是通用战斗里 `lock_team_enable` 的依据
+        self.team_locked = True
+        return True
+
+    def confirm_team_locked(self) -> bool:
+        """队员侧只观察、不修改游戏状态：有界窗口内看到锁定图标才算已锁队，看到「未锁定」图标或什么都看不到都算没有确认。
+
+        队员不一定经过 `lock_team()`，队长锁队不能证明队员也锁了，默认邀请更不是证据；确认不了就保持 `lock_team_enable=False`
+        （原行为：进准备页立即判断准备）。不替用户点击锁定，避免擅自改变队员的游戏设置。
+        """
+        timer = Timer(self.LOCK_CONFIRM_TIMEOUT).start()
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_BALL_LOCK) or self.appear(self.I_BF_LOCK):
+                logger.info('Bondling member: team lock confirmed')
+                return True
+            if self.appear(self.I_BALL_UNLOCK) or self.appear(self.I_BF_UNLOCK):
+                logger.warning('Bondling member: team is NOT locked in game, lock_team_enable stays False')
+                return False
+            if timer.reached():
+                logger.warning('Bondling member: no lock / unlock icon on this page, team lock not confirmed, '
+                               'lock_team_enable stays False')
+                return False
+
+    def team_battle_config(self) -> GeneralBattleConfig:
+        """组队（队长 / 队员）进入通用战斗用的配置：基于任务 `battle_config` 的**副本**，只设置 `lock_team_enable`。
+
+        其它字段（战斗时限、标记、随机点击、预设等用户现有选项）原样保留；不修改共享的配置对象、不写回 JSON。
+        `lock_team_enable` 取自 `team_locked`（游戏内已确认锁队）：为 True 时通用战斗沿用它已有的约 3 秒自动准备等待，
+        超时后仍会点击准备（兜底不变）；为 False 时原行为。
+        """
+        return self.config.bondling_fairyland.battle_config.model_copy(update={'lock_team_enable': self.team_locked})
 
     @cached_property
     def limit_time(self) -> timedelta:

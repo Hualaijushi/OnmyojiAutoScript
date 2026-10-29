@@ -43,6 +43,14 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
         """
         return self.C_RANDOM_SAVE_BOTTOM
 
+    def _select_result_region(self) -> RuleClick:
+        """秘闻结果页（首次通关的「胜利 / 排名 / 通关阵容」）的结算推进区域：走右侧 / 底部安全区（80% / 20%）。
+
+        通用默认区 `C_RANDOM_DEFAULT` 整块落在「通关阵容」面板里，锚点点进面板就不推进，同一状态复用锚点点满 9 次后
+        GameStuckError（2026-10-12 oas2 第 10 层、10-19 oas2 第 1 / 3 / 4 层、10-25 oas2 第 5 层）。只覆盖本任务的选区。
+        """
+        return self._pick_save_region()
+
     @cached_property
     def match_layer(self) -> dict:
         return {

@@ -344,15 +344,18 @@ class StaticFreezeTest(TestCase):
     def fn(self, name):
         return next(n for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef) and n.name == name)
 
-    def test_by_name_swipes_and_intervals_are_untouched(self):
-        swipes = [ast.unparse(n) for n in ast.walk(self.fn('switch_soul_by_name'))
+    def test_by_name_swipes_use_only_the_ocr_specific_resources_and_the_numeric_resource_is_untouched(self):
+        # 2026-10-27：按名称模式换成 OCR 专用的四个 swipe 资源 + 稳定等待（旧的固定 sleep 与 interval 不再使用），
+        # 数字模式的回顶资源 S_SS_GROUP_SWIPE_UP 仍只被 `_swipe_group_list_to_top` 使用。
+        by_name = ast.unparse(self.fn('switch_soul_by_name'))
+        self.assertNotIn('self.swipe(', by_name)             # 滑动都在 `_name_swipe`，用 RuleSwipe 资源名传入
+        self.assertNotIn('sleep(', by_name)
+        swipes = [ast.unparse(n) for n in ast.walk(self.fn('_name_swipe'))
                   if isinstance(n, ast.Call) and ast.unparse(n.func) == 'self.swipe']
-        self.assertEqual(swipes, ['self.swipe(self.S_SS_GROUP_SWIPE_UP, 2)', 'self.swipe(self.S_SS_GROUP_SWIPE_DOWN)',
-                                  'self.swipe(self.S_SS_TEAM_SWIPE_DOWN, 1.5)', 'self.swipe(self.S_SS_TEAM_SWIPE_UP, 0.3)'])
-        sleeps = [n.args[0].value for n in ast.walk(self.fn('switch_soul_by_name'))
-                  if isinstance(n, ast.Call) and ast.unparse(n.func) == 'sleep' and n.args and isinstance(n.args[0], ast.Constant)]
-        self.assertEqual(sleeps, [2.5, 1.5, 2])
-        self.assertIn('cnt_click >= 4', ast.unparse(self.fn('switch_soul_by_name')))
+        self.assertEqual(swipes, ["self.swipe(getattr(self, attr))"])      # 不传 interval：节奏归稳定等待所有
+        numeric = ast.unparse(self.fn('_swipe_group_list_to_top'))
+        self.assertIn('self.swipe(self.S_SS_GROUP_SWIPE_UP)', numeric)
+        self.assertIn('cnt_click >= 4', by_name)
 
     def test_l1_and_the_swipe_model_are_not_referenced_from_switch_soul(self):
         text = SOURCE.read_text(encoding='utf-8')
@@ -369,7 +372,9 @@ class StaticFreezeTest(TestCase):
         for name in ('_click_group_twice', '_click_target_team', '_observe_confirm_dialog', '_confirm_team_switch'):
             self.fn(name)
         self.assertIn('policy=InteractionPolicy.NORMAL', ast.unparse(self.fn('_click_target_team')))
-        self.assertIn('policy=InteractionPolicy.CONFIRM', ast.unparse(self.fn('_confirm_team_switch')))
+        # 2026-10-25 起「确定」的 CONFIRM 点击抽成 `_press_sure`，预设确认框和契灵替换确认框共用
+        self.assertIn('policy=InteractionPolicy.CONFIRM', ast.unparse(self.fn('_press_sure')))
+        self.assertIn('self._press_sure()', ast.unparse(self.fn('_confirm_team_switch')))
         self.assertIn('random_delay(*self.GROUP_CLICK_GAP)', ast.unparse(self.fn('_click_group_twice')))
         self.assertIn('random_delay(*self.GROUP_SETTLE)', ast.unparse(self.fn('_click_group_twice')))
 

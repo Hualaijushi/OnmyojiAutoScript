@@ -667,6 +667,21 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         timer.reset()
         return True
 
+    def _rebase_anchor_for_failure(self, context: BattleContext) -> None:
+        """失败页上若会话已经保存了默认区的旧锚点（之前几帧还没识别到失败横幅），换成右侧 / 底部区的新锚点。
+
+        只改区域名不够：`_fire_settlement_burst` 点的是 `settlement_anchor` 这个坐标，所以必须重采；
+        段预算、总点击数等会话计数保持不变。
+        """
+        if not context.settlement_session_active:
+            return
+        if context.settlement_region_name in (self.C_RANDOM_SAVE_RIGHT.name, self.C_RANDOM_SAVE_BOTTOM.name):
+            return
+        region = self._pick_save_region()
+        context.settlement_anchor = self._sample_settlement_point(region)
+        context.settlement_region_name = region.name
+        logger.info(f'Settlement failure page: anchor moved to {region.name}')
+
     def _is_generic_result_context(self) -> bool:
         """当前结果页是否是通用胜负结果页（而非某任务追加识别标志命中的特殊结算态）。
 
@@ -920,6 +935,18 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         """
         if self.appear(self.I_GET_BATTLE_REWARD) or self.appear(self.I_GET_BATTLE_REWARD_2):
             return self.C_RANDOM_DEFAULT
+        return self._pick_save_region()
+
+    def _select_result_region(self) -> RuleClick:
+        """通用胜利结果页的结算推进区域，默认 ``C_RANDOM_DEFAULT``。
+
+        结果页有通用版式没有的大面板时由任务覆盖（如秘闻首次通关的「排名 / 通关阵容」面板整块盖住默认区）。
+        失败页不走这里：失败页固定改点右侧 / 底部安全区。
+        """
+        return self.C_RANDOM_DEFAULT
+
+    def _pick_save_region(self) -> RuleClick:
+        """右侧 / 底部安全区二选一（80% 右侧、20% 底部）；奖励页兜底和失败页共用同一个选择方式。"""
         if random_int(1, 100) <= 80:
             return self.C_RANDOM_SAVE_RIGHT
         return self.C_RANDOM_SAVE_BOTTOM
@@ -1075,13 +1102,21 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         """
         context.reward_no_battle_ts = None
         context.is_win = not self.appear(self.I_FALSE, threshold=0.8)
+        # 明确失败只认失败横幅 `I_FALSE`（同一帧只判一次，后面的分支都复用它），不是「没识别到胜利」
+        failed = not context.is_win
         if context.last_page != page_battle_result:
             self.device.click_record_clear()
-        if self._is_generic_result_context():
+        # 已确认失败的帧一定走通用 burst：不依赖 `_is_generic_result_context` 另一次按资产阈值的判断
+        if failed or self._is_generic_result_context():
             # 通用结果页：纳入 Settlement Micro-Burst Session（v1.2）。
+            region_provider = self._select_result_region
+            if failed:
+                # 通用战败页的「再次挑战」按钮落在 `C_RANDOM_DEFAULT` 里，失败页改点右侧 / 底部安全区
+                self._rebase_anchor_for_failure(context)
+                region_provider = self._pick_save_region
             self._settlement_burst_step(
                 context, current_page=page_battle_result, stage_name='generic_result',
-                region_provider=lambda: self.C_RANDOM_DEFAULT,
+                region_provider=region_provider,
             )
         else:
             # 非通用结果标志（更宽的 I_BATTLE_STATE_INFO）：不纳入 burst session，

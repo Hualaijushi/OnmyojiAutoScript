@@ -7,12 +7,17 @@ import re
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
+from typing_extensions import Annotated
 
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.SwitchSoul.switch_soul_config import SwitchSoulConfig
 from tasks.Component.config_base import ConfigBase, Time, dynamic_hide
 from tasks.Component.config_scheduler import Scheduler
+
+
+# 福利模式人数门槛：严格正整数，拒绝 1.5、'100'、True 这类会被宽松转换悄悄接受的值
+_WELFARE_MIN_PEOPLE = TypeAdapter(Annotated[int, Field(ge=1, strict=True)])
 
 
 class AttackDokanMasterType(str, Enum):
@@ -138,6 +143,16 @@ class DokanConfig(BaseModel):
     min_bounty: int = Field(default=0, description='min_bounty_help')
     # 单次查找道馆时,最大刷新次数.超过此次数后,若还未找到符合要求的,会随机选择一个道馆
     find_dokan_refresh_count: int = Field(default=7, description='find_dokan_refresh_count_help')
+    # 福利道馆模式（默认关闭）：只找「鑫」馆，防守人数 >= 门槛才开，开馆后点准备立即关游戏
+    welfare_mode: bool = Field(default=False, description='welfare_mode_help')
+    welfare_min_people: int = Field(default=100, ge=1, description='welfare_min_people_help')
+
+    def __setattr__(self, name, value):
+        # DokanConfig 没开 validate_assignment（不改变其他字段的保存行为），
+        # 这里只让福利门槛在保存时校验：失败抛 ValidationError，原值保持不变
+        if name == 'welfare_min_people':
+            value = _WELFARE_MIN_PEOPLE.validate_python(value)
+        super().__setattr__(name, value)
 
 
 class DokanBattleConfig(GeneralBattleConfig):

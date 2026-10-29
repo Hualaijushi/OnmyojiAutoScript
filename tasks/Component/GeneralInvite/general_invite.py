@@ -56,6 +56,12 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
     timer_invite = None
     timer_wait = None
     timer_emoji = None  # 等待期间如果没有操作的话，可能会导致长时间无响应报错
+    # 本次开战尝试是否已经点过挑战按钮。调用方每次邀请前自己清零；循环据此判断「没点过」可撤销计数
+    fire_click_issued = False
+
+    def _may_fire(self) -> bool:
+        """真正点「挑战」之前的最后一道确认。默认放行；循环里的御魂覆写它，外部已经要求停止就不再开战。"""
+        return True
 
     def run_invite(self, config: InviteConfig, is_first: bool = False, fire_reaction=None) -> bool:
         """
@@ -91,6 +97,10 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 return False
             if self.appear(self.I_MATCHING):
                 logger.warning('Timeout, now is no room')
+                return False
+            if not self._may_fire():
+                # 邀请等待可能很久，期间外部要求停止：不再等队员、不再开战
+                logger.info('Invite stopped: start of a new battle is no longer allowed')
                 return False
 
             if not self.is_in_room():
@@ -402,6 +412,10 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 # 挑战按钮在 reaction 期间消失但仍在房间 → 不点旧坐标
                 logger.info('Room challenge: button gone during reaction, re-evaluate')
                 continue
+            if not self._may_fire():
+                logger.info('Room challenge: start of a new battle is no longer allowed, do not click')
+                return 'timeout'
+            self.fire_click_issued = True
             self.appear_then_click(target, interval=1, threshold=0.7)
             state = self._wait_room_entry_state()
             if state == 'battle':

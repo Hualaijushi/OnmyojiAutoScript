@@ -30,7 +30,7 @@ import numpy as np
 from module.atom.click import RuleClick
 from module.atom.image import RuleImage
 from tasks.Component.GeneralBattle.general_battle import BattleAction, GeneralBattle
-from tasks.RealmRaid.script_task import ScriptTask as RR
+from tasks.RealmRaid.script_task import ScriptTask as RR, RR_AGAIN_POST_CLICK_SETTLE
 from tasks.Component.config_fire_reaction import FireReactionConfig
 
 
@@ -439,6 +439,91 @@ class FireAgainLastAttemptReactionGoneTest(TestCase):
         self.assertIn("if state == 'battle':", gone_branch)
         self.assertIn('return True', gone_branch)
         self.assertIn('continue', gone_branch)
+
+
+# --------------------------------------------------------------------------------------
+# 2026-10-22 oas2 Level C：点击「再次挑战」/ 确认弹窗后的第一帧（0.1~0.2s）仍是旧失败页，
+# 被 `_wait_again_entered_battle()` 立即判成 `failure_page`；popup 已吃掉前 3 个 attempt 时，
+# 最后一次 attempt 耗尽 → `_fire_again()` False，实际游戏已进准备页，aborted 后
+# `ensure_lock` 在准备页空转直到 GameStuckError。修复：点击后的调用传 settle 窗口。
+# --------------------------------------------------------------------------------------
+
+class _SettleFakeTimer:
+    """按 limit 区分：settle 计时器（limit=SETTLE）前 `settle_misses` 次 reached() 为 False，
+    之后为 True；外层总计时器（其它 limit）在 `outer_budget` 次之后到期。"""
+    settle_misses = 2
+    outer_budget = 20
+    SETTLE = RR_AGAIN_POST_CLICK_SETTLE
+
+    def __init__(self, limit, *a, **kw):
+        self.limit = limit
+        self._n = 0
+
+    def start(self):
+        return self
+
+    def reached(self):
+        self._n += 1
+        if self.limit == _SettleFakeTimer.SETTLE:
+            return self._n > _SettleFakeTimer.settle_misses
+        return self._n > _SettleFakeTimer.outer_budget
+
+
+class FireAgainPostClickSettleTest(TestCase):
+    def setUp(self):
+        _SettleFakeTimer.settle_misses = 2
+        _SettleFakeTimer.outer_budget = 20
+        for tgt in ('Timer', 'sleep', 'random_delay'):
+            p = patch(f'tasks.RealmRaid.script_task.{tgt}',
+                      _SettleFakeTimer if tgt == 'Timer' else Mock(return_value=0.5))
+            p.start()
+        self.addCleanup(patch.stopall)
+
+    def _mk(self, *, active, again_visible=True):
+        h = _Harness()
+        t = h.task
+        t._is_active_battle_entry = Mock(side_effect=_tail_seq(active))
+        t.appear = Mock(side_effect=lambda tgt, **kw: again_visible and tgt.name == t.I_FIRE_AGAIN.name)
+        return h, t
+
+    def test_failure_page_visible_inside_settle_is_not_failure(self):
+        # 前两帧仍是旧失败页（游戏未响应），随后进入准备页 → 必须是 battle，不是 failure_page
+        h, t = self._mk(active=[False, False, True])
+        self.assertEqual(t._wait_again_entered_battle(settle=_SettleFakeTimer.SETTLE), 'battle')
+
+    def test_failure_page_after_settle_is_failure_page(self):
+        # settle 已过仍是失败页 → 真正点击失败，retryable
+        h, t = self._mk(active=[False])
+        self.assertEqual(t._wait_again_entered_battle(settle=_SettleFakeTimer.SETTLE), 'failure_page')
+
+    def test_default_no_settle_returns_failure_page_immediately(self):
+        # pre-click 未就绪 / gone 分支（不传 settle）行为不变
+        h, t = self._mk(active=[False])
+        self.assertEqual(t._wait_again_entered_battle(), 'failure_page')
+        self.assertEqual(t.screenshot.call_count, 1)
+
+    def test_confirm_click_waits_for_battle_and_does_not_click_fire_again(self):
+        """回归 2026-10-22 日志：确认弹窗点击后进入战斗 → True，且之后不再点「再次挑战」。"""
+        h, t = self._mk(active=[False])
+        t._wait_again_entered_battle = Mock(return_value='battle')
+        events = []
+
+        def _atc(tgt, **kw):
+            events.append(tgt.name)
+            return tgt.name == t.I_FRESH_ENSURE.name
+        t.appear_then_click = Mock(side_effect=_atc)
+        self.assertIs(t._fire_again(), True)
+        self.assertEqual(events, [t.I_SHOW_AGAIN.name, t.I_FRESH_ENSURE.name])
+        t._wait_again_entered_battle.assert_called_once_with(settle=RR_AGAIN_POST_CLICK_SETTLE)
+
+    def test_source_shape_post_click_waits_pass_settle(self):
+        src = _src(RR._fire_again)
+        self.assertEqual(src.count('self._wait_again_entered_battle(settle=RR_AGAIN_POST_CLICK_SETTLE)'), 2)
+        # gone / 未就绪分支仍是无参调用
+        self.assertEqual(src.count('self._wait_again_entered_battle()'), 2)
+        wait_src = _src(RR._wait_again_entered_battle)
+        for tok in ('.click(', 'appear_then_click', 'sleep(', 'random_delay'):
+            self.assertNotIn(tok, wait_src)
 
 
 # --------------------------------------------------------------------------------------

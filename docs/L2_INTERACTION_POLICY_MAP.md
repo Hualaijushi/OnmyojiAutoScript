@@ -190,14 +190,14 @@ SixRealms 70、WantedQuests 38、AbyssShadows 32、BondlingFairyland 30、Dokan 
 | L2M-133 | `ActivityShikigami/page.py` | `handle_activity_story` | `appear_then_click` | `ActivityShikigamiAssets.I_CONFIRM_SKIP` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 剧情跳过对话（低频、首次进入） |
 | L2M-134 | `ActivityShikigami/page.py` | `handle_activity_overlay` | `appear_then_click` | `ActivityShikigamiAssets.I_ACTIVITY_SIGNIN_CLOSE` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 签到遮挡关闭（recovery） |
 | L2M-135 | `ActivityShikigami/base_act.py` | `_handle_result` | `appear_then_click` | `self.I_UI_BACK_RED` | IMMEDIATE | **KEEP_SPECIAL** | - | Boss 结算页返回，属战斗结果生命周期 |
-| L2M-136 | `ActivityShikigami/base_act.py` | `switch_soul_for` | `ui_click` | `enter_button` | IMMEDIATE | **KEEP_IMMEDIATE** | - | ui_click 系 helper 自带点击循环且无 policy 参数；本轮不扩公共 API（后续 L2 设计项） |
+| L2M-136 | `ActivityShikigami/base_act.py` | `switch_soul_for` | `ui_click_until_appear_or_timeout` | `enter_button` | IMMEDIATE | **KEEP_IMMEDIATE** | - | ui_click 系 helper 自带点击循环且无 policy 参数；本轮不扩公共 API（后续 L2 设计项）。2026-10-20 由 `ui_click` 换成同语义的有界版 |
 | L2M-137 | `ActivityShikigami/activities/normal.py` | `_run_climb_type` | `click` | `pages.random_click(ltrb=(False, False, True, False))` | IMMEDIATE | **KEEP_SPECIAL** | - | 安全区随机点击 |
 | L2M-138 | `ActivityShikigami/activities/normal.py` | `_sync_climb_penta_pass` | `click` | `click_rule` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 五连通行状态同步区域点击（按状态判定，无 appear 目标） |
 | L2M-139 | `ActivityShikigami/activities/normal.py` | `_enter_climb_battle` | `appear_then_click` | `self.I_UI_CONFIRM_SAMLL` | IMMEDIATE | **KEEP_SPECIAL** | - | FIRE battle-entry FSM 内资源确认弹窗（§4.62），归 FIRE owner |
 | L2M-140 | `ActivityShikigami/activities/normal.py` | `_enter_climb_battle` | `appear_then_click` | `self.I_UI_CONFIRM` | IMMEDIATE | **KEEP_SPECIAL** | - | FIRE battle-entry FSM 内资源确认弹窗（§4.62），归 FIRE owner |
 | L2M-141 | `ActivityShikigami/activities/normal.py` | `_enter_climb_battle` | `appear_then_click` | `fire_rule` | IMMEDIATE | **ALREADY_L2** | FIRE_SPECIAL | FIRE owner |
-| L2M-142 | `ActivityShikigami/activities/normal.py` | `_sync_climb_team_lock` | `ui_click` | `unlock_rule` | IMMEDIATE | **KEEP_IMMEDIATE** | - | ui_click 系 helper 自带点击循环且无 policy 参数；本轮不扩公共 API（后续 L2 设计项） |
-| L2M-143 | `ActivityShikigami/activities/normal.py` | `_sync_climb_team_lock` | `ui_click` | `lock_rule` | IMMEDIATE | **KEEP_IMMEDIATE** | - | ui_click 系 helper 自带点击循环且无 policy 参数；本轮不扩公共 API（后续 L2 设计项） |
+| L2M-142 | `ActivityShikigami/activities/normal.py` | `_sync_climb_team_lock` | `ui_click_until_appear_or_timeout` | `unlock_rule` | IMMEDIATE | **KEEP_IMMEDIATE** | - | ui_click 系 helper 自带点击循环且无 policy 参数；本轮不扩公共 API（后续 L2 设计项）。2026-10-20 由 `ui_click` 换成同语义的有界版 |
+| L2M-143 | `ActivityShikigami/activities/normal.py` | `_sync_climb_team_lock` | `ui_click_until_appear_or_timeout` | `lock_rule` | IMMEDIATE | **KEEP_IMMEDIATE** | - | ui_click 系 helper 自带点击循环且无 policy 参数；本轮不扩公共 API（后续 L2 设计项）。2026-10-20 由 `ui_click` 换成同语义的有界版 |
 | L2M-144 | `ActivityShikigami/activities/fake_god.py` | `run_fakegod` | `click` | `pages.random_click(ltrb=(False, False, True, False))` | IMMEDIATE | **KEEP_SPECIAL** | - | 安全区随机点击 |
 | L2M-145 | `ActivityShikigami/activities/fake_god.py` | `_enter_fakegod_battle` | `appear_then_click` | `self.I_UI_CONFIRM_SAMLL` | IMMEDIATE | **KEEP_SPECIAL** | - | Battle Entry 语义但伪神降临线仍是旧 while True（D001 §4.62 未改）；待 FIRE contract 收口 |
 | L2M-146 | `ActivityShikigami/activities/fake_god.py` | `_enter_fakegod_battle` | `appear_then_click` | `self.I_UI_CONFIRM` | IMMEDIATE | **KEEP_SPECIAL** | - | Battle Entry 语义但伪神降临线仍是旧 while True（D001 §4.62 未改）；待 FIRE contract 收口 |
@@ -297,3 +297,53 @@ C0 复核（外部审查报告，原文不在仓库里，逐点结论已归档�
 
 登记册（`docs/L2_CALLSITE_REGISTER.md` §2 / §2.4）：1092 = MIGRATE 7 + ALREADY_L2 37 + KEEP_IMMEDIATE 630 + KEEP_SPECIAL 232 + NEEDS_C 7 + DEFERRED 6 + PRIMITIVE 35 + EXCLUDED 138（互斥、可加总）；
 basis：human 179 / c0 17 / rule 896（互斥、可加总；`c0_reviewed` = 24 是独立维度，GeneralInvite / GeneralBattle 的 7 点决定来源仍是 human，所以 c0 basis = 4 + 6 + 3 + 4 = 17）。
+
+## 5. 每日琐事 / 狩猎战 / 集体任务全部点击接入 L2（2026-10-23，`docs/AI_CONTEXT.md` §4.124）
+
+用户决定这三个任务里任何点击都接入点击模型；DailyTrifles 从此不再是项目排除项（§1 的排除列表以此为准）。BaseTask 的 `click` /
+`ui_click*` / `ui_reward_appear_click` / `ui_get_reward` 加了可选 `policy`（`ui_get_reward` 另有 `close_policy`）；`click(policy)` 只加反应、
+不做 fresh confirm。共享组件（`Summon`、`goto_page`、战斗、组队房间）与滑动不在范围内。Level C 待验，区间仍是 PROVISIONAL。
+
+### 5.1 每日琐事（`tasks/DailyTrifles/script_task.py`）
+
+| 子项 | 目标 | policy |
+| --- | --- | --- |
+| 今忆召唤 | 返回 `I_UI_BACK_RED` | NAVIGATION |
+| 今忆召唤 | 预设 `O_SELECT_SM2/3/4`（`_click_recall_preset`：直接 `execute_single_click`，前面手动加反应） | NORMAL |
+| 今忆召唤 | `I_RECALL_TICKET` | NORMAL |
+| 今忆召唤 | `I_RECALL_SM_CONFIRM` / `I_SM_CONFIRM_2` / 误入语言召唤的 `I_UI_CANCEL` | CONFIRM |
+| 寮祈愿 | 一键感谢 `I_DT_GW_THANKS`、受赠记录、赠与一键领取、赠与按钮、搜索框 / 名称输入框 | NORMAL |
+| 寮祈愿 | `I_UI_CONFIRM`（两处）、搜索确定 `I_DT_GW_CONFIRM` | CONFIRM |
+| 寮祈愿 | 返回 `I_UI_BACK_RED`（两处） | NAVIGATION |
+| 寮祈愿 | 寮友 / 好友标签、按昵称搜索、赠与标签、清空搜索 | FAST |
+| 寮祈愿 | 受赠一键感谢 `ui_get_reward` | NORMAL / close NAVIGATION |
+| 吉闻 | 一键祝福、祝福 | NORMAL |
+| 吉闻 | 羁绊提升弹窗 ✗、关奖励（下方空白 `C_RANDOM_BOTTOM`） | NAVIGATION |
+| 商店 | 礼包屋推荐、底栏杂货 | FAST |
+| 商店 | 签到 `ui_get_reward(I_GIFT_SIGN)` | NORMAL / close NAVIGATION |
+| 商店 | 点体力商品等购买框 | NORMAL |
+| 商店 | 勾玉购买 `ui_get_reward(I_STORE_COST_TYPE_JADE)` | CONFIRM / close NAVIGATION |
+| 庭院寿司 | `ui_get_reward(I_COURTYARD_SUSHI)` | NORMAL / close NAVIGATION |
+| 庭院事务 | 日常标签 `I_ENTER_DAILY` | FAST |
+| 庭院事务 | 一键完成 `I_ONE_COMPLETE` | NORMAL |
+| 庭院事务 | 关奖励页（复用一键完成的位置，两处 `click`） | NAVIGATION |
+| 庭院事务 | 满级提取弹窗「取消」`I_UI_CANCEL_SAMLL`（两个按钮都在才点） | CONFIRM |
+| 邮件 | 邮件图标（三种）、全部领取、全部已读 | NORMAL |
+| 邮件 | 领取确认 | CONFIRM |
+
+### 5.2 狩猎战（`tasks/Hunt/script_task.py`）
+
+| 目标 | policy |
+| --- | --- |
+| `_back` 返回 | NAVIGATION |
+| `I_UI_CONFIRM`（麒麟 / 阴界之门各一处） | CONFIRM |
+| `I_KIRIN_CHALLAGE`、阴界之门入口 `I_NW`、`I_NW_CHALLAGE` | NORMAL |
+| 开战（`click_fire`） | 不变：FIRE owner 自有反应 |
+
+### 5.3 集体任务（`tasks/CollectiveMissions/script_task.py`）
+
+| 目标 | policy |
+| --- | --- |
+| 换一个 `I_CM_SWITCH`、进任务 `C_CM_1`（三处）、长按提交 `L_SL_LONG`、捐赠 / 提交按钮 | NORMAL |
+| 返回 `I_UI_BACK_RED`、关「获得奖励」（两处） | NAVIGATION |
+| 加号 `I_CM_ADD_*`（window_message 时代替滑动）、N 卡 `L_FEED_CLICK_*` | FAST |

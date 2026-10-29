@@ -84,5 +84,13 @@ class SwitchSoulAssets:
 	S_SS_TEAM_SWIPE_UP = RuleSwipe(roi_front=(782,406,21,21), roi_back=(793,356,21,21), mode="default", name="ss_team_swipe_up")
 	# 阵容向上滑动 
 	S_SS_TEAM_SWIPE_DOWN = RuleSwipe(roi_front=(709,308,21,21), roi_back=(709,449,21,21), mode="default", name="ss_team_swipe_down")
+	# 按名称：分组列表回到顶部（手指向下约 280px，落点在右侧分组列表内） 
+	S_SS_NAME_GROUP_TO_TOP = RuleSwipe(roi_front=(1130,200,70,20), roi_back=(1130,480,70,20), mode="default", name="ss_name_group_to_top")
+	# 按名称：分组列表向后翻页（手指向上约 260px；一屏可见 8 组，文字框可见带宽约 503px，翻页位移远小于它） 
+	S_SS_NAME_GROUP_NEXT = RuleSwipe(roi_front=(1130,480,70,20), roi_back=(1130,220,70,20), mode="default", name="ss_name_group_next")
+	# 按名称：队伍列表回到顶部（手指向下约 250px，落点在中央队伍列表内，上下各留出端点随机的余量） 
+	S_SS_NAME_TEAM_TO_TOP = RuleSwipe(roi_front=(680,230,80,20), roi_back=(680,480,80,20), mode="default", name="ss_name_team_to_top")
+	# 按名称：队伍列表向后翻页（手指向上基准约 135px、采样后约 75～190px；一行队伍约 150px，每屏逐行查找，不跳行；实际滚动量待真机验证） 
+	S_SS_NAME_TEAM_NEXT = RuleSwipe(roi_front=(680,430,80,20), roi_back=(680,295,80,20), mode="default", name="ss_name_team_next")
 
 

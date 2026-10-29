@@ -264,6 +264,11 @@ async def script_stop(script_name: str):
 async def script_task(script_name: str, task: str):
     return mm.config_cache(script_name).model.script_task(task)
 
+@script_app.get('/{script_name}/{task}/args/layout')
+async def script_task_layout(script_name: str, task: str):
+    # 可选展示信息，旧客户端不请求它；/args 输出保持不变
+    return mm.config_cache(script_name).model.script_task_layout(task)
+
 @script_app.put('/{script_name}/{task}/{group}/{argument}/value')
 async def script_task(script_name: str, task: str, group: str, argument: str, types: str, value):
     try:

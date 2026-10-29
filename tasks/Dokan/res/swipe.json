@@ -5,5 +5,12 @@
     "roiBack": "1240,240,30,21",
     "mode": "default",
     "description": "道馆选择界面 右侧侧边栏 手指向上滑动"
+  },
+  {
+    "itemName": "dokan_welfare_list_up",
+    "roiFront": "1110,450,70,20",
+    "roiBack": "1110,270,70,20",
+    "mode": "default",
+    "description": "福利道馆 右侧候选列表 手指竖直向上滑动（起终点都在列表内）"
   }
 ]

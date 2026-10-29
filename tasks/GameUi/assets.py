@@ -31,6 +31,12 @@ class GameUiAssets:
 	C_RANDOM_LEFT = RuleClick(roi_front=(34,169,140,437), roi_back=(34,169,140,437), name="random_left")
 	#  
 	C_RANDOM_RIGHT = RuleClick(roi_front=(1100,158,140,437), roi_back=(1100,158,140,437), name="random_right")
+	# 同区好友列 
+	C_FRIEND_SAME = RuleClick(roi_front=(147,154,338,41), roi_back=(147,154,338,41), name="friend_same")
+	# 选择置顶好友 
+	C_THE_TOP_FRIEND = RuleClick(roi_front=(148,208,292,75), roi_back=(148,208,292,75), name="the_top_friend")
+	# 好友详情右上角的同心之兰图标（打开福袋页；初始 / x/10 / x/20 三态都点这里） 
+	C_TONGXIN_ICON = RuleClick(roi_front=(1070,102,65,64), roi_back=(1070,102,65,64), name="tongxin_icon")
 
 
 	# Image Rule Assets
@@ -253,6 +259,31 @@ class GameUiAssets:
 	I_CHECK_CHESS = RuleImage(roi_front=(1159,592,66,70), roi_back=(1159,592,66,70), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_chess.png")
 
 
+	# Image Rule Assets
+	# 同心之兰未发送的初始状态 
+	I_TONGXIN_INI = RuleImage(roi_front=(1070,102,65,64), roi_back=(1070,102,65,64), threshold=0.9, method="Template matching", file="./tasks/GameUi/page/page_tongxin_ini.png")
+	# 同心之兰邀请/回赠页面 
+	I_INVITE_TONGXIN = RuleImage(roi_front=(870,97,49,59), roi_back=(831,53,132,135), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_invite_tongxin.png")
+	# 购买同心之兰 
+	I_PURCHASE_TONGXIN = RuleImage(roi_front=(816,609,157,53), roi_back=(816,609,157,53), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_purchase_tongxin.png")
+	# 回赠同心之兰/判断是否已收到同心之兰 
+	I_REPUR_TONGXIN = RuleImage(roi_front=(1117,616,50,51), roi_back=(1092,592,89,98), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_repur_tongxin.png")
+	# 同心之兰邀请接受 
+	I_ACC_TONGXIN = RuleImage(roi_front=(229,250,222,39), roi_back=(182,217,274,77), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_acc_tongxin.png")
+	# 同区好友列已展开（▼）；收起时不出现 
+	I_FRIEND_SAME_OPEN = RuleImage(roi_front=(458,164,30,22), roi_back=(450,158,50,34), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_friend_same_open.png")
+	# 同区好友列已收起（▶）；展开时不出现 
+	I_FRIEND_SAME_CLOSE = RuleImage(roi_front=(458,162,30,26), roi_back=(450,156,50,38), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_friend_same_close.png")
+	# 好友列表选中好友 
+	I_FRIEND_LIST_SEL = RuleImage(roi_front=(139,92,104,58), roi_back=(139,92,104,58), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_friend_list_sel.png")
+	# 好友最近未选中 
+	I_FRIEND_CUR_UNSEL = RuleImage(roi_front=(255,93,102,56), roi_back=(255,93,102,56), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_friend_cur_unsel.png")
+	# 好友最近选中状态 
+	I_FRIEND_CUR_SEL = RuleImage(roi_front=(255,93,102,56), roi_back=(255,93,102,56), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_friend_cur_sel.png")
+	# 好友列表未选中 
+	I_FRIEND_LIST_UNSEL = RuleImage(roi_front=(139,92,102,56), roi_back=(139,92,104,58), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_friend_list_unsel.png")
+
+
 	# List Rule Assets
 	# 活动列表页图像列表 
 	L_ACT_LIST_IMG = RuleList(folder="./tasks/GameUi/page", direction="vertical", mode="image", roi_back=(140,105,53,479), size=(46, 78), 
@@ -263,5 +294,16 @@ class GameUiAssets:
 	# 活动列表页爬塔活动文字 
 	L_ACT_LIST_OCR = RuleList(folder="./tasks/GameUi/page", direction="vertical", mode="ocr", roi_back=(50,123,49,553), size=(45, 69), 
 					 array=["版本"])
+
+
+	# Ocr Rule Assets
+	# 同心之兰次数 
+	O_NUM_TONGXIN = RuleOcr(roi=(1071,147,61,18), area=(1071,147,61,18), mode="DigitCounter", method="Default", keyword="", name="num_tongxin")
+	# 好友详情头部的名字（核对置顶好友就是对端别名） 
+	O_NAME_TONGXIN_FRIEND = RuleOcr(roi=(612,100,200,34), area=(612,100,200,34), mode="Single", method="Default", keyword="", name="name_tongxin_friend")
+	# 同心之兰绑定邀请弹窗里的邀请人名字 
+	O_NAME_TONGXIN_INVITER = RuleOcr(roi=(232,222,225,32), area=(232,222,225,32), mode="Single", method="Default", keyword="", name="name_tongxin_inviter")
+	# A 点购买后一闪而过的小字提示「邀请已发送。」（页面本身不变） 
+	O_TOAST_TONGXIN = RuleOcr(roi=(550,222,170,34), area=(550,222,170,34), mode="Single", method="Default", keyword="邀请已发送", name="toast_tongxin")
 
 

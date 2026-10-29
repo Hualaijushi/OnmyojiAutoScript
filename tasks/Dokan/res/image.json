@@ -547,5 +547,41 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": ""
+  },
+  {
+    "itemName": "find_xin",
+    "imageName": "res_find_xin.png",
+    "roiFront": "1153,351,19,34",
+    "roiBack": "1077,0,171,602",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "找鑫鑫子道馆"
+  },
+  {
+    "itemName": "dokan_team",
+    "imageName": "res_dokan_team.png",
+    "roiFront": "364,618,45,45",
+    "roiBack": "247,596,193,98",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "道馆阵容御魂一键预设"
+  },
+  {
+    "itemName": "dokan_team_preset",
+    "imageName": "res_dokan_team_preset.png",
+    "roiFront": "1089,89,24,25",
+    "roiBack": "1071,72,56,63",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "道馆御魂一键预设"
+  },
+  {
+    "itemName": "dokan_again_enter",
+    "imageName": "res_dokan_again_enter.png",
+    "roiFront": "264,346,18,32",
+    "roiBack": "0,90,1280,520",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "再次进入道馆识别"
   }
 ]

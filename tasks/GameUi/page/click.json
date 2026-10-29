@@ -22,5 +22,23 @@
     "roiFront": "1100,158,140,437",
     "roiBack": "1100,158,140,437",
     "description": ""
+  },
+  {
+    "itemName": "friend_same",
+    "roiFront": "147,154,338,41",
+    "roiBack": "147,154,338,41",
+    "description": "同区好友列"
+  },
+  {
+    "itemName": "the_top_friend",
+    "roiFront": "148,208,292,75",
+    "roiBack": "148,208,292,75",
+    "description": "选择置顶好友"
+  },
+  {
+    "itemName": "tongxin_icon",
+    "roiFront": "1070,102,65,64",
+    "roiBack": "1070,102,65,64",
+    "description": "好友详情右上角的同心之兰图标（打开福袋页；初始 / x/10 / x/20 三态都点这里）"
   }
 ]

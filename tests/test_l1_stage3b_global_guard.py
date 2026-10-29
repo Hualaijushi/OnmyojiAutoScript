@@ -221,6 +221,7 @@ class DailyTriflesSummonRecallTest(SiteHarness):
         fake = SimpleNamespace(
             O_SELECT_SM2=A.O_SELECT_SM2, O_SELECT_SM3=A.O_SELECT_SM3, O_SELECT_SM4=A.O_SELECT_SM4,
             I_UI_BACK_RED='BACK', I_RECALL_TICKET='TICKET',
+            RECALL_STEP_TIMEOUT=15,                                  # 2026-10-22 起点券等待有上限
             goto_page=Mock(side_effect=lambda page: events.append(('goto', page))),
             appear_then_click=Mock(side_effect=lambda *a, **k: events.append(('atc',)) or False),
             screenshot=Mock(side_effect=lambda: events.append(('screenshot',))),
@@ -229,6 +230,8 @@ class DailyTriflesSummonRecallTest(SiteHarness):
         fake.appear = Mock(side_effect=lambda rule: (
             appear_from_click is not None and len(self.backend_calls()) >= appear_from_click))
         fake.wait_until_appear = Mock(side_effect=_Stop)           # 点击阶段之后的流程不在本测试范围
+        from tasks.DailyTrifles.script_task import ScriptTask
+        fake._click_recall_preset = lambda preset: ScriptTask._click_recall_preset(fake, preset)
         return fake
 
     def _reference(self, count):
@@ -240,7 +243,15 @@ class DailyTriflesSummonRecallTest(SiteHarness):
 
     def _run(self, fake):
         from tasks.DailyTrifles import script_task
-        with seeded(), patch.object(script_task, 'sleep', side_effect=lambda s: self.events.append(('sleep', s))):
+
+        def reaction(lo, hi):
+            # 2026-10-23 起每次预设点击前有 NORMAL 反应时间；这里换成确定值，不消耗种子随机数，
+            # 坐标采样仍与迁移前的参考序列逐一对应
+            self.events.append(('reaction', lo, hi))
+            return lo
+
+        with seeded(), patch.object(script_task, 'sleep', side_effect=lambda s: self.events.append(('sleep', s))), \
+                patch.object(script_task, 'random_delay', side_effect=reaction):
             try:
                 return script_task.ScriptTask.summon_recall(fake)
             except _Stop:
@@ -258,8 +269,15 @@ class DailyTriflesSummonRecallTest(SiteHarness):
         fake = self._fake(appear_from_click=None)
         self.assertIsNone(self._run(fake))
         self.assertEqual([(x, y) for _, _, x, y in self.backend_calls()], self._reference(9))
-        # 采样 / 点击 / 等待 / 截图次数：9 次点击各 sleep 两次、截图一次，每轮末尾再截图一次
-        self.assertEqual(len([e for e in self.events if e[0] == 'sleep']), 18)
+        # 采样 / 点击 / 等待 / 截图次数：9 次点击各 sleep 三次（前后各 1 秒 + 点击前的 NORMAL 反应时间）、截图一次，
+        # 每轮末尾再截图一次
+        from module.interaction_policy import InteractionPolicy, resolve_reaction_range
+        normal = resolve_reaction_range(InteractionPolicy.NORMAL)
+        self.assertEqual([e for e in self.events if e[0] == 'reaction'], [('reaction', *normal)] * 9)
+        self.assertEqual(len([e for e in self.events if e[0] == 'sleep']), 27)
+        # 反应时间紧挨在每次点击之前
+        kinds = [e[0] for e in self.events if e[0] in ('reaction', 'backend')]
+        self.assertEqual(kinds, ['reaction', 'backend'] * 9)
         self.assertEqual(len([e for e in self.events if e[0] == 'screenshot']), 12)
         self.assertEqual([e for e in self.events if e[0] == 'push'], [('push', '今忆召唤抽卡失败')])
         self.assertTrue(all(r['target'] == 'Click' for r in self.trace_rows()))
@@ -735,7 +753,8 @@ class RegisterCoverageTest(TestCase):
         sites = reg.classify_all(reg.scan_sites(), reg.load_audited_rows())
         summary = reg.summarize(sites)
         # 45 + 2026-09-23 爬塔线专用结算单击改造新增 1 处 execute_single_click
-        self.assertEqual(summary['l1_pipeline_sites'], 46)
+        # 2026-10-26 福利道馆新增 3 处 execute_single_click（候选馆 / 点准备 / 返回本馆徽章）：46 → 49
+        self.assertEqual(summary['l1_pipeline_sites'], 49)
         self.assertEqual((summary['raw_module'], summary['raw_primitive'], summary['raw_excluded']), (4, 0, 0))
         self.assertEqual(summary['raw_click_sites'], summary['raw_module'])
         long_sites = reg.scan_long_click_sites()

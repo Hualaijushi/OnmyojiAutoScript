@@ -20,7 +20,7 @@ from unittest.mock import Mock, patch
 
 from module.exception import TaskEnd
 from tasks.BondlingFairyland import script_task as bf
-from tasks.BondlingFairyland.config import UserStatus
+from tasks.BondlingFairyland.config import BattleConfig, UserStatus
 from tasks.BondlingFairyland.script_task import ScriptTask
 
 
@@ -47,7 +47,7 @@ class MemberWorld(TestCase):
         task.config = SimpleNamespace(bondling_fairyland=SimpleNamespace(
             invite_config=SimpleNamespace(wait_time=time(minute=2)),
             bondling_config=SimpleNamespace(user_status=status, limit_time=time(hour=1)),
-            battle_config=object()))
+            battle_config=BattleConfig()))                                 # 真实类型：`team_battle_config` 会基于它生成副本
         task.start_time = datetime.now()
         task.current_count = count
         task.limit_count = limit
@@ -100,6 +100,7 @@ class MemberWorld(TestCase):
         task.run_general_battle = Mock(side_effect=run_general_battle)
         task.exit_room = Mock(side_effect=exit_room)
         task.exit_battle = Mock(return_value=False)
+        task.confirm_team_locked = Mock(return_value=False)                # 本文件只关心次数收尾；锁队观察见 test_bondling_team_lock.py
         task.goto_page = Mock()
         task.set_next_run = Mock()
         return task

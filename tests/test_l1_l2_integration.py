@@ -300,8 +300,88 @@ class CallsiteRegisterGuardTest(TestCase):
     # 沿用 `C1_MIGRATED` 的做法**逐点登记**（文件 / 函数 / 目标 / policy 全部对得上），所以别的文件新增 policy 仍会被拦住。
     POST_C1_CONSUMERS = {
         ('tasks/Component/SwitchSoul/switch_soul.py', '_click_target_team', 'target_team', 'InteractionPolicy.NORMAL'),
-        ('tasks/Component/SwitchSoul/switch_soul.py', '_confirm_team_switch', 'self.I_SOU_SWITCH_SURE',
+        ('tasks/Component/SwitchSoul/switch_soul.py', '_press_sure', 'self.I_SOU_SWITCH_SURE',
+         'InteractionPolicy.CONFIRM'),    # 预设确认框与契灵替换确认框共用（2026-10-25）
+        # 2026-10-23 用户决定：每日琐事 / 狩猎战 / 集体任务里任何点击都接入 L2（docs/L2_INTERACTION_POLICY_MAP.md §5）；
+        # 同一函数里目标与档位都相同的点位合成一条（例如庭院事务关奖励页的两处 click(I_ONE_COMPLETE)）
+        ('tasks/CollectiveMissions/script_task.py', '_donate', 'random.choice(random_click)', 'InteractionPolicy.FAST'),
+        ('tasks/CollectiveMissions/script_task.py', '_donate', 'self.C_CM_1', 'InteractionPolicy.NORMAL'),
+        ('tasks/CollectiveMissions/script_task.py', '_feed', 'click', 'InteractionPolicy.FAST'),
+        ('tasks/CollectiveMissions/script_task.py', '_feed', 'self.C_CM_1', 'InteractionPolicy.NORMAL'),
+        ('tasks/CollectiveMissions/script_task.py', '_select_target_mission', 'self.I_CM_SWITCH',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/CollectiveMissions/script_task.py', '_soul', 'self.C_CM_1', 'InteractionPolicy.NORMAL'),
+        ('tasks/CollectiveMissions/script_task.py', '_soul', 'self.I_UI_BACK_RED', 'InteractionPolicy.NAVIGATION'),
+        ('tasks/CollectiveMissions/script_task.py', '_soul', 'self.L_SL_LONG', 'InteractionPolicy.NORMAL'),
+        ('tasks/CollectiveMissions/script_task.py', 'get_reward_and_close', 'False', 'InteractionPolicy.NAVIGATION'),
+        ('tasks/CollectiveMissions/script_task.py', 'get_reward_and_close', 'True', 'InteractionPolicy.NAVIGATION'),
+        ('tasks/CollectiveMissions/script_task.py', 'get_reward_and_close', 'target', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', '_cancel_two_button_popup', 'self.I_UI_CANCEL_SAMLL',
          'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', '_close_luck_reward', 'GeneralBattleAssets.C_RANDOM_BOTTOM',
+         'InteractionPolicy.NAVIGATION'),
+        ('tasks/DailyTrifles/script_task.py', 'close_reward_and_wait_page', 'self.I_ONE_COMPLETE',
+         'InteractionPolicy.NAVIGATION'),
+        ('tasks/DailyTrifles/script_task.py', 'donate', 'self.C_DT_GW_CLICK_INPUT', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'donate', 'self.C_DT_GW_INPUT_SEARCH', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'donate', 'self.I_DT_GW_CLEAR_SEARCH', 'InteractionPolicy.FAST'),
+        ('tasks/DailyTrifles/script_task.py', 'donate', 'self.I_DT_GW_CONFIRM', 'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', 'guild_donate_get_reward', 'self.I_DT_GW_DONATE_RECORD',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'guild_donate_get_reward', 'self.I_DT_GW_DONATE_RECORD_THANKS',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'guild_donate_get_reward', 'self.I_DT_GW_GIVE', 'InteractionPolicy.FAST'),
+        ('tasks/DailyTrifles/script_task.py', 'guild_donate_get_reward', 'self.I_DT_GW_ONE_COLLECT',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'guild_donate_get_reward', 'self.I_UI_BACK_RED',
+         'InteractionPolicy.NAVIGATION'),
+        ('tasks/DailyTrifles/script_task.py', 'guild_donate_get_reward', 'self.I_UI_CONFIRM',
+         'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', 'process_donate', 'donate_btn', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'process_donate', 'self.I_UI_CONFIRM', 'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', 'run_buy_sushi', 'WeeklyPurchaseAssets.I_MALL_SUNDRY',
+         'InteractionPolicy.FAST'),
+        ('tasks/DailyTrifles/script_task.py', 'run_buy_sushi', 'self.I_SPECIAL_SUSHI', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_buy_sushi', 'self.I_STORE_COST_TYPE_JADE',
+         'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', 'run_courtyard_affairs', 'self.I_ENTER_DAILY', 'InteractionPolicy.FAST'),
+        ('tasks/DailyTrifles/script_task.py', 'run_courtyard_affairs', 'self.I_ONE_COMPLETE',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_courtyard_sushi', 'self.I_COURTYARD_SUSHI',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_guild_donate', 'self.I_DT_GW_THANKS', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_guild_donate', 'self.I_UI_BACK_RED', 'InteractionPolicy.NAVIGATION'),
+        ('tasks/DailyTrifles/script_task.py', 'run_luck_msg', 'self.I_CLICK_BLESS', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_luck_msg', 'self.I_FRIENDSHIP_UP', 'InteractionPolicy.NAVIGATION'),
+        ('tasks/DailyTrifles/script_task.py', 'run_luck_msg', 'self.I_ONE_CLICK_BLESS', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_DT_HARVEST_MAIL_COPY2',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_HARVEST_MAIL', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_HARVEST_MAIL_ALL',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_HARVEST_MAIL_CONFIRM',
+         'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_HARVEST_MAIL_COPY',
+         'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_READ_ALL_MAIL', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_UI_BACK_RED', 'InteractionPolicy.NAVIGATION'),
+        ('tasks/DailyTrifles/script_task.py', '_pickup_popup', 'self.I_UI_CANCEL', 'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', '_pickup_popup', 'self.I_GET_PICTURE', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_store_sign', 'self.I_GIFT_RECOMMEND', 'InteractionPolicy.FAST'),
+        ('tasks/DailyTrifles/script_task.py', 'run_store_sign', 'self.I_GIFT_SIGN', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'summon_recall', 'self.I_RECALL_SM_CONFIRM', 'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', 'summon_recall', 'self.I_RECALL_TICKET', 'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'summon_recall', 'self.I_SM_CONFIRM_2', 'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', 'summon_recall', 'self.I_UI_BACK_RED', 'InteractionPolicy.NAVIGATION'),
+        ('tasks/DailyTrifles/script_task.py', 'summon_recall', 'self.I_UI_CANCEL', 'InteractionPolicy.CONFIRM'),
+        ('tasks/DailyTrifles/script_task.py', 'switch_select', 'other', 'InteractionPolicy.FAST'),
+        ('tasks/DailyTrifles/script_task.py', 'switch_select', 'select', 'InteractionPolicy.FAST'),
+        ('tasks/Hunt/script_task.py', '_back', 'button', 'InteractionPolicy.NAVIGATION'),
+        ('tasks/Hunt/script_task.py', 'kirin', 'self.I_KIRIN_CHALLAGE', 'InteractionPolicy.NORMAL'),
+        ('tasks/Hunt/script_task.py', 'kirin', 'self.I_UI_CONFIRM', 'InteractionPolicy.CONFIRM'),
+        ('tasks/Hunt/script_task.py', 'netherworld', 'self.I_NW', 'InteractionPolicy.NORMAL'),
+        ('tasks/Hunt/script_task.py', 'netherworld', 'self.I_NW_CHALLAGE', 'InteractionPolicy.NORMAL'),
+        ('tasks/Hunt/script_task.py', 'netherworld', 'self.I_UI_CONFIRM', 'InteractionPolicy.CONFIRM'),
     }
 
     def test_reaction_declarations_only_in_human_audited_files(self):
@@ -338,7 +418,8 @@ class CallsiteRegisterGuardTest(TestCase):
     def test_l1_migration_state_is_locked(self):
         summary = self.summary
         # 45 + 2026-09-23 爬塔线专用结算单击改造新增 1 处 execute_single_click（`_activity_settlement_single_click`）
-        self.assertEqual(summary['l1_pipeline_sites'], 46)
+        # 2026-10-26 福利道馆新增 3 处 execute_single_click（候选馆 / 点准备 / 返回本馆徽章）：46 → 49
+        self.assertEqual(summary['l1_pipeline_sites'], 49)
         # Stage 3B 之后生产直接单击对所有模块（含原项目排除模块）都归零：裸点只剩底层 / 非点击（module/）
         production_raw = [s for s in self.sites if s['kind'] in ('raw_device_click', 'raw_backend')
                           and not s['file'].startswith('module/')]
@@ -349,7 +430,8 @@ class CallsiteRegisterGuardTest(TestCase):
         raw_files = {s['file'] for s in self.sites if s['kind'] in ('raw_device_click', 'raw_backend')}
         self.assertNotIn('tasks/Hyakkiyakou/slave/hya_device.py', raw_files)    # 百鬼夜行已经走 click_with_backend
         # 32 + C1-A1 的 4 处 + 2026-10-06 SwitchSoul V1 的 2 处（数字模式队伍 NORMAL、确认框首次点击 CONFIRM）
-        self.assertEqual(summary['policy_sites'], 38)
+        # + 2026-10-23 每日琐事 42 / 狩猎战 6 / 集体任务 11 = 97
+        self.assertEqual(summary['policy_sites'], 101)               # 2026-10-29 领取邮件 +4（弹窗取消 / 获得插画 / 两处红色关闭叉）
         self.assertEqual(summary['confirm_delay_sites'], 3)                       # GeneralBattle.check_lock 透传 ×2 + RealmRaid 再次挑战确认 ×1
 
     def test_needs_c_sites_are_pinned_so_new_candidates_need_a_conscious_decision(self):

@@ -141,6 +141,13 @@ L2-2 普通点击 `policy=` 迁移（master `appear_then_click` 签名不变）�
 - **未改**：`RichManAct` / `FakeGodAct`（含 `_enter_fakegod_battle` 旧 `while True`）、`GeneralBattle`、`BaseAct.before_run` 的 `page_battle_result` recognizer monkeypatch（P1 技债，本轮爬塔适配不依赖它改动）、其它任务。
 - **测试**：新增 `tests/test_activity_shikigami_climb.py`（46 → 58，+12 `SecondLayerClimbEntryTest` 为 2026-09-10 二层入口）。回归 `1357 → 1403 → 1415`，0 regression。相关文件追加：`tasks/ActivityShikigami/{page.py, base_act.py, activities/normal.py, assets.py（用户生成 I_TO_BATTLE_MAIN_2 / I_CHECK_BATTLE_PASS_2）, as/climb/pages.json}`、`docs/AI_CONTEXT.md` §4.62 / §7。
 
+**补记（2026-10-20，§4.110 —— 首领爬塔复用普通爬塔公共流程，按类型只换资产；爬塔线的「点到某状态出现」必须有界）**：
+
+- **不另写首领流程**：首领（`boss`）与体力 / 门票 / 百体走同一个 `_run_climb_type` / `_run_climb_action`（锁定同步 → 五倍卷同步 → 次数 / 时限 → 挑战前安全节点 → 次数 OCR → 切御魂 → FIRE → GeneralBattle → 结算回收）。类型差异只放在资产选择点上：入口与页面标志（`page.py`）、挑战键 `_climb_fire_rule`、式神录入口 `_climb_records_entry`、锁定资产对（`_sync_climb_team_lock` 内按类型选）、战斗退出条件 `_exit_matcher`。以后再有类型差异，照样加一个选择点，不复制流程。
+- **「点到某状态出现为止」一律有界**：用 `BaseTask.ui_click_until_appear_or_timeout`（与 `ui_click` 同一个循环体，只多超时），超时抛 `GameStuckError`，交给原有异常处理（保存错误截图 + 重启路径）；不静默继续，**不带着未确认的锁定状态去挑战**。本地上限要低于 Device 单按钮 10 次连点与 60 秒卡死判定：锁定同步 10 秒 / 点击间隔 1.5 秒，式神录入口 8 秒 / 间隔 1 秒（都是 PROVISIONAL）。不改全局 `ui_click` 的语义。
+- **点击调用点不增不减**：锁定同步保留原来的两个分支、式神录入口仍是一个调用，L2 审计清单只把调用类型从 `ui_click` 改成 `ui_click_until_appear_or_timeout`，登记册总数与分类不变。
+- **首领的停止条件 = 额外奖励打满（用户 2026-10-20 决定）**：首领页右下角是「额外奖励 x/100」（前 100 次挑战掉落提升），挑战本身消耗活动体力 ×12。`_climb_resource_available('boss')` 继续取「a/b」的 b − a，打满 100/100 即 `ActivityResourceNotEnough` 结束首领；**不改成按体力判断**（要改需另外新增体力 OCR 资产并重新决定）。`O_REMAIN_BOSS` 必须是 DigitCounter 模式、框住整行「额外奖励 a/b」——Digit 模式会把「1/100」转成整数，`ocr_digit_counter` 直接 TypeError（16:56 事故）；`BossRemainCountTest` 钉住资产模式与识别框，annotator 重新保存时若改回 Digit 会被测试拦下。
+
 **补记（2026-09-15，L2-1 Interaction Reaction Layer：InteractionPolicy + FIRE 任务配置）**：本 ADR 的
 「reaction 只在调用点显式 opt-in、primitive 默认不启用、不与 Fatigue 叠加、不给 Settlement / poll 加」全部**不变**，
 在其上补一层正式语义：
@@ -178,7 +185,7 @@ L2-2 普通点击 `policy=` 迁移（master `appear_then_click` 签名不变）�
   OtherWorldTwilight）暂用公共默认。
 - **明确排除**：GeneralBattle Settlement Micro-Burst（segment / 0.30~0.60 observe / anchor 生命周期是它自己的 timing owner，
   不读 InteractionPolicy / FIRE 配置）；Fatigue（macro idle owner，L2 不调用）；AccountRotation / SwitchAccount / Login /
-  DailyTrifles 不纳入 master L2。
+  DailyTrifles 不纳入 master L2（DailyTrifles 已于 2026-10-23 由用户决定纳入，见下方「§4.124」补记）。
 
 相关文件：`module/interaction_policy.py`、`tasks/Component/config_fire_reaction.py`、`tasks/base_task.py::appear_then_click`、
 `tasks/Component/GeneralBattle/general_battle.py::check_lock`、7 个 FIRE owner、`assets/i18n/zh-CN.json`、`config/template.json`、
@@ -228,6 +235,15 @@ GameUi / EvoZone / Orochi / RealmRaid / RyouToppa / Exploration / ActivityShikig
 - **技术分类与开发排期分开记录**：`decision`（互斥、可加总）表达技术判断；`dev_status`（COMPLETED / DEFERRED / NOT_APPLICABLE）表达是否开发。**`DEFERRED` 是用户的排期决策，不是技术完成，也不是永久禁止**：`decision=DEFERRED`（6 点：Duel 练习入口 ×2、SixRealms 商店 ×4）= C0 技术建议为 MIGRATE、用户决定暂缓，原建议（NORMAL / CONFIRM）保留供日后参考，代码里仍是立即点击；`decision=NEEDS_C` + `dev_status=DEFERRED`（7 点：GeneralInvite `check_then_accept` ×5、GeneralBattle `_handle_prepare` ×2）= 技术上需要 Level C 依据、且用户暂缓，**不得自动迁移**，也不得改判为 ALREADY_L2 / KEEP_IMMEDIATE。
 - **暂缓点位的边界**：不添加 policy、不改 Duel 的 `or` 短路与 2 秒页面等待、不改 SixRealms 商店的 coin 更新条件与 readiness timeout；GeneralInvite 的接受邀请是共享事务（逐按钮 reaction 会重复等待、队长秒开有时效风险、接受循环缺墙钟上限），日后重启须先设计事务级 reaction 与有界状态确认；GeneralBattle 准备页是 FSM（受准备倒计时影响、不能干扰组队就绪 / 进入战斗），与 Settlement 独立。FIRE 与 Settlement 仍归各自专用 FSM，不受普通 policy 影响。
 - **统计口径**：全仓 1092 / 最初人工审计 179 / C0 复核 24 / C1-A1 实施 4 是四个口径，不可混用；basis（决定来源，互斥）与 `c0_reviewed`（是否经 C0 复核）也是两个维度，不可相加。
+
+**补记（2026-10-23，§4.124 —— 每日琐事 / 狩猎战 / 集体任务所有点击接入 L2；BaseTask 点击类公共方法加可选 policy）**：
+
+- **范围决定（用户）**：实测觉得点击太快，用户要求「任何关于点击的地方都要接入点击模型」，范围选「这几轮改过的任务」。**撤销上文 L2-1 补记里「DailyTrifles 不纳入 master L2」**：`EXCLUDED_MODULES` 去掉 DailyTrifles（AccountRotation / SwitchAccount / Login / MultiAccountEvo 仍排除）。狩猎战、集体任务原本就不在排除项，这次逐点配档。
+- **撤销 L2-2 的「`ui_click*` 系本轮不扩 API」**：`tasks/base_task.py` 的 `click` / `ui_click` / `ui_click_until_disappear` / `ui_click_until_appear_or_timeout` / `ui_reward_appear_click` 加可选 `policy`，`ui_get_reward` 加 `policy`（点目标）与 `close_policy`（关「获得奖励」）；不传时调用形状与原来完全一样（模块级 `_policy_kw` 不往下传 `policy` 这个参数，子类 / 测试替身的旧签名照常可用）。`click(policy)` 点的是固定区域，没有能在新截图里再确认的目标，所以只在点击前加反应时间（`random_delay(*resolve_reaction_range(policy))` → `sleep`）；其余方法透传给 `appear_then_click`，走原有「反应 → 新截图 → 再确认 → 点」。默认仍是 IMMEDIATE，没有带 policy 的调用方行为一字不变。
+- **`click(policy)` 只加反应、不做 fresh confirm**：固定区域点击（`RuleClick` / 长按、或点一个已被奖励页盖住的按钮位置来关奖励）没有能重新识别的目标，再确认无从谈起；反应之后照原样取坐标、走 L1。这是与 `appear_then_click(policy)` 唯一的语义差别。直接调 `execute_single_click` 的预设点击同理，在调用前手动 `sleep(random_delay(*resolve_reaction_range(...)))`，并单独成方法（`_click_recall_preset`），不和同一函数里带 policy 的点击放在一起（`test_l2_policy_migration` 的守卫把这种写法当叠加反应）。
+- **档位口径**：NORMAL = 功能按钮（祝福、领取、购买商品、挑战、一键完成、换一个、提交、邮件图标）；CONFIRM = 确认 / 取消框（`I_UI_CONFIRM`、召唤确认、搜索确定、勾玉购买、满级弹窗取消）；NAVIGATION = 返回、关闭、关奖励（`I_UI_BACK_*`、羁绊弹窗、吉闻点下方空白、庭院关奖励页、`close_policy`）；FAST = 标签 / 底栏切换、反复点的加号（日常标签、寮友 / 好友、按昵称搜索、杂货、礼包屋推荐、清空搜索、集体任务的加号与 N 卡）。
+- **登记**：新点位全部是 basis=rule 的 ALREADY_L2，逐点登记在 `tests/test_l1_l2_integration.py::POST_C1_CONSUMERS`；`tests/test_l2_helper_policy.py` 静态守卫要求三个任务文件里每个点击调用都带 `policy=`，漏一个就失败。
+- **不变**：反应延迟仍不下沉到 click_pipeline / Control / minitouch；`policy` 与 `confirm_delay` 仍互斥；FIRE / Settlement / 组队房间 / 导航执行器仍归各自 owner；共享组件（`Summon`、`goto_page`、战斗、组队）里的点击与滑动不在本次范围。
 
 ---
 
@@ -2094,6 +2110,8 @@ segment 预算 / burst 连击 / anchor 跨调用复用机制，理由是本线�
 - **Level C 待验**：`0.30~0.60s` 是否足够覆盖真机页面更新（是否还会出现「在旧帧上判定 same
   state 而补了第二下」），以及放慢之后连点观感是否仍然自然、整体结算耗时是否可接受。
 
+**补记（2026-10-25，通用战败页的结算点击改点右侧 / 底部区域）**：突破类失败结果页的「再次挑战」按钮整个落在 `C_RANDOM_DEFAULT` 里，结算随机点击落在它上面会点中并开一场新战斗；用户确认所有使用通用战败页的任务失败页布局相同。规则收敛到通用失败结算入口（**不设逐任务开关**）：`GeneralBattle._handle_result` 在**明确识别到失败横幅 `I_FALSE`**（`context.is_win` 为假，阈值 0.8，同一帧只判一次；不是「没识别到胜利」）时，结算推进改用现有 `C_RANDOM_SAVE_RIGHT` / `C_RANDOM_SAVE_BOTTOM`，沿用 80% 右侧 / 20% 底部（从 `_select_reward_region` 拆出 `_pick_save_region()`，随机数消耗不变；失败页不借用整个 `_select_reward_region`，因为它会返回默认区）；已确认失败的帧一定走通用 burst，不依赖 `_is_generic_result_context` 另一次判断；会话里若已保存默认区旧锚点，`_rebase_anchor_for_failure()` 重采右侧 / 底部区的新坐标（只改区域名不够）。段预算、总点击数、节流、点击后截图确认沿用原会话。 胜利结算、普通奖励页、没有胜负横幅的单次节流点击保持原规则；个人突破退四中间的 quick_exit 仍由 RealmRaid 的 `_handle_result` 直接返回结果，不推进结算页；六道 / 契灵 / 爬塔单击结算等不委托通用结算的专用处理器不受影响；皮肤通过 `I_FALSE` 资产原地替换自动适用。不新增配置、不禁用结算点击、不改 2~4 段预算 / burst / 安全帽。曾试过「按按钮坐标避让 + 重采样」和「只给寮突破的任务开关」，均已删除。Level C 待验：各任务失败页右侧 / 底部点击能正常推进结算，皮肤失败模板在真机上命中。
+
 ## D026 L1 全局单击管线：坐标语义显式化（Target / Bounds / Region / FinalPoint）+ 单一单击执行器，只管「点在哪、怎么落下」
 
 > **master 基线移植说明（2026-09-15，L2-1 前置）**：本 ADR 原在 synevo 分支 L1 worktree 形成，未提交。L2-1 以 master `a5e2d7e6`（+ 工作区 Settlement v1.2）为基线，把 L1 / L1.2 **公共层**原样移植进来：`module/click_pipeline.py`、`RuleList.last_ocr_hit`、`Control.click_with_backend` / `_dispatch_click` 与全部公共 task 点位；synevo 专属点位（网易原生控件 `netease_account_ui`、MultiAccountEvo）在 master 不存在，小号轮换业务（Login `_app_handle_login` 固定退出点、DailyTrifles `summon_recall`）**刻意不迁**，作为 master 静态白名单里的显式排除项保留直接 `device.click`。下文提到这些点位的地方以此说明为准。
@@ -2270,6 +2288,240 @@ BehaviorTrace 记录坐标与真机点击位置一致。
   - 不新增点击调用点（稳定读数只截图 + OCR），L2 登记册不变。等待上限：购买前的稳定读数是新增的独立有界循环 `_wait_coin_stable`（上限 `BUY_COIN_TIMEOUT`，超时返回最后一次读数）；购买后的稳定判断没有新增循环，复用 `_confirm_skill_purchase` 原有的金币等待段与它的 `BUY_COIN_TIMEOUT` 计时器，只在该段里加了「连续两帧相同」与扣费比较。两者上限数值相同，但不是同一个实现。
 - **取舍（不掩盖）**：刷新确认后 HUD 滞后若超过两帧，两次滞后读数会被当成稳定值，真实轰雷会被判 `actual=300` 并跳过本店（偏保守：少记一次，不会误记）；Level C 重点看刷新后紧接着购买的日志。
 
+---
+
+## D029 通用双实例同步核心：账本是唯一事实源，所有变更走单一事务，点击前先写意图，结果未知绝不重发
+
+状态：Accepted（P1 核心模块，Level A/B PASS；**尚未接入任何任务**，同心之兰任务 / 适配器是后续阶段，所以没有 Level C）
+日期：2026-10-21
+
+**背景**：用户要做同心之兰双实例互赠（oas1 / oas2 两个独立进程）。「发出去就收不回」的动作加上进程会重启、崩溃、被 OASX「停止」硬杀（`ScriptProcess.stop()` = `terminate()`，Windows 下不跑 `finally`），需要一个与具体游戏业务无关的同步核心。方案经只读设计审查（含三层架构、全局配置、改为独立任务）后落地 P1。
+
+**决定**：
+- **位置 `module/instance_sync/`，不放 `module/base/`。** D015 规定 `module/base/` 放无状态的等待 / 重试原语；这里是带持久化和跨进程协调的子系统。不 import `tasks.*`，不碰设备 / 截图 / OCR，业务通过 `SyncAdapter`（`prepare` / `dispatch` / `judge` / `verify` / `inspect_attempt`）接入。
+- **账本是唯一事实源，`Ledger.transact` 是唯一读写入口。** 一把 `FileLock`（带 `lock_timeout`，默认 10 秒，不无限等）内完成「读 → 结构校验 → 变更 → 转换校验 → 原子写」。持锁期间不 sleep（唯一例外：`PermissionError` 有界退避，总共不到半秒）、不截图、不点击、不回调适配器、不嵌套锁。现有 `read_file` / `write_file` 各加一次锁，拼起来会丢更新，不能用。一个账本文件 = 一个业务日 × 一个业务 × 一对账号别名；文件名只含日期、业务 id 和别名对哈希，别名里的任意字符不进文件系统。
+- **运行时数据放 `log/instance_sync/`（账本、`.lock`、`<实例>.journal.jsonl`、`.corrupt-<哈希>` 备份）。** `.gitignore` 的 `log` 已覆盖；不放 `config/` 子目录：不在 gitignore 里，用户常整体复制备份 config。代价：用户清空 `log/` 等于人工重置。
+- **状态机是纯函数，另有独立校验器当第二道防线。** `state_machine.op_*` 在深拷贝上原地改；`invariants.validate_transition` 在写盘前逐条核对，违反就抛 `InvariantViolation`、不写盘。所以「op 写错」不会直接变成「坏账本落盘」。适配器拿到的只是只读快照（`RoundView`），没有可写结构。
+- **不变式（op 和校验器各检查一遍）**：① 终态（整轮 `completed` / `failed`、参与方 `verified` / `failed`）不可逆，终态之后迟到的事件只追加 `late_events`；② **失败优先**：任一方失败的同一事务里整轮置 `failed`，并把所有未终态的参与方一起置 `failed`，不依赖对端配合；③ 只能操作最后一轮，旧 `round_id` 一律拒绝，不自动切到新轮；④ `ready_at` / `deadline_at` 在**第二个 ready** 的事务里一次写入（`deadline_at = ready_at + budget`），之后不可改；⑤ 尝试（attempt）只追加；**`confirmed_done` / `unknown` / `aborted_before_dispatch` 之后同类不再发**；`confirmed_not_done` 之后至少等 `retry_wait`（30 秒）才可再发，且 `earliest + min_attempt_cost` 必须在 `deadline_at` 之内，否则立即失败、不白等；⑥ 同一实例同一时刻最多一个 `prepared`；⑦ `completed` 的条件：双方 `verified`、没有 `prepared` / `unknown` 的尝试、没有失败的参与方；⑧ 旧会话（`session_id` 被更新进程取代）的操作被拒绝。
+- **点击前先写意图（`prepared`），点击与写账本无法原子化，所以结果未知一律失败。** `dispatch` 之后任何异常都记 `unknown` 并让整轮失败，绝不重发；只有「`prepared` 写下之后、点击之前被取消」才能确定记 `aborted_before_dispatch`。不加 `clicked` 中间状态：它只能在点击后写，同样有时间窗，改变不了任何决策。崩溃恢复只在整轮仍 open 且未过期时才看游戏现状（`inspect_attempt`，只读）；整轮已终态或已过 `deadline_at` 时一律不碰游戏，留着 `prepared` 的轮次归 `unsafe`。
+- **时间**：持久化一律墙钟 epoch 秒，截止判断都是「墙钟 vs 账本里的截止时间」，所以重启不会重置；`clock` / `sleep` 构造时注入（同 FrameWait）。会合窗口 = 轮次创建 → 双方 ready（默认 600 秒，**只由创建者落盘**为 `rendezvous_deadline_at`，加入方用账本里的值），导航计入会合窗口、不计入 180 秒预算。任何一方的任何事务都会顺带推进超时，不需要监工进程。30 秒 / 180 秒 / `min_attempt_cost` / `max_rounds` 是**适配器的代码常量**，创建者写进账本，加入方逐项比对，不一致就整轮失败（`handshake_mismatch`），不会因为两端配置不同而执行结果不同。轮询只在 `SyncCoordinator` 里（等待 owner 唯一）。
+- **新轮次规则（用户 2026-10-21 选定，游戏每天只允许成功互赠一次）**：任务每次启动先看当天最近一轮——已 `completed` → 直接成功返回、不进游戏；失败且**没有任何可能已发出的请求**（会合超时、握手失败、就绪前失败、全部尝试是 `confirmed_not_done` / `aborted`）→ `safe`，允许开新轮；失败且出现过 `unknown` / `confirmed_done` / 未结算的 `prepared` → `unsafe`，当天不再自动重来，要人工确认后才放行（见本条末尾「补记：人工确认并重置」）。**每个账本（每天每对账号）最多 `max_rounds = 4` 轮（= 第一轮 + 最多 3 次自动重来；用户 2026-10-21 确认）**。
+- **结果映射 `SyncResult.next_action`（用户 2026-10-21 选「按普通失败处理、排到下一个业务日」）**：`done`（完成 / 当天已完成）；`retry_later`（`safe` 失败且还没到轮次上限，按任务的 `failure_interval` 重试）；`defer_next_day`（`unsafe`、轮次上限、握手不一致、账本损坏 / 丢失 / 锁超时 / 写失败 / 内部错误）。核心不抛 `RequestHumanTakeover`（会让整个实例 `exit(1)`）。
+- **损坏 / 丢失**：账本不可读、JSON 损坏、结构不合法、`schema_version` 未知、键不符 → 抛 `LedgerCorruptError`，**原文件不动**，只按内容哈希备份一份 `.corrupt-<哈希>`；账本缺失，或本实例 journal 记录过的轮次在账本里不存在 → `LedgerLostError`，**不自动重建**。journal 每个实例一份、只追加，**只用来发现丢失和审计，不是执行依据**；写入顺序是先账本后 journal。人工重置首选「人工确认并重置」（见本条末尾补记）；最后手段 = 清空整个 `log/instance_sync/`（账本和 journal 一起，只删账本会被判成「丢失」）。
+- **异常**：账本类异常在 `SyncCoordinator.run()` 边界转成结果对象；适配器 / 设备抛出的异常**不吞**——先尽力把整轮写成 `failed`（让对端在一个轮询周期内退出），再原样上抛同一个异常对象（D015 的异常透传）。协作式取消靠 `ctx.check_alive()`，整轮 `failed` 时抛 `SyncCancelled`，适配器不得吞掉。纯等待超过 30 秒（含被取消 / 超时的退出路径）后调 `adapter.after_wait(seconds)`，让适配器重置设备卡死计时。
+- **同心之兰任务的配置位置（P2 才实现，此处先定方向）**：独立任务，不挂在八岐前面，先后靠调度优先级（`schedule_rule=Priority` 下数字小的先跑）；配对配置放在任务自己的 `sync` 分组，两个实例填相同的值（`instance_a` / `alias_a` / `instance_b` / `alias_b` + 会合超时），用已有的 `copy_task_group` 整组复制；总开关就是任务的 `scheduler.enable`；配置合法性在任务启动检查里做，**不写 pydantic validator**（`ConfigBase` 遇到非范围类校验错误会让整份配置加载不了）。`Scheduler.failure_interval` 保持默认 1 天，由用户自己配置，任务不替用户设置。
+
+**取舍（不掩盖）**：
+- 墙钟被系统调整（NTP 等）会影响截止判断，没有做单调时钟的跨进程比较（做不到）。
+- 「点击」与「写账本」之间的崩溃窗口无法消除，只能保守：`stop` 等于崩溃，Restart + 登录通常超过 1 分钟，恢复时多数已过 `deadline_at`，所以崩溃后多落入 `unsafe_prior_round`、当天不再自动重发。
+- 调度器单线程，会合最长占用本实例 600 秒；对端没开时每次重试都白占一次，所以需要靠 `max_rounds=4` 和较长的 `failure_interval` 限制。`failure_interval` 保持 `Scheduler` 默认的 1 天、由用户自己配置：账本按业务日分文件，默认值下 `retry_later` 实际是次日重试（落进新账本），**同一天内出现第 2 ~ 4 轮，只有用户把 `failure_interval` 调短才会发生**。
+- 轮次上限口径（用户 2026-10-21 确认）：`max_rounds=4` = 第一轮 + 最多 3 次自动重来。`max_rounds` 是适配器协议参数，核心里没有写死数字，P2 / P4 写适配器时取 4；测试里的 `PARAMS` 也是 4。
+- 预算严格包含二次核验：游戏里已互赠成功但核验超时，整轮仍判失败（并归 `unsafe`，不再重发）。
+- 好友页二次核验、账号身份、每日重置时间、各自发送还是一方发起一方接受、有没有明确的「已发送 / 发送失败」证据，**全部是游戏机制，未核实**。没有明确证据时所有结果都是 `unknown`，30 秒重试路径实际走不到。适配器要等 Level C 采样后才能写。
+
+**范围外（明确未动）**：同心之兰任务 / 适配器 / 配置 / `ConfigModel` 注册 / 菜单、八岐 `Orochi.run()`、`GlobalGame`、OASX 前端。
+
+**验证**：`tests/test_instance_sync_state_machine.py`（71）/ `test_instance_sync_ledger.py`（23）/ `test_instance_sync_coordinator.py`（43）/ `test_instance_sync_multiprocess.py`（3，两个真实 spawn 进程），共 140 项。另做过 30 条变异检查（把上述规则逐条改坏，测试必须变红：核心规则 19 条 + 轮次上限边界 3 条 + 人工确认 8 条；全部被杀，无幸存者），见 `docs/AI_CONTEXT.md` §4.111。
+
+**补记（2026-10-21，unsafe 的重置方式：人工确认并重置，不是重启）**：
+- **背景**：`unsafe` 当天被拦住后，原来只能清空整个 `log/instance_sync/`。用户问「重启能不能当重置」。
+- **决定：不用重启，用任务配置里一个一次性的「确认并重置」开关（用户 2026-10-21 选定）。** 重启（OASX 里停止再启动，新进程、新 `session_id`）分不清「我看过游戏、确认可以重来」和「进程崩溃 / 被 `stop`（= `terminate`）后又起来」，而 `unsafe` 恰恰产生在后一种场景（`ScriptProcess` 没有自动拉起，`deploy.yaml` 的 `Run: null` 也不会开机自启，但崩溃后用户手动再启动一次是常态）；重启即重置会在最需要拦的时候放行并重发。游戏里的 Restart 任务只重启游戏、不换 OAS 进程，账本认不出来，更不行。
+- **核心提供的能力（本次已实现，开关本身属于 P2）**：`SyncCoordinator.acknowledge_unsafe(reason)` → `AckResult(acknowledged, reason, round_id, seq)`；底层 `state_machine.op_acknowledge_unsafe`：在**最后一轮（必须已 failed）**的 `late_events` 里追加 `{op: 'acknowledge_unsafe', instance, at, detail}`。**不改账本 schema，不改轮次状态和 attempts（证据完整保留）**；之后 `op_enter` 不再把这一轮当拦截条件，照常开新轮。
+- **规则**：只作用于最后一轮；仍 open 的轮次先 `expire`，仍 open 则拒绝（`round_open`）；`completed` / safe 失败 / 已确认过 → 无需确认，不改账本；**不绕过每天的轮次上限**（满 `max_rounds` 仍返回 `round_cap`）；新轮若再次 unsafe 需要再确认一次（每次确认只对应一次人工检查）；操作者必须是这对账号的成员，任一方确认都行；校验器另外规定该事件只能出现在 failed 的轮次上、`late_events` 只追加。账本问题转成 `AckResult.reason`（`ledger_corrupt` / `ledger_lost` / …），不抛。
+- **一次性语义（P2 实现）**：任务启动时读到开关就调用一次，**不管结果如何都把开关关回去**——否则残留的开关会在之后某次新的 unsafe 出现时绕过人工检查直接放行。确认只对当前业务日的账本有效；`failure_interval` 保持默认 1 天时，次日是新账本，开关会被消费但没有可确认的。
+- **取舍（不掩盖）**：确认是人工声明，核心不验证游戏里到底发没发出去；确认后重发可能让游戏收到第二次请求（「游戏每天只允许成功互赠一次」这一点未核实）。最后手段仍是清空整个 `log/instance_sync/`。「重启 + 游戏现状核对才放行」留给 P4 适配器（依赖 P3 确认游戏里有没有明确的证据）。
+
+**补记（P2，2026-10-21，XinLan 任务骨架与 `reset_unsafe` 的落点）**：
+- **`reset_unsafe` 放在任务自己的 `reset` 分组，不放进 `sync`（用户 2026-10-21 选定，修正本条上文「`sync` 分组再加一个 bool」的写法）。** `sync` 的设计前提就是用 `PUT /config/task/group/copy`（`ConfigModel.copy_task_group`）整组复制给另一个实例；开关放在里面，复制会把「已打开」一起带到对端，对端之后在另一轮新的 unsafe 上无人工检查就被确认。独立成组后复制 `sync` 不会带上它。整任务复制（`copy_script_task`）仍会带过去，靠 `reset_unsafe_help` 文案提醒，不再加机制。
+- **消费顺序 = 先置 False、先 `save()`、后 `acknowledge_unsafe()`（fail-closed），并且在配置合法性检查之前。** 若先确认后关：确认成功而落盘失败时，开关会残留到下一轮新的 unsafe 上自动放行，正是本条要防的绕过；先关则落盘失败只会少一次确认。放在配置检查之前，使配置不合法 / 没有适配器 / 确认被拒（`round_open` / `nothing to ack` / `round_cap` / `ledger_*`）/ 确认抛异常时开关都已关回；代价是修好配置之后要重新打开一次开关，接受。确认和 `run()` 用同一个 `SyncCoordinator`（同一个 `session_id`）。
+- **P4 之前生产路径没有适配器：`_build_adapter()` 恒返回 `None`，任务记警告并按失败排期，不构造协调器、不碰账本。** 这样现在误启用 XinLan 也不会进游戏、不会产生半个账本；消费开关仍在这一步之前发生。
+- **`defer_next_day` 的排期用 `set_next_run(target=下一个业务日开始, server=False)`。** 不带 `server=False` 时 `Config.task_delay` 会按 `server_update` 重写 target（`parse_tomorrow_server`），业务日边界就不再由 `business.DAILY_RESET` 决定。`retry_later` 只传 `success=False`，间隔完全交给用户配置的 `failure_interval`。
+- **仍是占位（未核实）**：`DAILY_RESET = 00:00`、`PROTOCOL_PARAMS['min_attempt_cost'] = 10`，P3 采样后改 `tasks/XinLan/business.py`；改 `DAILY_RESET` 会改变账本业务日的切分，当天已有账本的实例升级前要注意。
+- **范围外（本轮未动）**：适配器 / 真机采样 / 双开验收（P3–P5）、`module/instance_sync/` 核心、八岐 `Orochi.run()`、`GlobalGame`、OASX 前端、`en-US.json`。
+- **验证**：`tests/test_xin_lan_task.py` 26 项；全量 2400 → 2426。没有变异检查脚本入库，开关顺序由调用记录断言（`save(False)` → `build` → `ack` → `run`）覆盖。
+
+**补记（P3，2026-10-21，同心之兰真实流程与适配器设计）**：
+- **流程事实改变了 P1 / P2 的几处假设**（来自 24 张采集帧 + 用户描述）：互赠是**先后依次进行**，不是「各自发送」：A 购买并邀请 → B 接受 → B 回赠 → A 接受；每次送出花 **30 勾玉**（不可撤销、有真实代价）；好友详情图标的三态（初始 → x/10 → x/20）是明确的游戏内证据，核验和崩溃恢复不必只靠 `unknown`。本条上文「没有明确证据时所有结果都是 `unknown`」的担心大部分解除，A 点购买之后的瞬时证据已采到（没有确认弹窗，页面不变，只有一闪而过的小字「邀请已发送。」，用户 2026-10-21 确认）；**B 点回赠之后的瞬时证据仍未采到**。
+- **角色固定（用户 2026-10-21 选定）：`instance_a` 永远先送，`instance_b` 永远回赠。** 不采用「谁那里没有回赠按钮谁先送」：两个实例几乎同时打开页面时双方都看不到回赠按钮，会同时购买，多花一份勾玉且状态说不准。
+- **同步核心不改，只加一个可选适配器钩子 `await_turn(ctx) -> bool`**（默认 True，已实现，§4.115）：在执行阶段每次写 prepared 之前调用；B 在这里等账本里出现 A 的尝试（prepared 即可，不等 done，否则和 A 的 `judge` 互相等）、核对弹窗邀请人并接受、打开回赠页面，**亲眼看到 `repur_tongxin` 才返回 True**，否则返回 False，按 `prepare_failed` 安全失败。「轮到我」用账本里的 `peer_attempts` 表达，仍由核心统一持久化，适配器不自己存状态。
+- **证据取舍（用户 2026-10-21 提议，推翻上面「证据不依赖对端」的第一版）：A 的主证据改为 B 的回赠页面。** 小字「邀请已发送。」一闪而过，截图漏一帧 A 就只能记 `unknown`、整轮 unsafe、白白停一天。B 接受邀请后打开回赠页面，`repur_tongxin` 在就说明 A 那次一定送到了，而且这个证据一直留在界面上。约定 **B 只有亲眼看到回赠按钮才写 prepared**，于是「B 的账本里出现尝试」就等于 B 替 A 作了确认；核心已有 `RoundView.peer_attempts` / `ctx.wait_until`，不用再改。勾玉有真实代价，持久的对端证据比瞬时的本机证据可靠。
+- **A**：`await_turn` 默认放行；`dispatch` 只点一次购买；`judge` 点完立刻连续截图轮询小字提示（OCR keyword），**或** `ctx.wait_until` 等到 B 的账本出现尝试，两者任一成立算 done，预算内都没有算 unknown（不是失败证据）。小字提示降为快速通道，漏截不再致命。`verify`：等庭院出现 B 回赠的绑定邀请弹窗 → 点 ✓ → 打开好友页，分母为 20（用户 2026-10-21 确认：成功判据只看分母是 20，不要求分子为 0；规则写每次组队通关副本增加成长值 1 点，当天打过副本后可能是 `3/20`）。`inspect_attempt`：B 的账本已有尝试 → done，否则 unknown。
+- **B**：`dispatch` 只点一次回赠；`judge` 等 A 变成 `verified`（A 能 verify 说明 B 的回赠送到了且 A 接受了）→ done；`verify` 打开好友页，分母为 20。`inspect_attempt`：A 已 `verified` → done，否则 unknown。
+- **不会互相等**：B 的 `await_turn` 只等 A 的 prepared；A 的 `judge` 只等 B 的 prepared 或小字提示；A 的 `verify` 等的是屏幕上的回赠弹窗而不是 B 的 done；B 的 `judge` 等 A 的 verified。每处等的都是对方更早的一步，没有环。B 重试时再进 `await_turn`，弹窗已接受、回赠按钮还在，直接返回 True（幂等）。
+- **失败都是保守的**：A 实际没送到（如勾玉不足）→ B 看不到回赠按钮 → `await_turn` 返回 False，此时 A 已有尝试，现有分类判为 unsafe，当天停下；B 的回赠没送到 → A 等不到弹窗 → `verify_failed`，B 的 `judge` 在 `wait_until` 里收到 `SyncCancelled`，记 `unknown`。两种都不会自动再花勾玉。
+- **进好友列表无条件复位（用户 2026-10-22 补充的游戏机制）**：有通知时进入好友页，列表不会默认停在最顶端，要先点「最近好友」标签、再点「好友」标签才会回到顶部。约定每次要点 `friend_same` / `the_top_friend`（A 的入口）或读置顶好友图标（A、B 的 `verify`）之前，先在 `page_friends` 上点这两个标签，不判断有没有通知（多点两下结果一样，也不去猜通知长什么样）。~~复位后要确认「好友」标签已选中、列表在顶部才点固定坐标~~（2026-10-24 修订：标签的选中 / 未选中模板互相得分 0.94 以上、阈值 0.8 分不开，「确认标签已选中」会误判而跳过复位，oas1 因此一直点错行；改为最近 → 好友**无条件各点一次**，不用标签模板确认，以置顶好友的名字 OCR 核对为准，对不上整套重做、次数有限，用尽走现有的 prepare / verify 失败路径），**不点购买**。原因：固定坐标点错行会在错的人身上花勾玉；`name_tongxin_friend` 的名字核对保留，复位管「点错行」，名字核对兜底「置顶好友不是对端」。组队邀请里的 `GeneralInvite._switch_friend_class`（`RECENT_FRIEND`）是邀请弹窗的分类，不是好友页，不能复用。
+- **代价**：A 的 `verify` 不再是纯只读（要点 ✓ 接受回赠邀请）；接受邀请没有页面跳转（但**会扣对方的 30 勾玉**，见补记（P4）「勾玉在接受时才扣」，这一条最初写「不花勾玉」是错的），可以接受。判据细节（弹窗出现在哪些页面、B 回赠后有无确认弹窗）等补帧后再定。
+- **扣勾玉的点击只点一次**：没有明确证据一律 `unknown`，当天停下等人工 `reset_unsafe`，不放宽（与上文 D029 一致）。
+- **绑定邀请的接受流程不复用 `GeneralInvite.check_then_accept()`**：它不区分邀请类型，且点 ✓ 后等 `is_in_room()` 才返回；绑定邀请接受后不跳转、没有提示，弹窗只是消失。XinLan 要自己写接受循环（用 `I_ACC_TONGXIN` + OCR 邀请人名字确认是对端发来的，再点复用的 `I_I_ACCEPT`，退出条件是弹窗消失）。绑定本身建议手动做一次，不纳入自动化。
+- **资产全部放 `tasks/GameUi/page/`（用户选定）**，规则文件 `image_xinlan.json` / `tongxin_ocr.json` / `click.json`，常量由 `GameUiAssets` 导出。
+- **范围外**：没有改 `module/instance_sync/` 核心代码，没有写适配器；钩子 `await_turn` 本身后来已在 §4.115 加上。
+
+**补记（P4，2026-10-22，适配器落地）**：
+
+- **适配器落在 `tasks/XinLan/adapter.py`：`XinLanAdapter`（两端共用的导航 / 读数）+ `SenderAdapter`（instance_a）+ `ReceiverAdapter`（instance_b）+ 工厂 `make_adapter`。** 角色拆成两个子类而不是一个带 if 的类：两端的时序差别就是业务本身。`ScriptTask._build_adapter()` 取代 P2 补记里「恒返回 `None`、记警告并按失败排期」的做法；这条保护随适配器落地失效，现在启用 XinLan 就会进游戏。
+- **所有碰设备的操作收在 `_shot / _seen / _tap / _ocr / _goto_friends / _keepalive / _pause` 这几个薄方法里**，不往 `BaseTask` 加 helper（`BaseTask` 已是 god class）。测试覆盖这几个方法就能离线跑完整流程。
+- **B 在好友详情等邀请，接受之后才开福袋页看回赠按钮。** 绑定邀请弹窗在任何页面都会弹（用户 2026-10-22 确认），所以不需要为了等邀请回庭院；也不依赖福袋页「原地刷新」出回赠按钮。B 的 `await_turn` 里接受邀请这一步的结果**不作判据**：重试时弹窗早已接受，它会等到超时，以最后「回赠按钮在不在」为准。
+- **B 点回赠之后没有确认弹窗（用户 2026-10-22 确认），`dispatch` 只点一次。** 之前说的「确认弹窗」指的是 B 回赠后 A 那边弹出的绑定邀请。
+- **打开福袋页用固定区域点击 `C_TONGXIN_ICON`，不用图片模板**：`I_TONGXIN_INI` 只匹配初始态，接受后图标变成 `0/10`，模板就匹配不上了。读次数用 `DigitCounter`（`num_tongxin`），判据只看分母 == 20。
+- **小字提示只在点完购买后的前几秒 OCR**（`TOAST_WINDOW`）：它一闪而过，之后再读也读不到；主证据仍是 B 的尝试出现。
+- **每日重置确认是 0 点**（用户 2026-10-22）；当天账本里已有 completed 就不再发起，这是核心本来的行为（`already_completed` → `done`），适配器不用再判断。
+- **勾玉在对方「接受」之后才扣 30（用户 2026-10-22 确认）**：A 点购买只是发出一个待接受的邀请，B 点 ✓ 接受时才扣 A 的 30；B 点回赠同理，A 点 ✓ 接受时才扣 B 的 30。所以真正不可撤销的点击是**接受邀请**（`_accept_invite` 里点 `I_I_ACCEPT`），不是购买 / 回赠。现有设计不用改，因为本来就保守：B 只有在 A 的 prepared 写进账本之后才会接受（`await_turn` 先等 A 的尝试出现），意图先于不可撤销的点击；接受之后任何一步失败，A 那边已有 done / unknown 的尝试，整轮归类为 unsafe、当天停下、不自动重来；邀请人名字对不上不接受，仍是防「在别人身上花勾玉」的关键一道。这条事实让「发错人」的代价比之前以为的小（对方没接受就不扣），但不放宽任何自动重试。
+- **仍是占位**：`PROTOCOL_PARAMS` 里的 `budget=180` / `min_attempt_cost=10`，以及适配器里的 `POLL / CLICK_GAP / NAV_TIMEOUT / ACCEPT_WAIT / REPUR_WAIT / NUM_WAIT / JUDGE_WAIT / TOAST_WINDOW`，P5 真机量过再回填。
+- **范围外（本轮未动）**：`module/instance_sync/` 核心、八岐 `Orochi.run()`、`GlobalGame`、OASX 前端、真机验收（P5）。
+
+## D030 组队会合：组队任务开始前先等对方实例到场；用在场状态而不是账本，不设固定超时
+
+状态：Accepted（Level A/B PASS；Level C 待用户实机验）
+日期：2026-10-22
+
+**背景**：两个实例各自按自己的调度跑。A 先做完上一个任务进了组队任务（比如御魂队长建房邀请），B 还在做上一个任务，A 的邀请等 `wait_time`（默认 2 分钟）没人就失败。用户要：组队任务开始前等对方做完上一个任务再一起开始；**不设固定超时**；哪些任务要会合**按任务配置里的身份自动判断**；配置放在「脚本设置」里，每个实例填一次。
+
+**决定**：
+- **新原语 `module/instance_sync/team.py`，不套 D029 的协调器 / 账本。** 组队没有「点了收不回」的操作，只要两边同时到场；套用会带进 prepared / unknown / unsafe 这些用不上的状态。和 D029 一样不 import `tasks.*`、不碰设备；运行时数据在 `log/instance_sync/team/`。
+- **在场状态**：每个实例只写自己的 `team/<实例名>.json`（原子写；Windows 下对方正在读时替换会被拒，有界退避重试），对方只读。内容：`peer`（本实例配的对方）、`state`（`idle` 带 `until` / `running` 带 `task` / `waiting` 带 `task`、`role`、`token`、`since`）、`partner_token`、`team_tasks`（本实例所有组队任务的 `{role, enable, next_run}` 快照）、`updated_at`。后台心跳线程每 10 秒刷新一次，任务执行中也在刷；超过 60 秒没更新当作不在线。
+- **「读对方 → 判断 → 写自己」在一把配对锁（`<两个实例名排序>.lock`）里做。** 一边判开始时已经写下 `running` + `partner_token`（对方这一次的 token），另一边下一次在锁里读到的一定是这条，也判开始。没有锁时会出现「我判推迟、对方同时判开始」，对方一个人跑。
+- **判断是纯函数 `decide()`**。原则：对方在忙、而这个任务在它那边已经到点（`next_run` ≤ 现在 + 60 秒，容忍两边几秒的调度差）就一直等；能确定对方不会来时才推迟，并尽量推到对方会来的时间（它那边这个任务的 `next_run`，或它空闲等到的 `until`），两边借此重新对齐。对方不在线 / 没把我配成对方 / 在单独跑这个任务 → 推迟 10 分钟；对方没开这个任务 / 身份不互补（都是队长或都是队员）→ 推迟 30 分钟并记日志。对方文件短暂读不到 → 这一轮先等。
+- **两个组队任务卡住**（我在 T 门口、对方在 T2 门口）：T2 在我这边没到点 → 对方会按「对方没到点」推迟，我等；两边都到点 → 后到的（`since` 晚；同时到按实例名）推迟 3 分钟让路，调度器下一轮就会选到对方在等的任务。两边按同一个顺序比，恰好一边让。
+- **没有固定的最长等待**（用户要求）。对方卡在某个任务里，由那个任务自己的卡死检测（GameStuck → Restart）走出来；对方脚本停了，心跳 60 秒后过期，这边就不再等。
+- **接到调度器**：`Script.loop` 在 `prepare_task_execution` 返回 READY 之后、`run()` 之前调 `TeamSync.gate()`；推迟用 `config.task_delay(task, target=..., server=False)`——**必须 `server=False`**：默认 `server=True` 时，服务器刷新时间不是 9 点的任务会被改到明天那个点，覆盖推迟目标。等待中配置文件变了（`should_reload`）→ 最后在锁里看一次对方是不是已经和我配上了，是就开始，否则回调度器重新选。`get_next_task()` 每轮写 `idle`（`until` = 选中任务的 `next_run`；已过期表示马上要跑，对方继续等）。
+- **哪些是组队任务**：任务配置里某个分组有 `user_status` 且值是 `leader` / `member`（御魂、契灵、探索、业原火、永生之海、日轮之陨、逢魔之时等）；单人 / 野队不会合。同心之兰（D029）没有 `user_status`，不受影响。
+- **配置** `Script.team_sync`（`tasks/Script/config_team_sync.py`：`enable` 默认关、`peer_instance`），两个实例互相填对方。和 `anti_ban` 一样不进 `config/template.json`，按默认值加载。没开、对方名为空或等于自己时不写任何文件，调度器行为和以前完全一样。
+- **胶水层（`module/script/team_sync.py`）任何异常只记日志并放行**：组队同步出错不能卡住调度器。
+
+**取舍（不掩盖）**：
+- 等待期间这一边其它到点的任务也被挡住——用户要的就是等对方。
+- 依赖两边的身份配置互补，配错只会推迟 + 记日志，不会自动修。
+- 对方的 `team_tasks` 快照在它选任务 / 开始任务时取，任务执行中改了别的任务的 `next_run`，要等它下一轮调度才反映出来。
+- 只同步开始，不同步结束；各组队任务内部的邀请等待时间照旧。两边都已开始之后一方进程被杀，另一方照样单独跑（和不同步时一样）。
+
+**补记（自审，2026-10-22）**：用户要求自审，对照现有配置和其它任务找出三处风险并已修补——① 对方正在跑（或马上要跑）同心之兰、而同心之兰在我这边也到点时，我推迟当前组队任务 3 分钟让路（`yield_to_paired_task`）——否则两边 XinLan 的 `next_run` 差几秒时，一边在 XinLan 里等、另一边在御魂门口等，10 分钟后 XinLan 会合超时并排到明天；同心之兰以 `role=pair` 进快照（胶水层常量 `PAIRED_TASKS`），但不进门口；我这边是否到点每 2 秒按当前时间重判。② 契灵的交替身份 `handoff1` / `handoff2` 也算组队，身份互补改查表（`leader↔member`、`handoff1↔handoff2`）。③ `Script.loop` 在 `prepare_task_execution` 之前先 `TeamSync.precheck()`（只读对方文件、不加锁不写文件），确定对方不会来就直接推迟，不唤醒模拟器 / 游戏；「不在线 / 没配成对方 / 对方没开这个任务 / 身份不互补」每个实例每天每种原因用 `config.notifier.push` 推一次提醒。
+真正的等待仍在 prepare 之后，保证两边开始时游戏都已就绪（门口挪到 prepare 之前的话，空闲策略关掉的游戏要在开始后才拉起来，队长邀请可能等不到）。
+**仍不改、只记在这里的风险**：等待期间游戏长时间停在庭院不操作，会不会被游戏断线要真机看（断线后开始任务时走现成的 Restart 恢复）；等待中不检查本实例自己的防风控睡眠时间段（两边睡眠时间设得不一样才可能有影响）；OASX 界面在等待时不显示正在运行的任务（日志每 5 分钟一条）；两个实例必须从同一个安装目录运行（共用 `log/instance_sync/`）。
+
+**补记（2026-10-23，§4.125 —— 撤销「按对方计划时间推迟」，改成「到点就进门等，把对方拉进同一任务」）**：10-23 09:23–09:30 两个号的 Orochi 每次到点都在拉起游戏之前判 `peer_not_due`（对方这个任务还没到点），把自己推到对方在场文件里的 `next_run`（两边都是 13:39:57）；用户手动把一边改成「现在运行」时，它读到的对方时间仍是 13:39:57，又被推回去，09:30:43 两边几乎同时改也一样（先判的一边读到的是对方还没更新的文件）。根因是 `decide()` 按对方的**计划时间**推迟自己（`peer_not_due` / `peer_idle`）：两边被推到同一个较晚时间后，任何一边提前都会被拉回去，对方也不会因此提前。本 ADR「决定」里「尽量推到对方会来的时间」和「两个组队任务卡住时看 T2 在我这边到没到点」两条**作废**，其余（在场文件、配对锁、纯函数判断、不设固定超时、`server=False`、组队任务的识别、配置、异常放行）不变。用户 2026-10-23 决定：被拉的任务按对方原来的调度顺序排（不插队）；对方确定不会来时照旧推迟并提醒；对方在休息时推迟到休息结束；等待不设上限、超过 30 分钟推送一次。
+
+**补记二（2026-10-23，§4.126 —— 重启不误推迟；会合后的进度以队长为准）**：§4.125 实测（10:40 两个实例一起重启）暴露两件事，也是用户说明的预想流程（对方在跑别的任务时进门等、不推迟，对方开始同一任务后两边才一起操作；不光同步时间，还要同步次数，不能一边记 100 次、一边记 99 次）。
+- **「不在线」分两档**：在场文件超过 `STALE`（60 秒）没更新就判不在线，对「两个实例一起重启」是错的——先起来的一边必然读到对方旧进程的文件，会推迟 10 分钟并推送「不在线」。改成：超过 `OFFLINE_GRACE`（5 分钟）才判 `peer_offline`（推迟 + 每天提醒）；60 秒到 5 分钟之间判 `peer_reconnecting`，进门等、不推送。这个判断放在「同一门口 → 开始」之前，旧文件里的状态（哪怕写着在同一门口等）不可信，不能当成会合。代价：对方真没开时，每次多等最多约 4 分钟才推迟。
+- **次数以队长为准**：队长和队员各自数 `current_count` 必然会差（队长点了挑战却没真正开战也会 +1），差一次就是队长先走队员空等邀请、或队员先走队长邀请失败。要让两边一致，只能有一个说了算：开战、邀请都是队长做的，所以队长说了算——队长把已打次数和「打完了」写进自己的在场文件（可选字段 `progress`，换状态即清），队员不按自己的计数退出，队长打完（或离开这次会合）才退，并把自己的次数对齐到队长的。时间上限和 `wait_battle` 超时仍是兜底，队长不上报（旧版本 / 出错）时不会无限等。
+- **做成通用机制，先只接御魂**（用户决定）：`TeamSession`（`team.py`，不 import tasks、不碰设备）+ 模块级按实例名登记（`set_session` / `get_session(identity, task)` / `clear_session`，和 `module.fatigue` 的 manager 登记同一个做法）。会合成功后由 `TeamSync.gate()` 登记，`end_task()` 清；任务只通过 `get_session` 拿，没有会话（没开同步 / 单人 / 野队 / 出错）时走原逻辑。「还在这一次组队里」用会合时记下的双方 token 判断，换任务 / 换 token / 掉线都算对方离开。其它组队任务的计数位置和退出条件各不相同，等御魂的 Level C 通过后逐个接入，不批量套。
+- **不变**：被拉的任务照旧按原顺序排、不插队（用户决定）；进门等 + 拉对方、休息推迟、两个门口后到的让、同心之兰让路、异常放行、`server=False`。
+- **新规则**：① **到点就进门等**：`decide()` 删掉 `peer_not_due` / `peer_idle` 两条推迟，对方在跑别的任务是 `peer_busy`、空闲是 `pull_peer`，都继续等；② **把对方拉进同一任务**：`TeamSync.peer_request()`（只读）在对方在线、配对正确、状态 `waiting`、它等的任务在我这边是开启的组队任务且身份互补、在我这边还没到点、这次等待的 token 没回应过时返回任务名；`TeamSync.answer()` 再调 `config.task_call(task, force_call=False)` 把它改成现在运行（按原来的调度顺序排，不插队），并记下 token；`Script.get_next_task` 每轮 `get_next()` 之前调 `answer`，`Script.wait_until` 每 5 秒在检查配置之后调 `peer_request`，有请求就返回 False 打断所有空闲等待策略（同一 token 只打断一次）；③ **对方在休息**：`get_next_task` 把 `antiban_wake`（休息时间窗 / 长休息）作为 `rest_until` 写进在场文件（可选字段，旧文件没有当作 None），对方不在门口且 `rest_until` 晚于现在 + 1 分钟时判 `peer_resting`，推迟到那时；④ **两个门口**：不再看对方等的任务在我这边到没到点，一律后到的让（`since` 晚的，同时到按实例名），推迟 3 分钟，回到调度器后被对方拉进它等的任务；⑤ **等太久**：`rendezvous(notify=)` 同一次等待满 30 分钟（`WAIT_NOTIFY`）推送一次，之后照常每 5 分钟记日志、继续等，推送失败不影响等待；⑥ 不变：对方不在线 / 没配对 / 没开 / 身份不互补照旧推迟并每天提醒一次；配置改动中断等待；同心之兰让路；异常放行；推迟一律 `server=False`。
+- **为什么拉对方而不是等对方自己到点**：两边各自的 `next_run` 是独立变化的（推迟、手动改、服务器刷新），按计划时间对齐会互相追；改成「到点的一方在门口亮出 waiting + token，另一方回到调度器时把同一任务改成现在」，会合只依赖一方到点，另一方由请求驱动。token 去重保证一次等待只拉一次、只打断一次空闲等待（停服窗口之类的等待不会被反复打断）。
+- **为什么只在调度器里回应**：对方在跑别的任务时不打断它，跑完回到 `get_next_task` 再回应；空闲等待由 `Script.wait_until` 每 5 秒看一眼请求来打断。回应只改本实例自己的配置，不写对方的任何文件。
+- **取舍（不掩盖）**：等待期间本实例其它任务都被挡住；被拉的任务不插队（用户决定），对方有几个待执行任务时要多等；休息中的对方也会被拉（任务时间改成现在），但调度器仍按休息时间推后它，并在在场文件里写 `rest_until`，等待方据此推迟到那时。
+
+**补记三（2026-10-23，§4.127 —— 刚启动 / 重启时先进门等，不再「先推迟、几秒后又被拉回」）**：10-23 11:23:54 两边停了 43 分钟后一起启动，oas1 早 0.7 秒，读到 oas2 43 分钟前的旧文件，超过补记二的 5 分钟宽限，判 `peer_offline` 推迟 10 分钟并推送；8 秒后被 oas2 拉回。11:25:08 两边又一起重启，oas1 读到 oas2 旧进程还没过期的文件（写着在跑同一任务、搭档是 oas1 的旧 token），判 `peer_running_alone` 推迟 10 分钟，7 秒后又被拉回。两次同步都没失败，只是不必要的推迟和推送；用户的预期是对方还没进同一任务时在门口等、不推迟。
+- **启动宽限**：`decide()` 的 `me` 带可选 `started_at`（本进程启动时刻，`Script.team_sync` 创建时取 `datetime.now()`），`now - started_at < STARTUP_GRACE`（3 分钟，用户决定）时，对方「不在线」那一档（没文件 / 没时间 / 超过 `OFFLINE_GRACE`）判 `WAIT peer_starting`，不推迟、不推送；过了宽限照旧 `POSTPONE peer_offline`（每天提醒一次）。理由：刚启动的进程读到的对方文件，写它的是对方**上一个**进程，它此刻没有任何办法知道对方是不是正要起来；宽限只放在进程启动时刻上，脚本跑了很久之后对方才重启，仍走补记二的 5 分钟「刚过期就等」。`started_at` 默认 None（没有宽限），非脚本进程的调用方行为不变。代价：对方真没开时，「不在线」的推迟和推送最多晚约 3 分钟，期间游戏已拉起、在门口等。
+- **`peer_running_alone` 由推迟改为等待**：对方文件没过期、配对的是我、在跑同一任务，但它的搭档 token 不是我的，说明它在和我的**旧进程**组队。我刚重启时之后只有两种可能：对方也在重启，新进程进门，会合；或对方确实还在旧的那一次里，队员读到我的新 token 判对方离开而退出（补记二的 `peer_progress`），队长邀请失败退出，回到空闲后看到我在门口等，把同一任务拉到现在。两种都不需要推迟；一直等不到仍有 `WAIT_NOTIFY`（30 分钟）推送兜底。过期判断仍在前面，过期的 running 文件走不到这一档。原来「`peer_running_alone` 推迟 10 分钟」一条**作废**。
+- **不变**：补记二的 5 分钟分档与 `peer_reconnecting`、进度以队长为准、其余推迟原因（没配对 / 没开 / 身份冲突 / 休息 / 让路）、不插队、`server=False`、异常放行。
+
+## D031 每日琐事：奖励框的关闭点按任务局部改；「领到才算完成」，庭院事务例外照 synevo
+
+状态：Accepted（Level A/B PASS；Level C 待用户实机验）
+日期：2026-10-22
+
+**背景**：10-16 两个号的每日琐事都在吉闻之后「页面未知 → 重启」。用户确认是奖励框改版：公共关闭区域 `C_UI_REWARD`（x 919–1127，y 160–528）会点到奖励里的道具，留下「友情点 / 体力」说明框挡住庭院。同时多个子项不管成败都记完成（吉闻、商店签到），寮祈愿又从不写完成日期。庭院事务一次领不完（逢魔最多 3 次现世首领，每次都要重新一键完成），synevo 分支已经改过。
+
+**决定**：
+- **关闭点按任务局部改，不改公共 `C_UI_REWARD`。** 吉闻改点屏幕下方空白（`GeneralBattleAssets.C_RANDOM_BOTTOM`，用户选定）；`C_UI_REWARD` 还有 41 处调用（`ui_reward_appear_click` / `ui_get_reward`），其它任务的奖励框没出问题，统一改要大面积真机回归。以后别的任务遇到同样的「点到道具」，也先在任务里改关闭点。
+- **吉闻、商店签到、买体力「领到 / 做到才记完成」**：吉闻只有看到「获得奖励」才记；签到领完后按钮消失才记（没有按钮按原规则当作已签）；买体力买到设定次数才记。没做成就留给当天下一次运行（12 点 / 20 点）。寮祈愿结束时写 `guild_donate_dt`，让已有的 `today_is_done` 规则生效。
+- **庭院事务例外，照 synevo：失败也记完成。** 分 05:00–18:00 早上、18:00 之后晚上两个时段，各记 `courtyard_morning_dt` / `courtyard_evening_dt`（字段名、资产名与 synevo 一致，合并不冲突）；最多 3 轮「一键完成 → 关奖励页 → 看全部完成」；入口找不到、页面不稳、奖励页关不掉、3 轮仍未完成都记完成——synevo 的理由是避免当天反复进入误点。不带 synevo 的账号轮换部分（子任务归属、轮换调度判断、勋章捐赠、狩猎、协作、早晚独立开关）。
+- **原来没有本地上限的循环都加上限**（切换寮祈愿标签 10 秒、今忆召唤每步 15 秒、进杂货页 15 秒、买体力 60 秒、进「日常」标签 10 秒），超时记警告、不记完成（庭院事务按上一条记完成；今忆召唤例外：超时返回后 `run_one_summon` 照旧记当天已完成，对花券的动作这是保守的，避免重复抽），不再只靠全局卡死检测重启游戏。
+
+**取舍（不掩盖）**：签到「按钮消失才算」依赖领完后按钮确实会消失，要真机确认；吉闻的「获得奖励」识别仍用公共 `I_UI_REWARD`，如果吉闻奖励框连标题也换了，要补一张吉闻专用的图；庭院事务失败也记完成，意味着当天那一个时段可能少领。
+
+**补记（审查后修补，2026-10-22）**：用户要求审查本条的改动，发现并修补三处——① 寮祈愿 `all_done = all_done and self.donate(...)` 在寮友名单失败后短路，好友名单不执行（改动前就有），改为先执行再合并；② 庭院事务每轮先等最多 3 秒（`COURTYARD_BUTTON_WAIT`），等到「一键完成」或「全部完成」出现再判断，避免刚切到日常标签或现世首领提示还在时 3 轮在一秒内用完——这是对 synevo 写法的一处偏离；③ 吉闻循环里「好友羁绊提升」最多点 3 次（`LUCK_FRIENDSHIP_MAX`）且不重新计时，防止这张小模板在固定位置误匹配时把循环拖到上限、连续点击触发 TooManyClick。
+同时更正本条两处说法：`C_UI_REWARD` 的调用是 41 处（原写 42，多算了一条注释）；「超时不记完成」不包括今忆召唤（见上）。
+**仍不改**：庭院事务收尾吞掉所有异常（与 synevo 一致）；签到「按钮消失才算完成」等真机确认领完后按钮的样子；买体力内部的 `ui_click` / `ui_click_until_disappear` 是公共方法、没有上限，外层 60 秒上限加上按价格反推已买次数，保证重试不会多买；完成记录只在 `run()` 结尾保存一次（已有行为）。
+**吉闻修复成立的前提要真机确认**：两次现场说明框都贴在导航点击位置 (1077,144) / (1080,143) 旁边，吉闻奖励框的道具可能在右上方，和标准「获得奖励」布局不同；如果它的标题不在 `I_UI_REWARD` 的搜索区域，就认不出奖励，重启依旧（最坏情况与改之前相同：一天最多一次）。那时要截吉闻奖励框，补吉闻专用的奖励图和关闭位置。
+
+**补记（领庭院体力寿司，2026-10-23）**：用户截了 `courtyard_sushi`（`dt/image_courtyard_affairs.json`，24×24），确认寿司每天 12 点、20 点出现、2 小时后消失，点了弹「获得奖励」。规则：开关 `courtyard_sushi`（默认关）；12:00–14:00 为 `noon`、20:00–22:00 为 `evening`，各记 `courtyard_sushi_noon_dt` / `courtyard_sushi_evening_dt`（不复用商店买体力的 `sushi_dt`）；`run()` 最先做：庭院主页最多等 5 秒认出寿司，`ui_get_reward(I_COURTYARD_SUSHI)` 只在认出时点它、用公共关闭区域关「获得奖励」（体力单个道具居中，商店签到已验证这个关闭区域）；**寿司消失才记这个时段完成**；`plan_next_dt` 在时段内且该时段没领到时排「现在 + 10 分钟」（不超过时段结束），**用 `server=False`**，否则照原来 12:00 / 20:00 / 次日 12:00。
+这改变了本条原先「调度不改」的说法：只有开着寿司开关、在时段内且还没领到时才会多排一次，领到或时段结束后回到原来的固定时间。离线核对过：4 张不在时段内的庭院现场截图上这张图最高相似度只有 0.54–0.55（阈值 0.8），红色小达摩不会被误认；「有寿司时认得出」要真机看。
+
+**补记（检查一次口径，2026-10-26）**：上面「寿司消失才记完成 / 时段内每 10 分钟重试」的规则被替换。用户 2026-10-26 明确：吉闻按天检查一次、寿司按时段检查一次，正常检查后没有可领取内容也记已处理；没识别到不再重试，也不去证明用户是否手动领过。区分三种结局：领到、正常检查无内容（都记）；页面没进去 / 设备异常 / 流程中断 / 领完寿司仍在 / 奖励弹窗关不掉（不记，不写 finally）。取消寿司的 `+10 分钟` 调度，`plan_next_dt` 只保留原来的 12 点 / 20 点 / 次日 12 点正常排期；收邮件入口补当天已处理检查。上面「`plan_next_dt` 时段内多排一次」的说法作废。
+
+**补记（买体力，2026-10-23）**：用户记得买体力有 bug。根源：8 月 13 日 `658f5a7d`（magicemptycity，PR #245）「优化购买寿司逻辑，调整价格检测区域」修过买体力；8 月 18 日的合并 `73bcafcb`「同步 Azur mine 领先提交」保留了第一父提交 `de3f64e0` 的 `tasks/DailyTrifles/script_task.py`，把另一侧 `371b4ec9` 的修复丢了，之后一直没补回（`git log --full-history -m -S` 可查）。修法：① 移植被冲掉的修复：价格框改成右侧 75×45；进 Special 要等到体力商品也出现（列表已加载）；勾玉购买改用 `ui_get_reward(I_STORE_COST_TYPE_JADE, click_interval=2.5)`，买完弹出的「获得奖励」会被关掉（旧写法 `ui_click_until_disappear` 不处理奖励，列表被盖住后循环空转）；资产沿用现在的 `WeeklyPurchaseAssets`，不退回已重构掉的 `RichManAssets`。② 读错价格不再多买：读价格拆成 `_read_sushi_bought`，读不出数字或价格不是 60 + 20k 就返回无效、停止购买、不记完成（以前低于 60 当作「还没买」，80 读成 8 会多买，连续读错会一直买）；本次运行最多买「设定次数 − 开始时已买次数」次，买够就不再点购买；最后一次读数确认达到设定次数才写 `sushi_dt`。③ 进杂货页之前先 `goto_page(page_mall)`：签到会停在礼包屋子页。④ 点商品等购买框改成 `ui_click_until_appear_or_timeout(..., timeout=SUSHI_DIALOG_WAIT=10)`（原来是公共方法里无上限的 `ui_click`）。
+
+**补记（庭院事务满级弹窗，2026-10-23）**：点「一键完成」后，结界里放的式神满级时会弹「您在结界中放置的式神已满级，请确认是否提取？（取消 / 确认）」；原流程只认奖励页，6 秒没等到就记完成，回庭院时导航兜底乱点了 26 秒（10-23 09:18 两个号都是）。用户截图上 `I_UI_CANCEL_SAMLL` 0.994、`I_UI_CONFIRM_SAMLL` 0.992，弹窗后面的 `I_ONE_COMPLETE`（0.999）与 `I_CHECK_COURTYARD_AFFAIRS`（0.983）照样认得出来。用户决定点「取消」（不提取）。新增 `_cancel_two_button_popup()`：同一帧里「取消」「确认」两个小按钮**都在**才点「取消」（CONFIRM 档；用户决定不提取，从不替用户点确认，单独一个取消按钮不算）；每轮点一键完成**之前**先调（弹窗开着时按钮照样认得出来），`close_reward_and_wait_page` 的等待循环里也**先**调，点了取消就重新计时、继续等奖励页。只认两个按钮同时在的弹窗，是为了不把别处的单个取消按钮当成它；从不点确认，是因为提取式神是用户自己的决定。取消后若游戏不出奖励页，6 秒后仍按本 ADR 的庭院事务例外记完成。
+原则：买体力花勾玉，**宁可少买，不多花**——价格读不准就停、本次运行有购买上限、读数确认够了才记完成；次数从价格反推，下次运行重试不会多买。
+同一次合并还丢了寮祈愿的一批修复，用户决定这次不动，记在 ROADMAP「可以纯静态验证的任务」。
+
+## D032 御魂 → 个人突破 轻量循环：复用 D030 的在场文件和门口，循环信息只加几个可选字段；终态保留、只在步骤边界插入严格更高优先级的任务
+
+状态：Accepted（Level A/B PASS，含双进程文件协调测试；Level C 待用户实机验）
+日期：2026-10-24
+
+背景：用户要一个私用的「御魂一批 → 个人突破 → 御魂 …」循环（首版只接御魂，其它副本以后复用）。先前设计过大型的步骤让出契约，用户暂停后改成这个轻量方案。
+
+决定：
+- **不新建同步通道**：复用 D030 的配对（`script.team_sync.peer_instance`）、在场文件、心跳、配对锁、原子写入和门口 `decide()`；不用 D029 账本（一天一次、固定超时的语义和循环不合）。循环信息放在自己在场文件的 `loop` 字段（上一次终态摘要放 `prev`），由 `PresenceBoard._write()` 统一带上；`publish` 每次重建整个文件，所以不能靠各调用方记得带。旧文件没有这些字段时行为不变。
+- **控制器属于脚本进程**（`Script.loop_controller`，`module/script/loop_controller.py`）：配置对象会反复重载，状态不能放配置里。状态只在内存 + 在场文件，**失败、取消、进程重启后不续跑**，重新开始需要双方新的手动请求。
+- **启动**：御魂配置里一次性 `start_loop` 开关，脚本读到后立刻关回并保存，只提交这一次请求；已有活动循环时重复请求忽略；后续普通御魂不会自动起循环。`loop_id` 由队长生成、队员采用，不让用户填。
+- **加入与绑定**：队长 FORMING → 队员采用 `loop_id` JOINED → 校验轮数 / 目标范围 / 身份互补通过后双方 ACTIVE。**绑定本次参与者之前只等待（无固定超时），绑定之后**对方退出、重启（`boot_id` 变）、文件过期 60 秒、`loop` 消失都失败并传播同一个 `loop_id`。配置或身份冲突明确失败（先发现的一边写 `role_conflict`，另一边按「最近刚因它失败的同身份循环」也能读到）。
+- **普通门口不能当成加入循环**：`decide()` 在所有提前返回 GO 的路径之前判 `peer_in_loop`（不带循环信息的普通任务对上正在循环、且当前步骤就是它的对方 → 推迟 30 分钟）；循环门口要求对方同一 `id` 同一步骤，否则继续等。D030 的 token 每次进门新生成，代表不了「同一次循环」，不拿它当循环身份。`_peer_waiting` 不拉循环步骤。
+- **终态保留**：结束不清除 `loop`；新循环开始才把旧终态移进 `prev`（最多一份，不做历史账本）。对端按 `loop_id` 在 `loop` / `prev` 里找，文件过期也不抹掉已写下的终态。终态不会被迟到的推进改回活动状态（`_finish` 守卫）。
+- **界面停止**：先通知再终止，且**只让脚本进程自己写**——父进程往现有 `command_queue` 放带 `boot_id` / `loop_id` / `pid` 的 `loop_cancel`，脚本进程命令线程在同一把互斥下改状态并发布（之后心跳 / 主线程写盘带的是同一份，不存在旧快照覆盖），父进程只读确认（有界 3 秒、异步睡眠）；超时也照常终止，对端走失联规则；命令队列在 `ScriptProcess` 初始化时创建、`start()` 复用，所以命令必须带目标进程身份，残留的旧命令对不上就忽略。没有活动循环时保持原停止行为。
+- **步骤交接**：每一步开始 / 恢复都走现有 prepare → 步骤疲劳（先建立该任务的疲劳上下文再检查；`Script.run` 用 `_fatigue_prepared_for` 跳过重复初始化）→ 循环会合 → 御魂再进 D030 门口 → 运行。先到的一边等；等待期间有严格更高优先级任务到点就让出，回来重新走一遍。
+- **高优先级插入**：`Config.update_scheduler` 末尾的可选钩子暂停普通 Orochi / RealmRaid、注入当前步骤（enable 视为开，所以个人突破普通开关关着也能跑），只放行位次严格高于步骤的任务，Restart 恢复任务例外；组队任务只有两边的快照 `rank` 都高于各自步骤才插入，否则推迟 3 分钟（沿用现有 `YIELD_DELAY`）；只在一边启用沿用门口现有的推迟规则。
+- **完成判据**：个人突破正常走到自己的结束出口（`TaskEnd`）即完成，不规定票数 / 次数，`number_attack`（消耗上限）和 `number_base`（低于它不打）语义不变；御魂一批以**队长可信计数**为准，不用 `GeneralBattle.current_count`（它在 `run_general_battle` 入口就 +1，不是完成证据）：邀请前记可能开战、点过挑战按钮则无法确认、看到结算 / 奖励页才计一场，无法确认就停止，不猜剩余、不盲目重计；队员以队长上报的批次结果为准。`Script.run` 的布尔返回值和「下次运行时间排到未来」都不算业务成功；插入任务只认 `task_delay(success=)`，`None` 按未知停止。
+- **恢复**：异常处理的 4 个 Restart 分支先登记 `recovery_pending`（Restart 没开则循环失败）；Restart `recovered` 只代表游戏恢复，不代表未完成的步骤完成；完成事实保留、恢复结束前不推进不解除阻塞；多个未恢复插入任务用内存集合，各清各的，非空时不插入步骤。
+- **一方先完成**：完成记录保留在自己的在场文件里；另一方恢复后只补跑自己没完成的步骤（队员看到队长已完成的批次直接推进），已完成一方不重复执行。
+
+未决 / 已知限制：见 AI_CONTEXT §4.128「取舍 / 限制」。尤其：插入任务无明确 success 约定时循环会停（严格按「无可靠依据按未知停止」，不放宽）；只接御魂；同级和更低优先级的普通任务在循环期间不运行；FIFO 规则下没有位次。
+
+**补记（2026-10-24 定点修复）**：
+- **个人突破的业务边界（用户再次确认，不可改）**：个人突破是完整、独立的任务，完全按自己的配置执行；退四、投降、战败、刷新、换目标都是它的内部流程，内部某场输赢 / 刷新既不代表循环失败，也不代表整个任务完成；只有整个任务正常走到自己的结束出口（`TaskEnd`）才标记循环步骤完成，控制器**不监听**内部每场胜负，不判断是否耗尽突破券，不规定突破次数。外部取消 / 失联 / 异常单独处理：外部要求停止时允许当前单场结算，随后不再开新战斗（这是执行停止请求，不是按退四输赢判失败）；异常交给原有恢复；取消不会被当成正常完成去推进。
+- **开战点的最后一道确认**：循环里每一个真正会开战的点击（御魂 `click_fire`、个人突破 `fire()` 的 `I_FIRE`、退四 `_fire_again()` 的「再次挑战」和确认弹窗）之前再确认一次循环有效；被拦住时个人突破置 `_loop_halted` 直接收尾，不走「退四中断 → 刷新」，也保留 `finally` 里恢复锁定阵容；御魂 `click_fire` 返回 `timeout` 且不点。普通运行不受影响。
+- **让出必须撤回就绪**：步骤没有开始就离开（让出 / 重载 / 门口中断 / 停止）要撤回已发布的 ready，否则对端凭旧 ready 放行；已开始的步骤不被中途抢占；撤回写盘失败要重试（Windows 对方读文件时替换会被拒）。两个读者之间仍有「对端刚读到旧 ready 就放行」的极小竞态，御魂步骤由 D030 门口兜底（对方不在门口就继续等），个人突破是各自独立运行，可接受。
+- **战斗证据顺序**：`is_in_battle()` 含结算 / 奖励标志，`run_invite` 返回成功不等于新战斗开始；可信计数 = 点过挑战 + 见到准备 / 战斗页 + 之后见到结算页，残留结算页不计数也不失败，其余无法确认一律保守停止。
+- **阻塞与恢复的调度**：恢复任务（Restart）不受位次限制且排最前；异常请求的 Restart 不是启动时那个可以跳过的 Restart；阻塞时绝不退回原始任务列表，没有可运行任务就给一个远在未来的占位项走明确等待；等对方完成最后一步仍属活动循环，位次参照最后一步，不放开低优先级任务。
+- **位次裁决进门口**：组队任务只有双方各自都认为它严格更高才在步骤边界插入；对方已在循环里且它发布的位次不高于它的步骤，则我这边已在该任务门口的一方按既有间隔推迟（`peer_ranks_lower`），不无限等；位次不高于步骤的任务不被对方拉进来；位次缺失不下结论。
+
+## D033 狩猎战随机延迟：只加在正常每日计划上，先按开放窗口缩小范围再采样，重试不加，仍用 server=False
+
+状态：Accepted（Level A/B PASS；Level C 待用户实机验）
+日期：2026-10-25
+
+**背景**：用户要求 Hunt 使用现有的「随机延迟时间」（`Scheduler.float_time`）防封，同时保证计划不排出当天开放窗口（麒麟 06:00–23:00、阴界之门 18:00–23:00）。
+
+**决定**：
+- 正常每日计划 = 有效基准时间（`hunt_time.kirin_time` / `netherworld_time`，越界仍按开放时间算）+ 一次随机延迟，上限用现有 `Hunt.scheduler.float_time`；先按当天开放窗口缩小范围再采样：基准离 23:00 还剩 N 秒，延迟在 `[0, min(float_time, N-1)]` 里均匀抽（`random_int`），不是先抽大延迟再统一截到 23:00；留 1 秒是因为计划时间必须严格早于截止点（23:00:00 醒来时 `now > end` 已算过窗口，与 10 分钟重试的 `retry < end` 一致）；基准已在截止点上（配置 23:00:00）或只剩 1 秒时没有随机空间，保持基准、不改到第二天；float_time 为 0 不采样。仍是 `server=False` 写入，没有改成 `server=True`，所以非默认 `server_update` 不会改写目标时间，`task_delay` 也不会再叠加 float_time。
+- **只有正常每日计划加延迟**（打完 / 已挑战 / 过窗口后排下一天；到点前被提前唤起时重排当天）。未能进入战斗的 10 分钟重试保持原规则、不加 float_time，也就不会二次随机；重试超出窗口改排明天时是新的每日计划，只随机一次。
+- 不新增字段、不改通用调度器；不通过 `server=True` 接入（会让非 09:00 的 `server_update` 把目标改到明天那个点）。
+
+**取舍（不掩盖）**：窗口只约束「计划时间」，不保证实际执行：到点后仍可能被其他任务、疲劳休息拖后；提前唤起且已在窗口内时照旧直接执行（未改，若觉得不对要单独讨论）；基准恰为 23:00:00 的配置本来就打不了（原有行为）。
+
+## D034 地域鬼王：只对「明确战败」做有限重试，次数写死 3，重试走正常挑战入口
+
+状态：Accepted（Level A/B PASS；Level C 待用户实机验）
+日期：2026-10-25
+
+**背景**：用户要求 AreaBoss 战败后有限重试，同时不重复整项任务、不重打已完成的目标。
+
+**决定**：`AreaBoss.ScriptTask.start_fight` 里明确战败最多打 3 场（含首次，固定值 `BATTLE_MAX_ATTEMPTS = 3`，不做配置）：任意一场明确胜利立即结束；连续 3 次明确战败记警告、`boss_fight` 照旧关闭详情页并返回 False，`run()` 继续原有的后续目标流程，不重跑整个任务。「明确战败」= 本场里识别到失败横幅 `I_FALSE`（`AreaBoss._handle_result` 在基类判定 `is_win` 为假时记 `_loss_seen`）且 `run_general_battle` 返回 False；返回 False 但没见过失败横幅（`is_win` 默认 False，例如没识别到结果页）、或返回胜利却见过失败横幅，都算结果不明：不重试、按原样返回 False，不猜测。每次重试前先 `check_can_run()`，再用新截图确认仍在鬼王详情页且挑战按钮 `I_FIRE` 可点（上限 `RETRY_DETAIL_TIMEOUT` 5 秒，否则放弃该目标），然后走同一个挑战入口 `I_FIRE`；不点失败页的「再次挑战」，不重开详情页、不重切层数 / 难度、不重做换御魂和筛选。异常（卡死、页面未知、设备异常）和任务停止不捕获，照旧向上抛。
+- 次数边界按阶段计：普通 / 悬赏各 3 场；开启「拉到 60 级」时 60 级前置是一个阶段、成功后的极地鬼是后续阶段，各自 3 场。
+- 不用失败页的「再次挑战」按钮重打（它的位置还落在通用结算点击区里，见 D025 补记）。
+
+**取舍（不掩盖）**：结果不明一律不重试，意味着「战败后又经过奖励页被基类当成胜利」这类情形不再被当成胜利，也不会重试；重试时不重新校验难度 / 层数，要真机确认战败回到详情页后它们仍保持。
+
+## D035 预设切换后的契灵替换确认框：自动确认，只在预设确认之后做有界观察，复用「确定」模板
+
+状态：Accepted（Level A/B PASS；Level C 待用户实机验）
+日期：2026-10-25
+
+**背景**：切换队伍预设后，预设里的契灵若已装配在其他阴阳师身上，游戏会再弹一个替换确认框，原流程没有处理，后续导航被挡住。
+
+**决定**：预设切换（数字 / 按名称两条路径）在预设确认框出现并确认之后，用 `SwitchSoul._confirm_bondling_replace_dialog` 做一次短时有界观察（`REPLACE_OBSERVE_TIMEOUT = 2.0` 秒）：出现「当前契灵已装配于其他阴阳师，是否替换？」就点「确定」并等它关闭（`REPLACE_CLOSE_TIMEOUT = 8.0` 秒）再继续；没出现就正常继续；弹窗持续存在或确认未生效，超时后抛 `GamePageUnknownError` 交还 `script.py` 原有异常处理（通知 + 重启），不无限点击、不记切换成功。用户选了这个预设就等于允许替换，不加配置开关。只在预设确认之后调用，没有预设确认框（已装备同一预设）时不观察，不是全局的「看到确定就点」。
+- 识别复用 `I_SOU_SWITCH_SURE`，不新增资源、不降阈值、不盲点固定坐标；点击抽成 `_press_sure()` 与预设确认框共用，避免多出一个新的策略点击点。
+
+**取舍（不掩盖）**：自动确认意味着会把这只契灵从另一位阴阳师身上换过来（用户已同意）；识别依赖「确定」模板与替换框同一风格，若不匹配要补资源；2 秒观察窗口会让每次预设切换（出现过预设确认框时）多一小段观察时间。
+
+**补记（2026-10-25，预设确认的有界保护）**：预设确认框「确定」连续存在、始终点不掉时也有本地明确超时（`CONFIRM_CLOSE_TIMEOUT = 10.0` 秒）：数字模式 `_confirm_team_switch` 的恢复循环（原来是无界的 `while 1`）和按名称模式的切换循环（原来「确定」分支会一直点，点队伍不成功时循环也不会结束）都在超时后经 `_raise_confirm_stuck` 抛 `GamePageUnknownError`，交还 `script.py` 原有处理，调用方不再写切换成功日志。点击间隔（3 秒 / 0.8 秒）、反应时间、正常选择行为不变；按名称模式的计时在「确定」消失一帧后清零，间歇出现不会误报。原确认框与契灵替换框连续出现（中间没有空白帧）时，两个框都在同一段超时内处理完才继续。 取舍：10 秒覆盖「预设确认 + 紧接着的替换框」各自最多一两次 3 秒间隔重试；超时就按页面异常处理（通知 + 重启），不在这里继续猜。
+
+**补记（2026-10-25，名称模式总超时）**：按名称模式「选队伍 + 处理确认」循环有总超时 `SWITCH_LOOP_TIMEOUT = 45.0` 秒：进入循环前启动，每轮在所有 `continue` 分支之前检查，不因看到 / 看不到「确定」、点击失败或空白帧重置，超时经 `_raise_confirm_stuck` 抛 `GamePageUnknownError`（不写成功日志）。封住「确定和队伍都识别不到」和「确定间歇出现、`sure_timer` 反复清零但始终无进展」两条原来无界的路径。取值依据：正常流程是 4 次队伍点击（每次最少隔 1.5 秒，约 6 秒）加预设确认的 0.8 秒间隔点击，慢模拟器上加 OCR 与页面响应也在 10~15 秒内，45 秒留 3 倍以上余量，是故障保护、不是节奏参数。三种超时各管一段：「确定」连续存在 10 秒（`CONFIRM_CLOSE_TIMEOUT`，消失后清零）、循环之后的契灵替换框 8 秒（`REPLACE_CLOSE_TIMEOUT`）、整段循环 45 秒（`SWITCH_LOOP_TIMEOUT`）。只覆盖这一段循环；名称模式里的分组查找 / 滑动 / 导航没有总超时（本轮没动）。
+
+**补记（2026-10-25，D032 的配置显示与保存）**：**英文显示的根因（源码确认）**：OASX 的标签 = 参数 `name`（字段名）`.tr`、说明 = `description`（`*_help`）`.tr`、分组名 = 组 key `.tr`；翻译只来自 OASX 自带的 Dart 表（`lib/translation/cn_parts`）和启动时从后端 `/home/additional_translate`（= `assets/i18n/zh-CN.json` / `en-US.json`）追加的内容（后者覆盖前者）。`loop_config` / `start_loop` / `rounds` / `target_min` / `target_max` 和四条 `*_help` 在这两处都没有；原来写的 `module/config/i18n/zh_CN.xml` 没有任何代码读取（OASX 也不读），所以界面显示字段名原文。`module/config/i18n/zh-CN.json` 只是 OASX 把自己的 Dart 表回传给后端存的，不是输入。 **区间「无法配置」的核对**：用真实 `ConfigModel`（`script_task` 输出、`script_set_arg` 逐字段保存、全新实例重读）和真实 `Script._loop_consume_request` 走了整条后端链：120 / 140 能保存、重读后保留、循环启动时读到 `tmin=120 tmax=140`，旧的修复前代码上这条链本来就是通的。真正查到的缺陷有三处：① 字段没有中文，看不出哪个是最少 / 最多；② `LoopConfig` 是普通 `BaseModel`，赋值不校验范围——越界值（0、1000、轮数 101，甚至非整数）会被存进文件，下次加载时 `ConfigBase.__init__` 把整个 `loop_config` 组静默重置成默认值（轮数 / 最少 / 最多一起丢）；③ 最少 > 最多被拒绝时只给原因码 `target_range_invalid`，没有中文说明。 **修复（只在 OAS，不需要重新构建 OASX）**：① 翻译补到 OASX 实际加载的 `assets/i18n/zh-CN.json`（单一来源，另有 `en-US.json`）：分组「御魂→个人突破循环」，字段「开始循环（一次性）/ 循环轮数 / 每批御魂最少场数 / 每批御魂最多场数」，说明讲清一轮的含义、队长随机一次、队员同一个数、个人突破跑到正常结束、开始循环是读取后自动关回的一次性请求；② `LoopConfig` 开 `validate_assignment`，越界 / 非整数保存失败（`script_set_arg` 返回 False，原值保留，整组不再被静默重置）；最少 ≤ 最多**不在保存时校验**（改区间的中间状态 10～30 → 120～30 → 120～140 不会被卡住），只在打开「开始循环」时检查，下限等于上限表示固定场数；③ 拒绝开始时给中文说明（含当前最少 / 最多的数值，提示开关已关回、需要重新打开）。字段名、默认值、已有配置值、业务规则都没动。 取舍：越界值现在保存失败而 OASX 立即保存模式不显示失败，界面上的输入框会暂时停在输入的值上、重新进入页面后恢复为原值——这是 OASX 保存反馈缺陷的表现，修它要改 OASX（见 ROADMAP）。
+
 ## D036 百鬼棋局购买：成功必须建立在实际点击和多帧复核之上；一次目标购卡总点击预算 3 次；上游移植按功能记录，不写「已同步至 SHA」
 
 状态：**Superseded（2026-10-25 同日，被 D037 取代）**——这一版是手写实现，已按用户要求撤销，代码不在仓库里；下面的「决定」只保留为历史记录和**将来评估上游补丁时的验收参照**，不再代表当前行为。
@@ -2304,3 +2556,79 @@ BehaviorTrace 记录坐标与真机点击位置一致。
 - 文档只写逐提交吸收清单（完整 SHA + 方式 + 结论 + 范围），不写「已同步至某 SHA」。
 
 **取舍（不掩盖）**：函数级提取让本地 Chess 在这几个函数上与上游一致，但其余部分仍停在 `ce476e89` 一带；以后再合上游棋局补丁，仍可能碰到依赖 Frame 体系的上下文，要逐项判断。
+
+## D038 配置页展示信息走独立的可选接口，不写进业务配置也不改 `/args` 协议
+
+- **决定**：任务配置页需要的分组 / 折叠 / 选项等展示信息，由单独的只读接口 `GET /{script}/{task}/args/layout` 提供（`ConfigModel.script_task_layout` + `TASK_ARGS_LAYOUTS` 注册表，按任务逐个接入，目前仅 ActivityShikigami）。
+- **约束**：① 所有引用都是 `/args` 里原样的 `(group, argument)`，保存仍走原路径；② 不新增、不搬动、不重命名持久化字段，不删字段代替前端折叠；③ 展示信息不写入用户配置；④ `initial_expanded` 只用于首次打开；⑤ 没有注册的任务返回 `{}`，`/args` 输出不变。
+- **理由**：旧 OASX 不请求新接口即完全兼容；业务配置与界面排版解耦。
+
+## D039 体力爬塔次数区间：下限沿用 `ap_limit`、新增 `ap_limit_max`；目标每次新执行抽一次；异常重跑算新执行
+
+- **决定**：区间单位与旧 `ap_limit` 相同（进入战斗的场数）；旧配置缺上限按 `N～N` 读入且不写文件，明确的 0 与缺失不同；保存只校验单字段，完整关系在任务启动前校验并拒绝（`RequestHumanTakeover`），不截断 / 交换 / 回退；目标只存在任务对象里、不写回配置，固定区间不采样。**对象重建不是重新抽取的依据**：区间随机的活动执行被自动恢复类异常（卡死 / 页面未知等）打断时，因进度不可信，终止本次执行并把活动的 `next_run` 从**中断时刻**起延后（沿用失败间隔与 `server_update`，写入后读回确认在未来；Restart 只恢复环境）。延后写不进去或读回不在未来时不得继续自动恢复，改抛 `RequestHumanTakeover` 转人工处理（原异常作为异常链保留），不重抽、不从零续跑、不猜剩余、不重跑前置玩法；固定次数的重跑行为不变。下次到点或用户改成现在运行即新执行。
+- **理由**：不改变旧配置的运行量；没有可信进度时不伪装续跑，唯一状态是持久化的 `next_run`，不会永久封锁。
+- **范围**：仅体力 ap；其他玩法仍是固定次数。
+
+## D040 福利道馆模式：受开关保护的独立流程，不接管现场，等待靠进程终止打断
+
+- **决定**：福利模式写在 `tasks/Dokan/welfare.py`，只由 `welfare_mode` 开关进入，普通道馆流程不变；一次任务处理当天剩余机会、最多两馆。
+- **边界**：① 机会未知 / 启动时已有进行中的馆 → 转人工，不接管；② 开过馆之后的自动恢复类异常 → 转人工，不让公共 Restart 从头重跑；③ 关闭确认必须区分「确认不存在」与「查询失败」，只有两次确认不存在才开始 600 秒；④ 点准备到关闭游戏之间不截图、不 sleep；⑤ 业务上不设刷新次数上限、不降低人数门槛、不做系数兜底，但每一步的点击 / 等待有界；⑥ 600 秒主动离线同时从疲劳活跃计时和 Script 防沉迷活跃时长里扣除，120 秒游戏开着不扣；⑦ 不做进程中断后的续跑；⑧（2026-10-26 收尾）最终剩余机会必须来自识别，读不到转人工、不推算；滑动是否推进按「最终稳定落点相对滑动前是否真的移动」判（不看 `wait_for_changed_and_stable` 锁存的 `changed`；2026-10-28 D-03 修订，见 AI_CONTEXT §4.148），只有稳定且没推进的滑动才计入到底（连续两次），没发出的滑动不计，未稳定转人工；⑨（2026-10-28 D-04）公共 `Device` 在滑动发出前就写入并检查操作记录，福利找馆只在「滑动已发出且确认 moved」之后用 `click_record_remove(名字字符串)` 移除福利滑动自己的记录；static / 没发出 / 未稳定 / 异常不清，不清其它按钮、不 `click_record_clear`、不改公共阈值，每批只有 static 的无进展循环仍由公共保护终止（见 AI_CONTEXT §4.149）；⑩（2026-10-28 D-06）一键预设：确认框出现一律优先确认；此前已预设过不弹框时，在已确认的阵容页上实际发出 2～4 次预设点击（一次抽定，只数 `appear_then_click` 真正发出的）并有界观察无确认框，即视为「预设操作完成」——这是用户接受的操作完成判据，程序不验证御魂 / 阵容效果；预设按钮持续识别不到 / 点击一直发不出 / 确认框关不掉 / 返回失败仍转人工，`preset_done` 只在返回找馆页确认之后设置（见 AI_CONTEXT §4.150）；再战投票成功需要点击真的发出 + 按钮自己的框变化并稳定，不认任意区域变化，确认不了转人工、不启动 120 秒。
+- **补记（2026-10-28 D-02）⑪ 我方道馆前置**：福利基于原道馆流程，只在指定环节走定制路线，不得遗漏公共前置步骤——进入找馆页、确认没有进行中的馆、确认机会 > 0 之后、预设之前，必须先确认我方道馆已建立（没有就复用普通模式的 `ensure_dokan_created` / `creat_dokan` 及资源，不另写一套福利建馆），一次运行只检查一次；普通模式「点了两次没弹确认框就当已建立」的推断不可靠，因此公共方法新增**默认关闭**的 `strict` 参数（福利传 True，默认路径与普通模式不变）：strict 只采信高阈值（0.98）下明确的「已建立 / 未建立」图标状态，两个模板互相匹配分 0.96 > 默认阈值 0.8，默认阈值分不出；已建立不点击，未建立点击后没弹确认框 / 状态分辨不出 / 信息页关不掉 / 轮数用尽一律失败，建完必须确认回到找馆页才算完成；建我方道馆不增加 `opened`、不扣减 / 推算攻打次数、不写成功排期，不读 `try_start_dokan`、不改写配置（见 AI_CONTEXT §4.151）
+- **补记（2026-10-29 D-05）⑫ 集结与公共卡死保护**：公共 `Device.screenshot()` 每次先检查「距最近一次清除超过 60 秒（且 > 60 次检查）」，登记长等待只能延到 300 秒，撑不住福利的 900 秒集结上限；因此集结阶段**只在识别到「道馆页 + 集结中」时清一次公共卡死计时**（识别在先、清在后，截图前检查看到的总是刚清过的计时），业务总时限进入阶段时算一次、识别 / 保活不重置；可开始挑战的帧不保活（靠点击本身，点击次数有上限，点击无效不是在等）；过渡 / 未知画面不保活，容忍时间（30 秒）小于公共 60 秒，到点转人工并给出具体原因；不在循环顶部无条件清、不靠无意义点击续命、不登记特殊等待状态、不捕获异常、不改公共阈值，点准备 → `app_stop` 的紧邻时序不变（见 AI_CONTEXT §4.152）
+- **理由**：游戏被主动关闭后，通用恢复机制会把它当异常；没有可信进度时伪装续跑会误开 / 误放弃。
+
+## D041 SwitchSoul 按名称找分组 / 找队伍：精确相等 + 稳定证据判边界 + 失败明确报错，不回退
+
+- **决定**：按名称路径的分组 / 队伍搜索必须有界；名称只做首尾去空白后的精确相等（同屏重名报歧义，不点）；到顶 / 到底必须由「连续 2 次滑动后画面稳定且无变化」加「该帧读到有效文字」共同证明，OCR 读空、文字相同、变化但不稳定、滑动没发出都不能当作边界；点击前必须重新截图、重新定位且两帧位置一致；失败抛 `SwitchSoulNameError`（`GamePageUnknownError` 子类，带目标名和阶段）。滑动继续走 `BaseTask.swipe(RuleSwipe)`，按名称路径使用 OCR 专用的四个 swipe 资源，数字路径资源不动。
+- **理由**：旧写法目标不存在时无限滑、点击用子串匹配、两次 OCR 文字相同就当作到顶；修一个名字写错就卡死整个任务不可接受。继承 `GamePageUnknownError` 而不是 `ScriptError`：沿用现有「通知 + 重启 + 稍后重试」，不因一个配置名让整个进程退出。
+- **取舍**：只检查首次命中那一屏的重名，不扫全列表（成本高、没有可靠依据）；分组选中没有可识别的标志，点击后无变化只能警告继续；OCR 区域不动（没有真机数据），靠精确相等排除噪声。上限是故障边界，不是游戏支持的数量。
+
+**补记（2026-10-27 收尾，D041）**：① 分组是否选中以「选中标志落在目标行」的状态证据判断（复用数字模式选中高亮模板），区域变化 / 队伍列表可读都不是证据；证据不足就转人工，不继续找队伍（宁可停下，也不在旧分组里点同名队伍）。分组确认与中央队伍列表就绪分开检查。② 错误分两类，只在 SwitchSoul 局部：`SwitchSoulNameError(RequestHumanTakeover)`（空名称、确认不存在、同屏重名、无法确认选中）走既有人工处理、不重启；`SwitchSoulPageError(GamePageUnknownError)`（OCR 失败、不稳定、滑动无效、达到保护上限、阶段超时）沿用重启恢复；「到底」要滑动生效过或列表没满一屏的证据，达到上限不写成名称不存在。③ 队伍向后翻页基准位移约 135px（一行约 150px），上限 / 时限按步幅放大（60 屏 / 30 次回顶 / 300 秒），仍是有界的故障边界。取舍：恰好一屏放满的列表里写错名字无法与「滑动无效」区分，按页面问题重启重试；选中模板在当前页面能否识别待真机，识别不到时流程会安全停止。
+
+## D042 契灵创建队伍：点击后用新截图区分「已进房 / 创建设置页 / 过渡」；已进房不等于私人已验证
+
+- **决定**：契灵队长点击「创建队伍」后，只有点击确实发出才进入有界观察；每轮用新截图判断：房间出现立刻交接邀请，创建设置页才走 `ensure_private`，过渡页只观察不重复点击；`ensure_private` 新增可选 `exit_when`（默认 None，其它调用者行为不变）。「已进房」只说明不必再等设置页，日志必须写私人状态未验证；只有真的看到私人标志才能写已验证。点击多次无效、私人设置没能确认都抛 `GamePageUnknownError`，不默认成功。
+- **理由**：日志 37 次创建里 36 次白等 15 秒（点击创建直接进房间，没有私人设置页）；旧代码用点击前的旧截图判断，又无条件调用只认设置标志的 `ensure_private`。不能删掉 `ensure_private`（设置页出现时仍要处理），也不能只缩短 15 秒（掩盖问题、慢设备误判）。
+- **取舍**：契灵创建入口是否默认私人没有源码 / 资源依据，所以不宣称验证；`appear` / `appear_then_click` 交替 interval 导致不限流是公共层现状，本轮不改，靠观察窗口避免重复创建。
+
+## D043 契灵组队：`lock_team_enable` 由「游戏内锁队已确认」生成，队员自己观察，默认邀请不是证据
+
+- **决定**：契灵组队进入通用战斗的配置 = 任务 `battle_config` 的副本，仅 `lock_team_enable` 取自 `team_locked`（看到本账号游戏内锁定图标才置位）；队长用自己的 `lock_team()`，队员用只观察的 `confirm_team_locked()`（有界窗口，看到锁定图标才确认，不替用户点锁定）；确认不了保持 False（原行为）。不改共享配置对象、不写回 JSON、不新增用户开关、不改公共 `check_then_accept` / 准备等待。
+- **理由**：游戏已锁队并自动准备时，通用战斗仍按 `lock_team_enable=False` 立即补点准备；`BattleConfig` 隐藏该字段但继承默认 False，`general_battle_config`（True）又会覆盖其它用户设置，不能直接替换。队长锁队不能证明队员也锁了，默认邀请更不是证据。
+- **取舍**：队员页面看不到锁队图标时无法确认，按未锁定处理（等价原行为），不为让流程「看起来锁了」而假设。ALONE 单人路径不在本轮。
+
+## D044 悬赏封印：「识别 / 详情 / 取消失败」不是「没有悬赏」，必须异常收尾；取消追踪只用于业务规则明确的跳过
+
+- **决定**：悬赏列表里已识别到未完成进度后，详情打不开（有界重试）、推荐地点整行全部识别失败（换新截图重读后）、取消追踪不能确认，都抛 `GameStuckError`，由调度器现有路径处理（保存现场截图、推送、重启游戏、计失败次数、连续 3 次终止），**不调 `next_run`、不当成已完成排到明天**；「确认没有悬赏」（`is_wq_remained` 为假 / 滑动列表仍无未完成项）才走原正常排期。取消追踪（跳过当前悬赏处理下一项）只用于业务规则明确的情形：未解锁秘闻、忽略妖怪、全部推荐被规则过滤、没有可执行推荐（挑战券不足等）。取消是有界事务，成功 = 已取消 + 探索列表连续多帧稳定出现，不能仅因详情标志消失一帧；单次运行跳过数有上限。推荐地点按整行读取，每行绑定自己的「前往」按钮，行状态区分 `ok / filtered / failed / absent`，`failed` 与 `filtered` 的结果不同；其他行证据完整时不要求四行全读出。
+- **理由**：此前「列表有 0/8 → 详情打不开 → 滑动 4 次 → 按已完成排到明天」把识别失败伪装成正常完成，且没有现场证据；用固定滑动次数或取消识别失败的悬赏来让流程继续只会掩盖问题。`GameStuckError` 是现有机制里唯一「返回失败 + 留截图 + 不改排期 + 有失败三次上限」的路径。
+- **取舍**：`GameStuckError` 会重启游戏、重试几乎立即发生，对「UI 又改版」这类确定性问题只是保存现场后重试到 3 次终止——换来的是不静默、留证据；没有新增异常类别或调度器。`I_TRACE_TRUE` 与主界面 `I_TRACE_DISABLE` 外观几乎一致，只能在探索页详情场景使用。高层秘闻的「番外」改用 `endswith`（原判断永远不命中）是顺手修正的现有意图。
+
+## D045 异常请求的 Restart：登记成功之后才结束「启动阶段」，不靠强制执行所有 Restart
+
+- **决定**：「脚本启动时跳过首次 Restart」保留（避免每次启动都无条件重启游戏）；本进程内由任务运行 / 准备阶段异常请求的恢复 Restart 不适用该规则。`Script._handle_task_exception` 的恢复分支统一走 `_request_restart_recovery()`：循环登记 → `config.task_call('Restart')` → **登记成功（返回真）之后**才 `is_first_task=False`；登记抛异常或返回 False 时不改调度状态、异常上抛。`is_first_task` 仍是单向锁存，不新增请求标记 / 持久化 / 恢复框架，失败计数、3 次上限、御魂循环恢复登记与福利转人工规则不变。
+- **理由**：准备阶段（首个任务还没真正运行）的异常之后没有「任务结束置 False」这一步，刚登记的 Restart 会在下一轮被当成启动时的 Restart 跳过。
+- **取舍 / 边界**：跨进程（用户在 GUI 停止再启动、进程被拉起）遗留的异常请求，新进程无法与陈旧的例行 Restart 区分，仍按启动规则跳过（10-27 oas2 就是这种情形）；要区分必须新增持久化标记或启发式判断，未做，需用户决定。准备阶段异常反复出现时「Restart 成功 → 再次准备失败」不计入 `failure_record` 是现有行为，未改。
+
+## D046 福利找馆：刷新必须确认新一批就绪并回到起点；候选身份用对齐分带指纹；候选记录只在有效结论后释放
+
+- **决定**：① 刷新（福利业务上不设次数上限，不读普通模式的 `find_dokan_refresh_count`，也不调用带普通评分的 `find_dokan`）每一轮的点击和等待有界；确认框消失不算刷新成功，还要页面回到找馆页、列表停稳、内容相对刷新前有变化（`REFRESH_CHANGED_COVERAGE`，未经真机校准、日志输出实测值），一直没变化转人工，绝不把旧列表当新一批；② 刷新后列表位置没有证据，不假设回顶：用现有翻页滑动的端点对调派生反向滑动，复用 D-03 的「落点稳定 + 与滑动前比较」判据，连续两次 static 才算在顶，再开始新一批；批次状态只在成功进入新一批时重建；③ 候选身份（去重 / 重新定位）用 ±2 px 对齐 + 分水平带取最大差 + 屏蔽「鑫」徽记的指纹，而不是整体平均差（整体平均差会把只差一行文字的不同馆判成同一张、又会把偏 2 px 的同一张判成不同）；④ 候选「点击 + 取消详情」两类操作记录只在一个新候选详情已打开、得出明确结论并且详情已成功关闭之后，才定向移除（`click_record_remove` 按名字），只点击已发出、读不出人数、没有详情、详情关不掉、重新定位失败都不清，仍受公共保护；不关闭任何保护、不改公共阈值。
+- **理由**：真实 `Device` 记录逻辑下一批检查 6 个候选就会触发「两个按钮」保护；旧刷新只确认弹窗消失，可能把失败（货币不足 / 刷新限制）当成功并重复检查旧列表；旧指纹在真实卡片上既会漏检也会重复检查。
+- **取舍**：没有真机的刷新前后画面，回顶方向 / 幅度和变化阈值都是推断值，所以每次刷新多花约 2 次 static 反向滑动的时间换确定性；「新列表恰好与旧列表完全相同」的短列表会被当成刷新未生效而转人工（宁可停下也不盲扫旧列表 / 反复花钱）；指纹阈值的真实样本很少，对齐只容忍 ±2 px。
+
+## D047 每日琐事调度：日常锚点 = 下一个服务器刷新，与 12 / 20 点时段点取较早者；随机延迟自己算、`server=False`
+
+- **决定**：`plan_next_dt` 的下次运行 = 下一个 `server_update`（默认 09:00）与下一个 12:00 / 20:00 时段点中较早的一个，再加任务自己的 `float_time` 随机延迟，以 `server=False` 写入；不使用「完成时间 + success_interval」，不依赖外部把 next_run 改成过去的机制。
+- **理由**：单个 next_run 要同时满足「每天开 OAS 先能跑」和「12 / 20 点各再跑一次」，必须取两个时间点中较早的；`success_interval` 锚点会被 12 / 20 点的运行拖着漂；公共 `task_delay` 的随机延迟只在 `server_update == 09:00` 时才加，换值会把目标推到明天。
+- **取舍**：优先级、随机延迟大小交给用户配置，代码不限制延迟（过大可能挤出寿司时段）；`success_interval` 配置对每日琐事不再生效；失败路径（立刻重试，3 次退出）不动。
+
+## D048 福利再战返回：从道馆页离开复用现有页面导航，导航返回后重新确认，不把调用返回当作到达
+
+- **决定**：再战等待结束后停在地图找馆页就直接继续；停在道馆页（`I_RYOU_DOKAN_CHECK`）时调用现有 `goto_page(page_dokan_map)`（`page.py` 的 `page_dokan → page_dokan_map`：退出图标 → 退出确认），不在福利里复制退出点击；导航返回后重新截图——找馆页继续、进行中的馆转人工、其它按原 deadline 转人工；只在再战返回这一处启用（`leave_dokan_page=True`），预设返回等其它调用不变；不重新投票、不重新等待 120 秒。
+- **理由**：道馆页上黄色返回键匹配不到（0.389），退出图标匹配（0.993）；再战后到底停在哪一页没有证据，所以两种起始页面都支持。
+- **取舍 / 边界**：`goto_page` 的 timeout 是无进展超时而不是总时限，外层 deadline 中断不了它，这里只传剩余时间作上界，失败由它抛的 `GamePageUnknownError` 经 `run()` 转人工（开馆之后不走 Restart）；最后一馆放弃后的投票 / 次数收尾（B）没有画面，不改。
+
+## D049 福利再战后的 120 秒固定等待：等满之后清一次公共卡死计时，不豁免、不在 finally、不进离线排除
+
+- **决定**：`_wait_again` 是有明确业务依据的固定等待（再战投票已确认成功才进入、游戏保持开启、等待结束才恢复找馆），期间没有截图。等待正常结束之后调用一次 `device.stuck_record_clear()`，使「投票确认阶段累计的检查次数」不让等待后的第一次 `screenshot()` 在识别页面之前被判成卡死；不改 `Timer.count` / 60 / 300 秒阈值、不登记长等待、不在等待期间做任何点击保活、不动 `click_record`、不在 `finally` 里清（停止信号 / 异常原样传播，不做业务收尾）、不进 `_excluded_from_active()`（这 120 秒是在线时间，不暂停疲劳 / 活跃计时）；清除之后没有任何豁免，之后的无进展照常由公共保护判定。
+- **理由**：公共判定同时要求时间 > 60 秒和检查次数 > 60；120 秒等待让时间条件必然满足，检查次数取决于投票确认阶段的帧数（截图间隔 0.1～0.3 秒），不能靠「约 35 帧」的估算保证安全。
+- **取舍**：用「等满之后清」而不是「等前清」是为了让异常出口不留下任何保护维护动作；两者对正常路径等价。业务规则：两馆都放弃，仅第一馆再战并等 120 秒，最后一馆放弃后不会出现再战。

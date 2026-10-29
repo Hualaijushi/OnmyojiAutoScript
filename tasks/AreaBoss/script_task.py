@@ -7,7 +7,9 @@ import random
 import re
 from datetime import datetime, time
 from module.atom.click import RuleClick
-from tasks.Component.GeneralBattle.general_battle import ExitMatcher, GeneralBattle
+from module.base.timer import Timer
+from tasks.Component.GeneralBattle.general_battle import BattleAction, BattleContext, ExitMatcher, GeneralBattle
+from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_area_boss, page_shikigami_records, page_main
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
@@ -18,10 +20,25 @@ from module.exception import TaskEnd
 from module.atom.image import RuleImage
 
 
+WIN, LOSS, UNKNOWN = 'win', 'loss', 'unknown'
+
+
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
+    # 同一阶段（普通 / 悬赏 / 60 级前置 / 极地鬼）的明确战败最多打 3 次，含首次（用户 2026-10-25 确认，固定值，不做配置）
+    BATTLE_MAX_ATTEMPTS = 3
+    # 战败后回到详情页、挑战按钮重新出现的等待上限（秒）
+    RETRY_DETAIL_TIMEOUT = 5
+    # 本场战斗里是否明确识别到失败横幅（`I_FALSE`）；用它区分「明确战败」和「结果不明」
+    _loss_seen = False
 
     def _exit_matcher(self) -> ExitMatcher:
         return self.I_AB_CLOSE_RED
+
+    def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        action = super()._handle_result(context, config)
+        if not context.is_win:      # 基类按失败横幅 `I_FALSE` 判定；没识别到横幅时不会走到这里
+            self._loss_seen = True
+        return action
 
     def run(self) -> bool:
         """
@@ -175,16 +192,58 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         return result
 
     def start_fight(self) -> bool:
-        self.check_can_run()
+        """打当前详情页里的鬼王；明确战败最多打 `BATTLE_MAX_ATTEMPTS` 场（含首次）。
+
+        True = 明确胜利；False = 三败 / 结果不明 / 重试时详情页没准备好。只有「明确战败」才打下一场：
+        每次重试前先用新截图确认仍在详情页且挑战按钮可点，再走同一个挑战入口 `I_FIRE`，不点失败页的「再次挑战」。
+        异常（卡死、页面未知、设备异常、任务停止）不在这里捕获，照旧向上抛。
+        """
+        for attempt in range(1, self.BATTLE_MAX_ATTEMPTS + 1):
+            self.check_can_run()
+            if attempt > 1 and not self._detail_ready_for_retry():
+                logger.warning('Area boss detail page is not ready for a retry, give up this boss')
+                return False
+            while 1:
+                self.screenshot()
+                if self.appear_then_click(self.I_FIRE, interval=1):
+                    continue
+                if not self.appear(self.I_AB_CLOSE_RED):  # 如果这个红色的关闭不见了才可以进行继续
+                    break
+            outcome = self._fight_once()
+            if outcome == WIN:
+                return True
+            if outcome == UNKNOWN:
+                logger.warning('Area boss battle result is not confirmed, do not retry')
+                return False
+            logger.warning(f'Area boss battle lost ({attempt}/{self.BATTLE_MAX_ATTEMPTS})')
+        logger.warning(f'Area boss battle lost {self.BATTLE_MAX_ATTEMPTS} times, skip this boss')
+        return False
+
+    def _fight_once(self) -> str:
+        """打一场并分类结果：胜利 / 明确战败（识别到失败横幅）/ 结果不明。
+
+        `run_general_battle` 返回 False 也可能是没识别到结果页（`is_win` 默认 False），不能当成战败；
+        返回胜利却看到过失败横幅同样不明确。两种都不重试。
+        """
+        self._loss_seen = False
+        won = self.run_general_battle(self.config.area_boss.general_battle)
+        if won and not self._loss_seen:
+            return WIN
+        if not won and self._loss_seen:
+            return LOSS
+        return UNKNOWN
+
+    def _detail_ready_for_retry(self) -> bool:
+        """战败结算退出后，用新截图重新确认还在鬼王详情页、挑战按钮可点；不使用旧画面。"""
+        timer = Timer(self.RETRY_DETAIL_TIMEOUT).start()
         while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_FIRE, interval=1):
-                continue
-            if not self.appear(self.I_AB_CLOSE_RED):  # 如果这个红色的关闭不见了才可以进行继续
-                break
+            if self.appear(self.I_AB_CLOSE_RED) and self.appear(self.I_FIRE):
+                return True
+            if timer.reached():
+                return False
 
-        return self.run_general_battle(self.config.area_boss.general_battle)
-    
+
     def switch_to_level_60(self):
         while 1:
             self.screenshot()

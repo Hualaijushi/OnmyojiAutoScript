@@ -16,6 +16,12 @@ class SummonType(str, Enum):
 
 class DoneRecord(ConfigBase):
     courtyard_affairs_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
+    # 庭院事务每天 05 点、18 点各刷新一次，按时段分别记录（字段名与 synevo 分支一致）
+    courtyard_morning_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
+    courtyard_evening_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
+    # 庭院体力寿司 12 点、20 点各出现一次（sushi_dt 是商店买体力的，另记）
+    courtyard_sushi_noon_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
+    courtyard_sushi_evening_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     pickup_email_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     summon_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
     guild_donate_dt: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"))
@@ -51,6 +57,8 @@ class DailyGuildDonate(ConfigBase):
 class DailyTriflesConfig(BaseModel):
     # 庭院事务
     courtyard_affairs: bool = Field(default=True)
+    # 庭院体力寿司（12–14 点、20–22 点）
+    courtyard_sushi: bool = Field(default=False, description='courtyard_sushi_help')
     # 收取邮件
     pickup_email: bool = Field(default=True)
     one_summon: bool = Field(title='One Summon', default=False)

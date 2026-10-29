@@ -20,6 +20,7 @@ class ConfigManual:
         > Secret > WeeklyTrifles > MysteryShop > Duel > Chess
         > TrueOrochi > WeeklyPurchase
         > MetaDemon > FrogBoss > FloatParade > Quiz > KittyShop > DyeTrials > MemoryScrolls > GuguArtStudio
+        > XinLan
         """
 
     DEVICE_OVER_HTTP = False

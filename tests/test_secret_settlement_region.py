@@ -136,3 +136,46 @@ class GenericRewardRegionUnchangedTest(TestCase):
             with self.subTest(task=task_cls.__module__):
                 self.assertIs(task_cls._select_reward_region, GeneralBattle._select_reward_region)
         self.assertIn('_select_reward_region', SecretTask.__dict__)
+
+
+# --------------------------------------------------------------------------------------
+# 2026-10-25 oas2 第 5 层：秘闻首次通关的结果页（胜利 / 排名 / 通关阵容）。通用结果页选区 `C_RANDOM_DEFAULT`
+# 整块落在「通关阵容」面板里，锚点 (869, 555) 点满 9 次后 GameStuckError（10-12、10-19 同一类）。
+# 修复：`_handle_result` 的选区改走可覆盖的 `_select_result_region`，秘闻覆盖成右侧 / 底部安全区。
+# --------------------------------------------------------------------------------------
+
+class SecretResultRegionTest(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.task = SecretTask.__new__(SecretTask)
+
+    def test_secret_result_page_uses_the_right_or_bottom_safe_region(self):
+        seen = {}
+        for _ in range(SAMPLES):
+            region = self.task._select_result_region()
+            seen[region.name] = seen.get(region.name, 0) + 1
+        self.assertEqual(set(seen), {self.task.C_RANDOM_SAVE_RIGHT.name, self.task.C_RANDOM_SAVE_BOTTOM.name})
+        self.assertNotIn(self.task.C_RANDOM_DEFAULT.name, seen)
+        self.assertGreater(seen[self.task.C_RANDOM_SAVE_RIGHT.name], seen[self.task.C_RANDOM_SAVE_BOTTOM.name])  # 80% / 20%
+
+    def test_session_anchor_lands_in_the_chosen_safe_region(self):
+        for _ in range(200):
+            region = self.task._select_result_region()
+            context = _context()
+            self.task._start_settlement_session(context, region, 'generic_result')
+            self.assertTrue(_in_roi(context.settlement_anchor, region.roi_front), context.settlement_anchor)
+
+    def test_other_tasks_keep_the_default_result_region(self):
+        for task_cls in (GeneralBattle, RealmRaidTask, OrochiTask):
+            with self.subTest(task=task_cls.__module__):
+                self.assertIs(task_cls._select_result_region, GeneralBattle._select_result_region)
+                task = task_cls.__new__(task_cls)
+                self.assertIs(task._select_result_region(), task.C_RANDOM_DEFAULT)
+        self.assertIn('_select_result_region', SecretTask.__dict__)
+
+    def test_handle_result_routes_the_win_page_through_the_hook_and_failures_still_use_save_regions(self):
+        import inspect
+        src = inspect.getsource(GeneralBattle._handle_result)
+        self.assertIn('region_provider = self._select_result_region', src)
+        self.assertNotIn('lambda: self.C_RANDOM_DEFAULT', src)
+        self.assertIn('region_provider = self._pick_save_region', src)

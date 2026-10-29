@@ -212,6 +212,14 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         if error:
             pending_task = error + pending_task
 
+        # 循环控制器（御魂 → 个人突破）借这个钩子暂停普通排期、插入当前步骤；没有设置钩子时什么都不做
+        hook = self.__dict__.get('scheduler_hook')
+        if hook is not None:
+            try:
+                pending_task, waiting_task = hook(self, pending_task, waiting_task)
+            except Exception:
+                logger.exception('Scheduler hook failed, use the original schedule')
+
         self.pending_task = pending_task
         self.waiting_task = waiting_task
 
@@ -305,7 +313,9 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         # 任务预处理
         if not task:
             task = self.task.command
+        # 记下任务自己报告的成功 / 失败（None 表示没有说明），循环用它判断插入任务的业务结果
         task = convert_to_underscore(task)
+        self.__dict__.setdefault('last_task_delay', {})[task] = success
         task_object = getattr(self.model, task, None)
         if not task_object:
             logger.warning(f'No task named {task}')

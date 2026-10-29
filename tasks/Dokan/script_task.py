@@ -22,7 +22,13 @@ from tasks.Component.config_base import Time
 from tasks.Dokan.assets import DokanAssets
 from tasks.Dokan.config import Dokan
 import tasks.Dokan.page as pages
+from tasks.Dokan.welfare import WelfareDokan
 from tasks.GameUi.game_ui import GameUi
+
+
+OWN_DOKAN_MARKER_THRESHOLD = 0.98   # 「建立道馆」入口两种图标的区分阈值，见 ScriptTask.own_dokan_state
+OWN_DOKAN_STATE_TRIES = 3           # strict：图标状态分辨不出时最多看这么多帧
+CREATE_DOKAN_MAX_ROUNDS = 3         # strict：creat_dokan 最多循环这么多轮
 
 
 def position_offset(src, offset: tuple):
@@ -123,6 +129,13 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
             raise TaskEnd
         # 初始化相关动态参数,从配置文件读取相关记录,如果没有当天的记录则设置为默认值
         self.conf.attack_count_config.init_attack_count(callback=self.config.save)
+        if self.conf.dokan_config.welfare_mode:
+            # 福利模式：整个流程在 welfare.py 内完成，不走下面的普通循环；结束后按「道馆已开启」安排下次
+            remaining = WelfareDokan(self).run()
+            self.conf.attack_count_config.set_attack_count(remaining, self.config.save)
+            self.goto_page(pages.page_main)
+            self.next_run(skip_today=False, is_dokan_activated=True)
+            raise TaskEnd
         unknown_page_timer = Timer(10)
         self.goto_page(pages.page_dokan_map)
         try:
@@ -411,8 +424,30 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
             return True
         return False
 
-    def ensure_dokan_created(self) -> bool:
-        """点击道馆状态入口，以是否出现创建确认框判断是否需要创建。"""
+    def own_dokan_state(self):
+        """按高阈值区分「建立道馆」入口的两种图标：'created' / 'uncreated'；两种都像或都不像返回 None。
+
+        两个模板互相匹配分约 0.96（>默认阈值 0.8），默认阈值下两张图会同时命中，不能用来判断状态；
+        用 2026-10-26～28 四张真实截图量得：本图标得分 0.996+，另一张 0.956～0.96，取 0.98 分开。
+        """
+        have = self.appear(self.I_RYOU_DOKAN_HAVE_DOKAN, threshold=OWN_DOKAN_MARKER_THRESHOLD)
+        create = self.appear(self.I_RYOU_DOKAN_CREATE_DOKAN, threshold=OWN_DOKAN_MARKER_THRESHOLD)
+        if have and not create:
+            return 'created'
+        if create and not have:
+            return 'uncreated'
+        return None
+
+    def ensure_dokan_created(self, strict: bool = False) -> bool:
+        """点击道馆状态入口，以是否出现创建确认框判断是否需要创建。
+
+        默认（strict=False）：点了两次都没出确认框就按「已建立」处理（普通模式沿用）。
+        strict=True（福利模式用）：该推断不可靠（点击无效 / 确认框没出来都会被当成已建立），改为只采信
+        高阈值下明确的图标状态：已建立不点击直接返回 True；未建立才点击，两次点击都没弹出确认框则返回 False；
+        状态无法分辨返回 False。返回 True 时页面在道馆地图（建立流程已关闭信息页），是否回到找馆页由调用方确认。
+        """
+        if strict:
+            return self._ensure_dokan_created_strict()
         click_count = 0
         for attempt in range(1, 3):
             self.screenshot()
@@ -453,14 +488,53 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
         )
         return False
 
-    def creat_dokan(self) -> bool:
+    def _ensure_dokan_created_strict(self) -> bool:
+        for attempt in range(1, OWN_DOKAN_STATE_TRIES + 1):
+            self.screenshot()
+            state = self.own_dokan_state()
+            if state == 'created':
+                logger.info('Own Dokan already created (strict marker), skip creating')
+                return True
+            if state == 'uncreated':
+                break
+            logger.warning(f'Own Dokan marker state not clear: attempt={attempt}/{OWN_DOKAN_STATE_TRIES}')
+            sleep(0.5)
+        else:
+            logger.warning('Own Dokan state could not be told apart, cannot confirm whether it exists')
+            return False
+        for attempt in range(1, 3):
+            logger.info(f'Click Dokan create marker: attempt={attempt}/2')
+            self.click(self.I_RYOU_DOKAN_CREATE_DOKAN)
+            if self.wait_until_appear(self.I_RYOU_DOKAN_CREATE_DOKAN_ENSURE, True, 3):
+                logger.info('Create Dokan dialog opened')
+                return self.creat_dokan(strict=True)
+        logger.warning('Dokan create dialog did not open after 2 clicks while the marker says not created; '
+                       'not treated as created')
+        return False
+
+    def creat_dokan(self, strict: bool = False) -> bool:
         # 点击创建道馆
         # 当 成功建立道馆并关闭道馆信息窗口后退出
         #  或 点击创建道馆按钮无反应(道馆已经建立的情况下),5秒后退出
+        # strict=True：循环轮数有界，且信息页关不掉不算成功（默认路径保持原样，只受公共点击保护兜底）
+        rounds = 0
         while True:
+            if strict:
+                rounds += 1
+                if rounds > CREATE_DOKAN_MAX_ROUNDS:
+                    logger.warning('Create Dokan did not reach the info page within the round limit')
+                    return False
             self.screenshot()
             if self.appear(self.I_RYOU_DOKAN_DOKAN_INFO_CLOSE):
-                self.ui_click_until_disappear(self.I_RYOU_DOKAN_DOKAN_INFO_CLOSE)
+                if strict:
+                    closed = self.ui_click_until_disappear(self.I_RYOU_DOKAN_DOKAN_INFO_CLOSE, timeout=10, max_clicks=4)
+                    if not closed:
+                        self.screenshot()
+                        if self.appear(self.I_RYOU_DOKAN_DOKAN_INFO_CLOSE):
+                            logger.warning('Dokan info window could not be closed')
+                            return False
+                else:
+                    self.ui_click_until_disappear(self.I_RYOU_DOKAN_DOKAN_INFO_CLOSE)
                 logger.info("Create Dokan Success")
                 return True
             if self.appear(self.I_RYOU_DOKAN_CREATE_DOKAN_ENSURE):

@@ -22,7 +22,7 @@ from cached_property import cached_property
 from pydantic import BaseModel, ValidationError
 from threading import Thread
 from multiprocessing.queues import Queue
-from module.config.utils import convert_to_underscore
+from module.config.utils import convert_to_underscore, DEFAULT_TIME
 from module.config.config import Config
 from module.device.env import IS_WINDOWS
 from module.base.utils import load_module
@@ -39,13 +39,27 @@ from module.ocr.rpc import (
     set_ocr_model_size,
 )
 from module.script import ScriptRuntimeController, ScriptRuntimeDecision
+from module.script.team_sync import TeamSync
+from module.script.loop_controller import LoopController, LoopParams, set_controller
+from module.instance_sync.team import (
+    GO as TEAM_GO, POSTPONE as TEAM_POSTPONE, WAIT_NOTIFY as TEAM_WAIT_NOTIFY, YIELD_DELAY as TEAM_YIELD_DELAY,
+)
 from tasks.Restart.server_update import delay_pending_tasks_for_server_update, is_server_update_window
 from module.server.log_service import build_error_log_dir_name
 
 _log_switch_lock = threading.Lock()#线程锁
 
+# 循环等待对方 / 等待完成时的检查间隔（秒）
+LOOP_POLL_INTERVAL = 2.0
+# 循环步骤在门口被判推迟时，这些原因说明配置不对，再等也等不到，直接停止循环；其余原因稍后再试
+LOOP_CONFIG_REASONS = ('role_conflict', 'peer_task_off', 'peer_not_paired')
+
 
 class Script:
+    # 类级默认值：不经 __init__ 构造的 Script（测试里常见）也能直接 run
+    _fatigue_prepared_for: str | None = None
+    _run_ended = False
+
     def __init__(self, config_name: str ='oas') -> None:
         logger.hr('Start', level=0)
         self.server = None
@@ -57,6 +71,10 @@ class Script:
         self.config_name = config_name
         # Skip first restart
         self.is_first_task = True
+        # 步骤开始前已经按这个任务建立过疲劳上下文：Script.run 不重复初始化
+        self._fatigue_prepared_for: str | None = None
+        # 本次 Script.run 是否正常走到了任务自己的结束出口（TaskEnd）
+        self._run_ended = False
         # Failure count of tasks
         # Key: str, task name, value: int, failure count
         self.failure_record = {}
@@ -103,10 +121,29 @@ class Script:
                 continue
             if not isinstance(command, dict):
                 continue
+            if command.get('command') == 'loop_cancel':
+                # 界面停止前，父进程让本进程自己把循环写成已取消；boot_id / loop_id 对不上的旧命令会被忽略
+                self.loop_controller.cancel_by_command(command)
+                continue
             if command.get('command') == 'set_fatigue_load_factor':
                 self.fatigue_manager.set_load_factor(command.get('value', 1.1))
                 if self.state_queue:
                     self.state_queue.put({'fatigue': self.fatigue_manager.ui_snapshot()})
+
+    @cached_property
+    def team_sync(self) -> TeamSync:
+        # 每个配置一个进程，loop() 开头就会访问，这个时刻就是脚本启动时刻
+        return TeamSync(self.config_name, started_at=datetime.now())
+
+    @cached_property
+    def loop_controller(self) -> LoopController:
+        # 属于脚本进程：配置对象会反复重载，循环状态不能放在配置里
+        controller = LoopController(self.config_name, notify=self._loop_notify)
+        set_controller(self.config_name, controller)
+        return controller
+
+    def _loop_notify(self, text: str) -> None:
+        self.config.notifier.push(title='御魂循环', content=f'<{self.config_name}> {text}')
 
     @cached_property
     def config(self) -> "Config":
@@ -339,7 +376,7 @@ class Script:
             future (datetime):
 
         Returns:
-            bool: True if wait finished, False if config changed.
+            bool: True if wait finished, False if config changed or the team peer is waiting for me.
         """
         future = future + timedelta(seconds=1)
         self.config.start_watching()
@@ -355,6 +392,11 @@ class Script:
             time.sleep(5)
 
             if self.config.should_reload():
+                return False
+            # 对方在组队任务门口等我：打断空闲等待，回到调度器把那个任务拉到现在（同一次等待只打断一次）
+            peer_task = self.team_sync.peer_request(self.config)
+            if peer_task is not None:
+                logger.info(f'Team sync: peer is waiting at {peer_task}, stop idle wait')
                 return False
 
     @staticmethod
@@ -399,7 +441,13 @@ class Script:
         :return:
         """
         while True:
+            # 对方在某个组队任务门口等我：把我这边的同一任务改成现在运行，按原来的调度顺序排
+            self.team_sync.answer(self.config)
+            self._loop_prepare_schedule()
             task = self.config.get_next()
+            if self._loop_postpone_deferred():
+                del_cached_property(self, "config")
+                continue
             self.config.task = task
             if self.state_queue:
                 self.state_queue.put({"schedule": self.config.get_schedule_data()})
@@ -407,9 +455,15 @@ class Script:
             antiban_wake = self._antiban_wake_time(now)
             if antiban_wake is not None:
                 task.next_run = max(task.next_run, antiban_wake)
+            rest_until = antiban_wake if antiban_wake is not None and antiban_wake > now else None
+            self.team_sync.on_schedule(self.config, task.command, task.next_run, rest_until=rest_until)
             # 任务时间到了返回任务名称
             if task.next_run <= now:
                 return task.command
+            if self.loop_controller.live:
+                # 循环进行中没有可跑的任务（等对方完成 / 等未恢复的任务）：短间隔检查，不睡到下一个任务
+                self._loop_idle_poll()
+                continue
             # 根据策略执行等待逻辑
             decision = self.runtime.handle_wait_during_idle(task.next_run)
             if decision == ScriptRuntimeDecision.RESCHEDULE:
@@ -418,6 +472,136 @@ class Script:
             elif decision == ScriptRuntimeDecision.FAILED:
                 logger.warning('Idle wait preparation failed, reload config and retry scheduling')
                 del_cached_property(self, "config")
+
+    def _loop_prepare_schedule(self) -> None:
+        """每次取任务前：消费一次性开关、把循环钩子挂到当前的配置对象上。"""
+        try:
+            self._loop_consume_request()
+            controller = self.loop_controller
+            controller.bind_board(self.team_sync.board)
+            self.config.scheduler_hook = controller.schedule_hook
+            if controller.live:
+                self.team_sync.loop_allows = lambda name: controller.outranks_current_step(self.config, name)
+                self.team_sync.loop_step_task = controller.current_step()
+                rank_of = controller.rank_of(self.config)
+                self.team_sync.rank_of = rank_of
+                controller.publish_step_rank(rank_of(controller.current_step() or ''))
+                controller.tick()
+            else:
+                self.team_sync.loop_step_task = None
+                self.team_sync.rank_of = None
+                self.team_sync.loop_allows = None
+        except Exception as e:
+            logger.exception(f'Loop schedule preparation failed: {e}')
+
+    def _loop_consume_request(self) -> None:
+        """一次性「开始循环」开关：读到就立刻关回并保存，只提交这一次请求。"""
+        orochi = getattr(self.config.model, 'orochi', None)
+        conf = getattr(orochi, 'loop_config', None)
+        if conf is None or not conf.start_loop:
+            return
+        conf.start_loop = False
+        self.config.save()
+        status = orochi.orochi_config.user_status
+        params = LoopParams(getattr(status, 'value', status), conf.rounds, conf.target_min, conf.target_max)
+        board = self.team_sync._board(self.config)
+        result = self.loop_controller.request_start(params, board)
+        logger.info(f'Loop start request: {result}')
+
+    def _loop_postpone_deferred(self) -> bool:
+        """组队任务只有两边都认为它严格更高才插入；对方不这么认为的，推迟一小段时间。"""
+        names = self.loop_controller.pop_deferred()
+        for name in names:
+            logger.info(f'Loop: peer does not rank {name} above its step, postpone it')
+            self.config.task_delay(task=name, target=datetime.now() + TEAM_YIELD_DELAY, server=False)
+        return bool(names)
+
+    def _loop_idle_poll(self) -> None:
+        if self.config.start_mtime == DEFAULT_TIME:
+            self.config.start_watching()
+        self.loop_controller.tick()
+        time.sleep(LOOP_POLL_INTERVAL)
+        if self.config.should_reload():
+            del_cached_property(self, 'config')
+
+    def _loop_note_recovery(self) -> None:
+        """异常处理里要安排 Restart 之前登记：恢复结束前循环不推进、不解除阻塞。"""
+        try:
+            if self.loop_controller.note_recovery(bool(self.config.model.restart.scheduler.enable)):
+                # 这是异常请求的恢复，不是脚本刚启动时那个可以跳过的 Restart；否则首个任务的准备阶段
+                # 出异常时 Restart 会被跳过，恢复永远结束不了
+                self.is_first_task = False
+        except Exception as e:
+            logger.exception(f'Loop recovery note failed: {e}')
+
+    def _request_restart_recovery(self) -> bool:
+        """异常处理里请求 Restart 恢复：先登记循环恢复，再 `task_call('Restart')`，登记成功之后才改调度状态。
+
+        「脚本启动时跳过首次 Restart」只针对启动时已经到点的例行 / 陈旧 Restart；本进程内由任务运行或准备阶段异常
+        请求的恢复不是它。任务运行中的异常之后 `is_first_task` 本来就会在任务结束处被置 False；准备阶段（首个任务
+        还没真正运行）出异常时没有这一步，请求登记后的下一轮调度会把它当成启动时的 Restart 跳过，这里补上。
+        `task_call` 抛异常或没有登记（返回 False）时不改 `is_first_task`，不假装恢复已经安排。
+        """
+        self._loop_note_recovery()
+        registered = self.config.task_call('Restart')
+        if registered:
+            self.is_first_task = False
+        return bool(registered)
+
+    def _loop_fail_before_exit(self, reason: str) -> None:
+        """进程马上要退出：先把循环写成失败，对方不用等 60 秒才发现。"""
+        try:
+            self.loop_controller.fail(reason)
+        except Exception as e:
+            logger.warning(f'Loop fail note failed: {e}')
+
+    def _prepare_step_fatigue(self, command: str) -> None:
+        """循环步骤的疲劳检查要在会合之前做：先建立任务的疲劳上下文，再检查是否需要休息。"""
+        self.fatigue_manager = get_fatigue_manager(self.config_name, self.config.global_game.fatigue)
+        manager = self.fatigue_manager
+        manager.begin_task(command, load_factor=manager.load_factor, restart=True)
+        manager.begin_global_activity()
+        try:
+            manager.try_break(safe=True)
+        finally:
+            manager.end_global_activity()
+        self._fatigue_prepared_for = command
+
+    def _loop_should_yield(self, task: str) -> bool:
+        """等对方期间，有严格更高优先级的任务到点了就让出：它会排在步骤前面。"""
+        # 对方已经在某个组队任务门口等我、且这个任务按我的位次也严格高于步骤：把它改成现在，下面就会让出
+        self.team_sync.answer(self.config)
+        self.config.update_scheduler()
+        pending = self.config.pending_task
+        return bool(pending) and pending[0].command != task
+
+    def _loop_step_prelude(self, task: str) -> str:
+        """循环步骤的前置：疲劳检查 → 循环会合。返回 'go' 才继续进门口并运行；其余都回调度器。"""
+        controller = self.loop_controller
+        self._prepare_step_fatigue(task)
+        if not controller.check(force=True):
+            return 'stop'
+        self.config.start_watching()
+        waited_since, notified = time.monotonic(), False
+        while True:
+            verdict = controller.barrier()
+            if verdict == 'go':
+                return 'go' if controller.begin_run() else 'stop'
+            if verdict == 'skip':
+                controller.accept_skip()
+                return 'skip'
+            if verdict in ('failed', 'cancelled', 'idle'):
+                return 'stop'
+            time.sleep(LOOP_POLL_INTERVAL)
+            # 等对方不设固定超时；等满一段时间推送一次提醒，但不放弃等待
+            if not notified and time.monotonic() - waited_since >= TEAM_WAIT_NOTIFY.total_seconds():
+                notified = True
+                self._loop_notify(f'循环步骤 {task} 已等待对方 {int(TEAM_WAIT_NOTIFY.total_seconds() // 60)} 分钟，仍在继续等待')
+            if self.config.should_reload():
+                return 'reload'
+            if self._loop_should_yield(task):
+                logger.info(f'Loop step `{task}` yields to a higher priority task')
+                return 'yield'
 
     def exception_handler(self, e: Exception, command: str) -> None:
         # 处理御魂溢出
@@ -488,18 +672,26 @@ class Script:
         self.fatigue_manager = get_fatigue_manager(
             self.config_name, self.config.global_game.fatigue
         )
-        previous_fatigue_task = self.fatigue_manager.task_identity
-        switched = self.fatigue_manager.begin_task(
-            command,
-            load_factor=self.fatigue_manager.load_factor,
-            restart=True,
-        )
-        if switched and self.fatigue_manager.enabled:
-            snapshot = self.fatigue_manager.snapshot()
-            logger.info(
-                f'疲劳任务切换：{previous_fatigue_task or "无"} -> {command}，'
-                f'当前任务疲劳：{snapshot.task:.1f}，总疲劳：{snapshot.global_:.1f}'
+        self._run_ended = False
+        self.config.__dict__['last_task_delay'] = {}
+        # 任务内的业务等待（福利道馆主动离线）从防沉迷活跃时长里扣除，见 `_active_seconds_today`
+        self.config.__dict__['excluded_active_seconds'] = 0.0
+        # 循环步骤已经在会合前按这个任务建立过疲劳上下文并检查过，不重复初始化
+        prepared = self._fatigue_prepared_for == command
+        self._fatigue_prepared_for = None
+        if not prepared:
+            previous_fatigue_task = self.fatigue_manager.task_identity
+            switched = self.fatigue_manager.begin_task(
+                command,
+                load_factor=self.fatigue_manager.load_factor,
+                restart=True,
             )
+            if switched and self.fatigue_manager.enabled:
+                snapshot = self.fatigue_manager.snapshot()
+                logger.info(
+                    f'疲劳任务切换：{previous_fatigue_task or "无"} -> {command}，'
+                    f'当前任务疲劳：{snapshot.task:.1f}，总疲劳：{snapshot.global_:.1f}'
+                )
         self.fatigue_manager.begin_global_activity()
         # 观测：记录一次任务 episode 的耗时与结果，不改变任何异常传播路径
         trace = get_behavior_trace(self.config_name)
@@ -540,6 +732,7 @@ class Script:
         self._active_seconds_today = 0
         self._active_date = date.today()
         self._rest_until = None
+        self.team_sync.start_heartbeat()
 
         # Update GUI 防呆, 读取设置并立刻显示后台模拟器到前台
         if not self.config.script.device.run_background_only and IS_WINDOWS:
@@ -558,6 +751,8 @@ class Script:
                 start_day = date.today()
 
             task = ""
+            loop_step = False
+            self._fatigue_prepared_for = None
             try:
                 # Get task
                 task = self.get_next_task()
@@ -566,6 +761,12 @@ class Script:
                     logger.info('Skip task `Restart` at scheduler start')
                     self.config.task_delay(task='Restart', success=True, server=True)
                     del_cached_property(self, 'config')
+                    continue
+                loop_step = self.loop_controller.is_step(task)
+                # 组队任务的对方确定不会来时，在唤醒模拟器 / 游戏之前就推迟（循环步骤的等待由循环会合负责）
+                team = None if loop_step else self.team_sync.precheck(self.config, task)
+                if team is not None:
+                    self._postpone_team_task(task, team)
                     continue
                 decision = self.runtime.prepare_task_execution(task)
             except Exception as e:
@@ -583,6 +784,32 @@ class Script:
                 del_cached_property(self, 'config')
                 continue
 
+            if loop_step:
+                verdict = self._loop_step_prelude(task)
+                if verdict != 'go':
+                    # 让出 / 重载 / 停止：撤回已发布的就绪，对端不能再凭旧的 ready 放行
+                    self.loop_controller.withdraw_ready()
+                    self._fatigue_prepared_for = None
+                    del_cached_property(self, 'config')
+                    continue
+
+            # 组队任务先和对方实例会合；推迟或配置变了就回去重新调度
+            self.config.start_watching()
+            team = self.team_sync.gate(self.config, task, should_abort=self.config.should_reload,
+                                       loop=self.loop_controller.loop_door() if loop_step else None)
+            if team.action == TEAM_POSTPONE:
+                if loop_step:
+                    self._loop_gate_postponed(team)
+                    continue
+                self._postpone_team_task(task, team)
+                continue
+            if team.action != TEAM_GO:
+                if loop_step:
+                    self.loop_controller.abandon_run()
+                self._fatigue_prepared_for = None
+                del_cached_property(self, 'config')
+                continue
+
             # Run
             logger.info(f'Scheduler: Start task `{task}`')
             self.device.stuck_record_clear()
@@ -590,14 +817,15 @@ class Script:
             logger.hr(task, level=0)
             self.config.model.running_task = task
             _task_start = datetime.now()
-            success = self.run(inflection.camelize(task))
+            try:
+                success = self.run(inflection.camelize(task))
+            finally:
+                self.team_sync.end_task()
             self.config.model.running_task = ''
+            self._loop_after_run(task)
             logger.info(f'Scheduler: End task `{task}`')
             self.is_first_task = False
-            if self._active_date != date.today():
-                self._active_date = date.today()
-                self._active_seconds_today = 0
-            self._active_seconds_today += (datetime.now() - _task_start).total_seconds()
+            self._add_active_seconds(_task_start)
 
             # Check failures
             # failed = deep_get(self.failure_record, keys=task, default=0)
@@ -613,6 +841,7 @@ class Script:
                                 "Please contact developers or try to fix it yourself.")
                 logger.critical('Request human takeover')
                 # 添加失败三次的推送通知
+                self._loop_fail_before_exit('process_exit')
                 self.config.notifier.push(
                     title=f'{I18n.trans_zh_cn(task)}{task}',
                     content=f"<{self.config_name}> 任务连续失败三次，请上线查看"
@@ -633,6 +862,48 @@ class Script:
             else:
                 break
 
+    def _add_active_seconds(self, task_start: datetime) -> None:
+        """把本次任务的墙钟时长累计进防沉迷的当日活跃时长；任务内的业务等待（福利道馆主动离线）扣除。"""
+        if self._active_date != date.today():
+            self._active_date = date.today()
+            self._active_seconds_today = 0
+        excluded = float(self.config.__dict__.pop('excluded_active_seconds', 0.0) or 0.0)
+        self._active_seconds_today += max(0.0, (datetime.now() - task_start).total_seconds() - excluded)
+
+    def _loop_gate_postponed(self, team) -> None:
+        """循环步骤在门口被判推迟：配置类原因停止循环，其余是暂时的，稍后重新走会合。"""
+        controller = self.loop_controller
+        controller.abandon_run()
+        self._fatigue_prepared_for = None
+        if team.reason in LOOP_CONFIG_REASONS:
+            controller.fail(f'config_mismatch:{team.reason}')
+        else:
+            time.sleep(LOOP_POLL_INTERVAL * 5)
+        del_cached_property(self, 'config')
+
+    def _loop_after_run(self, task: str) -> None:
+        """任务跑完：把「是否正常走到结束出口」「任务自己报告的成功」「Restart 恢复结果」交给循环控制器。"""
+        try:
+            outcome = self.last_task_runtime_outcome or {}
+            delay = self.config.__dict__.get('last_task_delay', {})
+            self.loop_controller.after_run(
+                task, ended=self._run_ended,
+                delay_success=delay.get(convert_to_underscore(task)),
+                restart_status=outcome.get('status'),
+            )
+        except Exception as e:
+            logger.exception(f'Loop after-run settle failed: {e}')
+            self._loop_fail_before_exit('settle_error')
+
+    def _postpone_team_task(self, task: str, team) -> None:
+        # server=False：否则服务器刷新时间不是 9 点的任务会被改到明天那个点，覆盖推迟目标
+        self.config.task_delay(task=task, target=team.until, server=False)
+        message = self.team_sync.notice(task, team)
+        if message:
+            self.config.notifier.push(title=f'{I18n.trans_zh_cn(task)}{task}',
+                                      content=f'<{self.config_name}> {message}')
+        del_cached_property(self, 'config')
+
     def _handle_task_exception(self, e: Exception, command: str) -> bool:
         """
         统一处理任务执行 / 准备阶段抛出的异常。
@@ -644,13 +915,14 @@ class Script:
         在内部直接 exit(1)。
         """
         if isinstance(e, TaskEnd):
+            self._run_ended = True
             self._capture_task_runtime_outcome(command)
             return True
 
         if isinstance(e, GameNotRunningError):
             logger.warning(e)
             self.exception_handler(e=e, command=command)
-            self.config.task_call('Restart')
+            self._request_restart_recovery()
             return True
 
         if isinstance(e, (GameStuckError, GameTooManyClickError)):
@@ -661,7 +933,7 @@ class Script:
             logger.warning('If you are playing by hand, please stop Alas')
             self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}',
                                       content=f"<{self.config_name}> GameStuckError or GameTooManyClickError")
-            self.config.task_call('Restart')
+            self._request_restart_recovery()
             self.device.sleep(10)
             return False
 
@@ -671,7 +943,7 @@ class Script:
             self.exception_handler(e=e, command=command)
             logger.warning('An error has occurred in Azur Lane game client, Alas is unable to handle')
             logger.warning(f'Restarting {self.device.package} to fix it')
-            self.config.task_call('Restart')
+            self._request_restart_recovery()
             self.device.sleep(10)
             return False
 
@@ -690,7 +962,7 @@ class Script:
                 title=f'{I18n.trans_zh_cn(command)}{command}',
                 content=f"<{self.config_name}> GamePageUnknownError",
             )
-            self.config.task_call('Restart')
+            self._request_restart_recovery()
             self.device.sleep(10)
             return False
 
@@ -698,6 +970,7 @@ class Script:
             logger.critical(e)
             self.exception_handler(e=e, command=command)
             logger.critical('This is likely to be a mistake of developers, but sometimes just random issues')
+            self._loop_fail_before_exit('process_exit')
             self.config.notifier.push(
                 title=f'{I18n.trans_zh_cn(command)}{command}',
                 content=f"<{self.config_name}> ScriptError",
@@ -708,6 +981,7 @@ class Script:
             logger.critical(e)
             self.exception_handler(e=e, command=command)
             logger.critical('Request human takeover')
+            self._loop_fail_before_exit('process_exit')
             self.config.notifier.push(
                 title=f'{I18n.trans_zh_cn(command)}{command}',
                 content=f"<{self.config_name}> RequestHumanTakeover",
@@ -716,6 +990,7 @@ class Script:
 
         # generic
         logger.exception(e)
+        self._loop_fail_before_exit('process_exit')
         self.exception_handler(e=e, command=command)
         self.save_error_log()
         self.config.notifier.push(

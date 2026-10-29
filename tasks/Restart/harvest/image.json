@@ -56,8 +56,8 @@
   {
     "itemName": "harvest_mail_title",
     "imageName": "harvest_harvest_mail_title.png",
-    "roiFront": "520,48,245,41",
-    "roiBack": "520,48,245,41",
+    "roiFront": "520,58,245,41",
+    "roiBack": "520,58,245,41",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -164,7 +164,7 @@
   {
     "itemName": "system_mail_open",
     "imageName": "harvest_system_mail_open.png",
-    "roiFront": "1186,221,51,112",
+    "roiFront": "1188,217,51,112",
     "roiBack": "1172,184,88,166",
     "method": "Template matching",
     "threshold": 0.8,
@@ -173,7 +173,7 @@
   {
     "itemName": "special_mail_close",
     "imageName": "harvest_special_mail_close.png",
-    "roiFront": "1188,379,53,108",
+    "roiFront": "1189,370,53,108",
     "roiBack": "1164,340,114,178",
     "method": "Template matching",
     "threshold": 0.8,

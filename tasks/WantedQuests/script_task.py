@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import re
+from dataclasses import dataclass
 from datetime import timedelta, time, datetime
 from time import sleep
 
@@ -15,7 +16,7 @@ from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
 from module.click_pipeline import FinalPoint, execute_single_click
-from module.exception import TaskEnd
+from module.exception import GameStuckError, TaskEnd
 from module.image.recipes import match_highlight_rule
 from module.logger import logger
 from tasks.Component.Costume.config import MainType
@@ -27,9 +28,44 @@ from tasks.WantedQuests.config import CooperationType, CooperationSelectMask, WQ
 from tasks.WantedQuests.explore import WQExplore, ExploreWantedBoss
 
 
+# 推荐地点行开头的类型词；「式神碎片」「式神」都按内部「挑战」处理，长词优先避免被短词截断。
+_WQ_TYPE_PREFIXES = tuple(sorted(
+    [('式神碎片', WQType.CHALLENGE), ('式神', WQType.CHALLENGE)]
+    + [(wq_type.value, wq_type) for wq_type in WQType],
+    key=lambda item: len(item[0]),
+    reverse=True,
+))
+# 「数量」之后允许残留的右括号 / 引号；其余残留视为识别异常，不猜数量。
+_WQ_ROW_PATTERN = re.compile(r"(.+?)\(?[数教]量:(\d+)[)\"'”’]*")
+
+
+@dataclass(frozen=True)
+class WQRowReading:
+    """推荐地点单行的读取结论。
+
+    failed（识别 / 解析失败）与 filtered（按业务规则明确跳过）必须分开：
+    只有后者才允许取消追踪去处理下一项，前者要按异常收尾。
+    """
+    index: int
+    status: str  # ok / filtered / failed / absent
+    info: Optional[WQInfo] = None
+    reason: str = ''
+
+
 class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
     WQ_LIST_MAX_SCROLLS = 4
     WQ_LIST_EDGE_MARGIN = 80
+    # 详情打不开时，带新截图重新定位 / 点击的有界次数；超过即按异常收尾，不靠滑动列表掩盖
+    WQ_OPEN_MAX_RETRIES = 2
+    # 推荐信息整体读取失败时，换新截图重读的次数
+    WQ_INFO_READ_ATTEMPTS = 3
+    # 取消追踪：总时限、取消按钮最多点击次数、回到列表需要连续确认的帧数
+    WQ_CANCEL_TIMEOUT = 12
+    WQ_CANCEL_MAX_CLICKS = 3
+    WQ_CANCEL_LIST_CONFIRM_FRAMES = 2
+    # 单次运行允许的「取消追踪跳过」上限，防止取消没生效时反复打开同一悬赏
+    WQ_MAX_SKIPS = 12
+    wq_skip_count = 0
 
     # 追踪界面(显示"前往"按钮的界面,左上角位置,神秘任务不好使)显示以下名称时,任务不再执行
     unwanted_boss_name_list: list = []
@@ -58,6 +94,8 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             raise TaskEnd('WantedQuests')
 
         error_count = 0
+        open_failures = 0
+        self.wq_skip_count = 0
         while 1:
             self.screenshot()
             if not self.is_wq_remained():
@@ -90,11 +128,18 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 sleep(1)
                 continue
             if not self.open_wq_info():
-                error_count += 1
-                if error_count <= self.WQ_LIST_MAX_SCROLLS:
-                    self.swipe(self.S_WQ_LIST_UP, interval=1)
-                    sleep(1)
+                # 列表上已识别到未完成进度却打不开详情：这是识别 / 页面异常，不是「悬赏已完成」，
+                # 不滑动列表、不走正常排期，重试耗尽后抛异常交给调度器（保存现场截图、计失败次数）。
+                open_failures += 1
+                logger.warning(
+                    f'Wanted quest detail not opened ({open_failures}/{self.WQ_OPEN_MAX_RETRIES + 1})'
+                )
+                if open_failures > self.WQ_OPEN_MAX_RETRIES:
+                    raise GameStuckError(
+                        'Wanted quest detail cannot be opened although unfinished progress was recognized'
+                    )
                 continue
+            open_failures = 0
             error_count = 0
             self.execute_mission(total - current)
             sleep(1.5)
@@ -121,14 +166,74 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 )
 
     def open_wq_info(self) -> bool:
-        """打开对应怪物悬赏详情界面"""
+        """打开对应怪物悬赏详情界面；返回 False 表示详情没有被确认打开（不是没有悬赏）"""
         timeout_timer = Timer(5).start()
         while not timeout_timer.reached():
             self.screenshot()
-            if self.appear(self.I_TRACE_TRUE):
+            if self.wq_detail_opened():
                 return True
             self.click(self.O_WQ_TEXT_ALL, interval=1.2)
+        # 最后一次点击可能恰好在超时前生效，用新截图再确认一次
+        self.screenshot()
+        return self.wq_detail_opened()
+
+    def wq_detail_opened(self) -> bool:
+        """详情右下角的「取消追踪」(已追踪) 或「追踪」(未追踪) 按钮任一出现，即详情已打开。
+
+        I_TRACE_TRUE 与主界面的 I_TRACE_DISABLE 外观几乎一致（离线匹配 0.95），
+        所以只能在探索页的详情场景使用，不能拿去判断主界面。
+        """
+        if self.appear(self.I_TRACE_TRUE):
+            return True
+        if self.appear(self.I_TRACE_FALSE):
+            logger.warning('Wanted quest detail opened in untracked state')
+            return True
         return False
+
+    def cancel_wq_trace(self) -> bool:
+        """取消当前悬赏追踪并回到列表；仅在「已取消」且「列表连续稳定出现」时返回 True。
+
+        详情页取消后可能留在未追踪详情，也可能直接关闭：前者用 I_TRACE_FALSE 确认后点红叉关闭，
+        后者必须在点击之后看到探索列表连续多帧才算数，不能只因 I_TRACE_TRUE 消失一帧。
+        """
+        timer = Timer(self.WQ_CANCEL_TIMEOUT).start()
+        cancel_clicks = 0
+        cancelled = False
+        list_frames = 0
+        while not timer.reached():
+            self.screenshot()
+            if self.appear(self.I_TRACE_TRUE):
+                list_frames = 0
+                if cancel_clicks >= self.WQ_CANCEL_MAX_CLICKS:
+                    break
+                if self.appear_then_click(self.I_TRACE_TRUE, interval=1.5):
+                    cancel_clicks += 1
+                    cancelled = True
+                continue
+            if self.appear(self.I_TRACE_FALSE):
+                list_frames = 0
+                cancelled = True
+                self.appear_then_click(self.I_UI_BACK_RED, interval=1.5)
+                continue
+            if self.appear(self.I_CHECK_EXPLORATION):
+                # 没有任何取消证据就在列表上，说明详情根本没开着，不能当作取消成功
+                if not cancelled:
+                    return False
+                list_frames += 1
+                if list_frames >= self.WQ_CANCEL_LIST_CONFIRM_FRAMES:
+                    return True
+                continue
+            list_frames = 0
+        return False
+
+    def skip_current_wq(self, reason: str) -> None:
+        """按业务规则跳过当前悬赏：取消追踪并确认回到列表；取消不成功按异常收尾。"""
+        logger.warning(f'Skip current wanted quest: {reason}')
+        self.wq_skip_count += 1
+        if self.wq_skip_count > self.WQ_MAX_SKIPS:
+            raise GameStuckError('Too many wanted quest skips, cancel trace may not take effect')
+        if not self.cancel_wq_trace():
+            raise GameStuckError(f'Cannot cancel wanted quest trace and return to list ({reason})')
 
     def next_run(self):
         before_end: time = self.get_config().before_end
@@ -262,22 +367,23 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         :return:
         """
         logger.hr('Start wanted quests')
-        if not self.appear(self.I_GOTO_1):
+        if not self.goto_button_visible():
             # 如果没有出现 '前往'按钮， 那就是这个可能是神秘任务但是没有解锁
             logger.info('This is a secret mission but not unlock')
-            self.ui_click(self.I_TRACE_TRUE, self.I_TRACE_FALSE)
+            self.skip_current_wq('secret mission not unlock')
             return False
         # 跳过不想打的
         monster_name = self.O_WQ_MONSTER_TYPE.detect_text(self.device.image)
         if monster_name in self.unwanted_boss_name_list:
             logger.warning(f'unwanted {monster_name}')
-            self.ui_click(self.I_TRACE_TRUE, self.I_TRACE_FALSE)
+            self.skip_current_wq(f'unwanted {monster_name}')
             return False
         # 获取排序后的悬赏信息列表
-        ordered_wq_infos = self.get_ordered_wq_infos(num_want)
+        ordered_wq_infos = self.read_ordered_wq_infos(num_want)
         if not ordered_wq_infos:
+            # read_ordered_wq_infos 已排除识别失败，走到这里只可能是全部被业务规则过滤
             logger.info('Current wanted quest skipped all, cancel it')
-            self.ui_click(self.I_TRACE_TRUE, self.I_TRACE_FALSE)
+            self.skip_current_wq('all recommendations filtered by rules')
             return False
         wq_call_dict: dict[WQType, Callable] = {
             WQType.CHALLENGE: self.challenge,
@@ -288,7 +394,7 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         wq_info = self.get_need_exec_wq(ordered_wq_infos)
         if not wq_info:
             logger.info('Current wanted quests can not be executed')
-            self.ui_click(self.I_TRACE_TRUE, self.I_TRACE_FALSE)
+            self.skip_current_wq('no executable recommendation')
             return False
         try:
             logger.info(f'Choose wq: {wq_info}')
@@ -310,59 +416,116 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             return wq_info
         return None
 
+    def goto_button_visible(self) -> bool:
+        """详情刚打开的几帧里按钮可能还没画全，缺失需连续多帧确认才算「没有前往按钮」。"""
+        for attempt in range(3):
+            if self.appear(self.I_GOTO_1):
+                return True
+            if attempt < 2:
+                sleep(0.5)
+                self.screenshot()
+        return False
+
+    def read_ordered_wq_infos(self, num_want: int) -> List[WQInfo]:
+        """读取并排序推荐地点；全部是识别失败时换新截图重读，仍失败则按异常收尾。
+
+        识别失败（failed）不能当作「被规则跳过」：否则会取消追踪或让任务被排到明天。
+        """
+        for attempt in range(self.WQ_INFO_READ_ATTEMPTS):
+            readings = self.read_wq_rows(num_want)
+            ordered = self.order_wq_infos(readings)
+            failed = [r for r in readings if r.status == 'failed']
+            if ordered or not failed:
+                if failed:
+                    logger.warning(
+                        'Some wanted quest recommendation rows are unreadable: '
+                        f'{[(r.index, r.reason) for r in failed]}, use other readable rows'
+                    )
+                return ordered
+            logger.warning(
+                f'Wanted quest recommendations unreadable ({attempt + 1}/{self.WQ_INFO_READ_ATTEMPTS}): '
+                f'{[(r.index, r.reason) for r in failed]}'
+            )
+            if attempt + 1 < self.WQ_INFO_READ_ATTEMPTS:
+                sleep(0.5)
+                self.screenshot()
+        raise GameStuckError('Wanted quest recommendation rows cannot be recognized')
+
     def get_ordered_wq_infos(self, num_want: int) -> List[WQInfo]:
         """获取当前悬赏妖怪页面排好序的信息列表, 会自动排除无法执行的悬赏"""
-        wq_type_ocr = [self.O_WQ_TYPE_1, self.O_WQ_TYPE_2, self.O_WQ_TYPE_3, self.O_WQ_TYPE_4]
-        wq_info_ocr = [self.O_WQ_INFO_1, self.O_WQ_INFO_2, self.O_WQ_INFO_3, self.O_WQ_INFO_4]
-        goto_btn_list = [self.I_GOTO_1, self.I_GOTO_2, self.I_GOTO_3, self.I_GOTO_4]
-        wq_info_list = []
-        for i in range(4):
-            wq_info = self.build_wq_info(wq_type_ocr[i], wq_info_ocr[i], goto_btn_list[i], num_want)
-            if not wq_info:
-                continue
-            # 跳过高层秘闻
-            if wq_info.dest[-1] in {"捌", "玖", "拾", "番外"}:
-                logger.warning('This secret layer is too high, skip')
-                continue
-            # 跳过已经执行过的(例:都是探索第5层4只怪, 上次计算需要打2次但是这次还是打2次, 肯定出问题了也不需要执行了)
-            if wq_info in self.wq_executed_set:
-                logger.warning('This wanted quest has been executed, skip')
-                continue
-            wq_info_list.append(wq_info)
-        # 排序
+        return self.order_wq_infos(self.read_wq_rows(num_want))
+
+    def order_wq_infos(self, readings: List[WQRowReading]) -> List[WQInfo]:
+        wq_info_list = [r.info for r in readings if r.status == 'ok']
         type_ordered_list = self.get_config()._wq_type_ordered_list
         wq_info_list.sort(key=lambda x: type_ordered_list.index(x.type))
         return wq_info_list
 
-    def build_wq_info(self, type_rule: RuleOcr, info_rule: RuleOcr, goto_btn_rule: RuleImage, num_want: int) -> Optional[WQInfo]:
+    def read_wq_rows(self, num_want: int) -> List[WQRowReading]:
+        """逐行读取推荐地点；第 i 行始终绑定自己的 I_GOTO_i，某行失败 / 被过滤不影响其他行的按钮。"""
+        wq_info_ocr = [self.O_WQ_INFO_1, self.O_WQ_INFO_2, self.O_WQ_INFO_3, self.O_WQ_INFO_4]
+        goto_btn_list = [self.I_GOTO_1, self.I_GOTO_2, self.I_GOTO_3, self.I_GOTO_4]
+        return [
+            self.build_wq_info(i + 1, wq_info_ocr[i], goto_btn_list[i], num_want)
+            for i in range(4)
+        ]
+
+    @staticmethod
+    def parse_wq_row_text(text: str) -> Optional[tuple[WQType, str, int]]:
+        """解析整行「类型 目的地(数量:n)」；任何一段缺失 / 异常都返回 None，不猜类型或数量。"""
+        normalized = ''.join(str(text).split())
+        normalized = normalized.replace('：', ':').replace('（', '(').replace('）', ')')
+        for prefix, wq_type in _WQ_TYPE_PREFIXES:
+            if normalized.startswith(prefix):
+                rest = normalized[len(prefix):]
+                break
+        else:
+            return None
+        match = _WQ_ROW_PATTERN.fullmatch(rest)
+        if not match:
+            return None
+        dest = match.group(1).rstrip('(').strip()
+        number = int(match.group(2))
+        if not re.search(r'\w', dest) or number <= 0:
+            return None
+        return wq_type, dest, number
+
+    def build_wq_info(self, index: int, info_rule: RuleOcr, goto_btn_rule: RuleImage, num_want: int) -> WQRowReading:
         """
         构建单条悬赏信息
-        :param type_rule: 悬赏类型
-        :param info_rule: 悬赏信息
-        :param goto_btn_rule: 前往按钮
+        :param index: 行号(1-4)
+        :param info_rule: 整行 OCR（类型 + 目的地 + 数量）
+        :param goto_btn_rule: 本行前往按钮
         :param num_want: 想要攻击的数量
-        :return: WQInfo
         """
-        wq_type_txt = type_rule.ocr(self.device.image)
-        # 适配老逻辑, 将式神碎片改为挑战
-        wq_type_txt = '挑战' if wq_type_txt == '式神' else wq_type_txt
-        if wq_type_txt == '' or not WQType.contains(wq_type_txt):
-            logger.warning(f'Unknown wq type: {wq_type_txt}')
-            return None
-        wq_type = WQType(wq_type_txt)
+        text = info_rule.ocr(self.device.image)
+        goto_visible = self.appear(goto_btn_rule)
+        parsed = self.parse_wq_row_text(text)
+        if parsed is None:
+            if not str(text).strip() and not goto_visible:
+                # 没有文字也没有前往按钮：这一行本来就不存在（推荐不足四条）
+                return WQRowReading(index, 'absent')
+            logger.warning(f'Unknown wq info (row {index}): {text!r}')
+            return WQRowReading(index, 'failed', reason=f'unparsable {text!r}')
+        wq_type, wq_dest, wq_number = parsed
         type_ordered_list = self.get_config()._wq_type_ordered_list
         if wq_type not in type_ordered_list:
             logger.warning(f'{wq_type.value} is not in the order list')
-            return None
-        wq_info_txt = info_rule.ocr(self.device.image)
-        wq_info_txt = wq_info_txt.replace('：', ':').replace('（', '(').replace('）', ')')
-        match = re.search(r"(.+?)\s*\(?[数教]量[:：]\s*(\d+)", wq_info_txt)
-        if not match:
-            logger.warning(f'Unknown wq info: {wq_info_txt}')
-            return None
-        wq_dest, wq_number = match.group(1).strip(), int(match.group(2))
+            return WQRowReading(index, 'filtered', reason='type not in priority')
+        # 跳过高层秘闻
+        if any(wq_dest.endswith(layer) for layer in ("捌", "玖", "拾", "番外")):
+            logger.warning('This secret layer is too high, skip')
+            return WQRowReading(index, 'filtered', reason='high secret layer')
+        if not goto_visible:
+            logger.warning(f'Goto button of row {index} not visible')
+            return WQRowReading(index, 'failed', reason='goto button not visible')
         do_num = num_want // wq_number + (num_want % wq_number > 0)
-        return WQInfo(wq_type, wq_dest, wq_number, goto_btn_rule, do_num)
+        wq_info = WQInfo(wq_type, wq_dest, wq_number, goto_btn_rule, do_num)
+        # 跳过已经执行过的(例:都是探索第5层4只怪, 上次计算需要打2次但是这次还是打2次, 肯定出问题了也不需要执行了)
+        if wq_info in self.wq_executed_set:
+            logger.warning('This wanted quest has been executed, skip')
+            return WQRowReading(index, 'filtered', reason='already executed')
+        return WQRowReading(index, 'ok', info=wq_info)
 
     def challenge(self, goto_btn, num):
         self.ui_click(goto_btn, self.I_WQC_FIRE)

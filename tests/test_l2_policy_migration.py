@@ -178,7 +178,9 @@ INVENTORY = [
     ('tasks/ActivityShikigami/page.py', 'handle_activity_story', 'appear_then_click', 'ActivityShikigamiAssets.I_CONFIRM_SKIP', 'IMMEDIATE', 'KEEP_IMMEDIATE'),
     ('tasks/ActivityShikigami/page.py', 'handle_activity_overlay', 'appear_then_click', 'ActivityShikigamiAssets.I_ACTIVITY_SIGNIN_CLOSE', 'IMMEDIATE', 'KEEP_IMMEDIATE'),
     ('tasks/ActivityShikigami/base_act.py', '_handle_result', 'appear_then_click', 'self.I_UI_BACK_RED', 'IMMEDIATE', 'KEEP_SPECIAL'),
-    ('tasks/ActivityShikigami/base_act.py', 'switch_soul_for', 'ui_click', 'enter_button', 'IMMEDIATE', 'KEEP_IMMEDIATE'),
+    # 2026-10-20 首领爬塔适配：式神录入口与队伍锁定同步的 `ui_click` 换成同语义的有界版
+    # `ui_click_until_appear_or_timeout`（调用点数量、目标、立即点击语义都不变，只多了超时）。
+    ('tasks/ActivityShikigami/base_act.py', 'switch_soul_for', 'ui_click_until_appear_or_timeout', 'enter_button', 'IMMEDIATE', 'KEEP_IMMEDIATE'),
     ('tasks/ActivityShikigami/activities/normal.py', '_run_climb_type', 'click', 'pages.random_click(ltrb=(False, False, True, False))', 'IMMEDIATE', 'KEEP_SPECIAL'),
     # 2026-09-23：爬塔线专用结算单击改造，`NormalClimbAct._handle_result` / `_handle_reward`
     # 接管 GeneralBattle 原有实现（只在本线生效，见 `_climb_owns_settlement_single_click`），
@@ -191,8 +193,8 @@ INVENTORY = [
     ('tasks/ActivityShikigami/activities/normal.py', '_enter_climb_battle', 'appear_then_click', 'self.I_UI_CONFIRM_SAMLL', 'IMMEDIATE', 'KEEP_SPECIAL'),
     ('tasks/ActivityShikigami/activities/normal.py', '_enter_climb_battle', 'appear_then_click', 'self.I_UI_CONFIRM', 'IMMEDIATE', 'KEEP_SPECIAL'),
     ('tasks/ActivityShikigami/activities/normal.py', '_enter_climb_battle', 'appear_then_click', 'fire_rule', 'IMMEDIATE', 'ALREADY_L2'),
-    ('tasks/ActivityShikigami/activities/normal.py', '_sync_climb_team_lock', 'ui_click', 'unlock_rule', 'IMMEDIATE', 'KEEP_IMMEDIATE'),
-    ('tasks/ActivityShikigami/activities/normal.py', '_sync_climb_team_lock', 'ui_click', 'lock_rule', 'IMMEDIATE', 'KEEP_IMMEDIATE'),
+    ('tasks/ActivityShikigami/activities/normal.py', '_sync_climb_team_lock', 'ui_click_until_appear_or_timeout', 'unlock_rule', 'IMMEDIATE', 'KEEP_IMMEDIATE'),
+    ('tasks/ActivityShikigami/activities/normal.py', '_sync_climb_team_lock', 'ui_click_until_appear_or_timeout', 'lock_rule', 'IMMEDIATE', 'KEEP_IMMEDIATE'),
     ('tasks/ActivityShikigami/activities/fake_god.py', 'run_fakegod', 'click', 'pages.random_click(ltrb=(False, False, True, False))', 'IMMEDIATE', 'KEEP_SPECIAL'),
     ('tasks/ActivityShikigami/activities/fake_god.py', '_enter_fakegod_battle', 'appear_then_click', 'self.I_UI_CONFIRM_SAMLL', 'IMMEDIATE', 'KEEP_SPECIAL'),
     ('tasks/ActivityShikigami/activities/fake_god.py', '_enter_fakegod_battle', 'appear_then_click', 'self.I_UI_CONFIRM', 'IMMEDIATE', 'KEEP_SPECIAL'),

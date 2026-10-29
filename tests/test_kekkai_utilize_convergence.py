@@ -22,6 +22,7 @@ from tasks.KekkaiUtilize.script_task import ScriptTask as KU
 from tests.test_kekkai_utilize_retry_scheduler import (
     NOW, SchedulerHarness, _ended_with_task_end, _run, _task,
 )
+from tests.test_kekkai_utilize_state import _patch_now
 
 MAX = KU.UTILIZE_MAX_ATTEMPTS
 HARD_LIMIT = 60          # 测试自身的安全上限：远大于 MAX，被突破说明保护失效
@@ -218,10 +219,12 @@ class ConvergenceGuardTest(TestCase):
         t.set_next_run.assert_called_once()                      # 只尝试写一次，没有第二次补写
 
     def test_case10_system_errors_are_not_swallowed_by_the_guard(self):
-        # 育成页导航异常本来就没有业务捕获：原样上抛，不写 next_run
+        # 育成页导航异常本来就没有业务捕获：原样上抛，不写 next_run。
+        # 时间固定在 14:00：测试配置的静默窗口是 0–7 点，按真实时间在这个时段跑会被入口守卫直接 TaskEnd
         t = _stuck_task(add=(True,))
         t.goto_page = Mock(side_effect=[True, True, True] + [GameStuckError('growth')] * 3)
-        with patch('tasks.KekkaiUtilize.script_task.time.sleep'), self.assertRaises(GameStuckError):
+        with _patch_now(NOW), patch('tasks.KekkaiUtilize.script_task.time.sleep'), \
+                self.assertRaises(GameStuckError):
             t.run()
         t.set_next_run.assert_not_called()
         # 搜索 / 放置里未被既有业务捕获的异常同样原样上抛
@@ -229,7 +232,8 @@ class ConvergenceGuardTest(TestCase):
             with self.subTest(attr=attr):
                 t = _stuck_task(add=(True,))
                 setattr(t, attr, Mock(side_effect=RuntimeError('boom')))
-                with patch('tasks.KekkaiUtilize.script_task.time.sleep'), self.assertRaises(RuntimeError):
+                with _patch_now(NOW), patch('tasks.KekkaiUtilize.script_task.time.sleep'), \
+                        self.assertRaises(RuntimeError):
                     t.run()
                 t.set_next_run.assert_not_called()
 

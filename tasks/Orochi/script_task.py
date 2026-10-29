@@ -2,7 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import random
-from time import sleep
+from time import sleep, monotonic
 from datetime import time, datetime, timedelta
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 
@@ -19,6 +19,8 @@ from tasks.TrueOrochi.assets import TrueOrochiAssets
 from module.logger import logger
 from module.click_pipeline import execute_single_click, list_click_target
 from module.exception import TaskEnd
+from module.instance_sync.team import get_session
+from module.script.loop_controller import get_step_controller
 from module.base.timer import Timer
 from module.base.utils.random import random_delay
 from module.interaction_policy import InteractionPolicy, fire_reaction_range
@@ -30,9 +32,69 @@ from tasks.Orochi.page import page_orochi
 OROCHI_FIRE_MAX_TRIES = 4
 OROCHI_FIRE_TIMEOUT = 10
 OROCHI_FIRE_POST_CLICK_TIMEOUT = 3
+# 队员读队长进度的间隔（秒）：主循环每帧都会走到，不能每帧读文件
+OROCHI_TEAM_POLL_INTERVAL = 2.0
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets, TrueOrochiAssets):
+    # 组队同步会合后的这一次组队；没有（没开 / 单人 / 出错）时全部走原来的逻辑
+    team_session = None
+    _leader_checked_at = 0.0
+    _leader_progress = None
+    # 御魂 → 个人突破 循环的控制器；只有本次运行正是循环的御魂步骤时才有，普通运行为 None，走原来的逻辑
+    loop = None
+    # 本次开战尝试的证据（循环的可信计数用）：先看到准备 / 战斗页确认是新战斗，之后看到结算 / 奖励页才算一场；
+    # 只见到结算页是上一场残留的，不能证明有新战斗
+    _battle_seen = False
+    _result_seen = False
+
+    def _may_fire(self) -> bool:
+        # 外层检查之后 run_invite 可能等很久，真正点「挑战」之前再确认一次循环还有效；普通运行不受影响
+        return self.loop is None or self.loop.check(force=True)
+
+    def _handle_prepare(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        self._battle_seen = True
+        return super()._handle_prepare(context, config)
+
+    def _handle_in_battle(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        self._battle_seen = True
+        return super()._handle_in_battle(context, config)
+
+    def _team_report(self, done: bool = False) -> None:
+        if self.team_session is not None:
+            self.team_session.report(self.current_count, done)
+
+    def _member_count_reached(self) -> bool:
+        """队员是否因为次数退出。有组队会话时以队长为准：队长打完（或离开）才走，次数对齐到队长的。
+
+        两边各数各的会差一次（队长点了挑战却没真正开战也会 +1），队长先走队员空等邀请，队员先走队长邀请失败。
+        """
+        if self.loop is not None:
+            # 循环里队员以队长上报的「这一批是否完成」为准，不用自己数的次数
+            state = self.loop.member_batch_state()
+            if state == 'running':
+                return False
+            logger.info(f'Loop: leader batch {state}')
+            return True
+        session = self.team_session
+        if session is None:
+            if self.current_count >= self.limit_count:
+                logger.info('Orochi count limit out')
+                return True
+            return False
+        now = monotonic()
+        if self._leader_progress is None or now - self._leader_checked_at >= OROCHI_TEAM_POLL_INTERVAL:
+            self._leader_checked_at = now
+            self._leader_progress = session.peer_progress()
+        progress = self._leader_progress
+        if not progress.finished:
+            return False
+        if progress.count is not None:
+            logger.info(f'Team sync: leader finished Orochi at {progress.count}, member counted {self.current_count}')
+            self.current_count = progress.count
+        else:
+            logger.info(f'Team sync: leader left Orochi, member counted {self.current_count}')
+        return True
 
     def _orochi_battle_key(self) -> str:
         return f"orochi_{self.config.orochi.orochi_config.layer}"
@@ -55,12 +117,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         return True
 
     def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        self._result_seen = self._result_seen or self._battle_seen
         if self._close_orochi_soul_choice_popup():
             context.reward_no_battle_ts = None
             return BattleAction.CONTINUE
         return super()._handle_result(context, config)
 
     def _handle_reward(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        self._result_seen = self._result_seen or self._battle_seen
         if self._close_orochi_soul_choice_popup():
             context.reward_no_battle_ts = None
             return BattleAction.CONTINUE
@@ -94,7 +158,19 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         limit_time = self.config.orochi.orochi_config.limit_time
         self.current_count = 0
         self.limit_count: int = limit_count
+        self.team_session = get_session(getattr(self.config, 'config_name', ''), 'Orochi')
+        self._leader_progress = None
         self.limit_time: timedelta = timedelta(hours=limit_time.hour, minutes=limit_time.minute, seconds=limit_time.second)
+        self.loop = get_step_controller(getattr(self.config, 'config_name', ''), 'Orochi')
+        if self.loop is not None:
+            # 循环的目标场数替代普通的次数和时长限制
+            self.limit_count = 1 << 30
+            self.limit_time = timedelta(days=3650)
+            status = self.config.orochi.orochi_config.user_status
+            if status not in (UserStatus.LEADER, UserStatus.MEMBER) or status.value != self.loop.snapshot()['role']:
+                logger.error('Orochi user status changed during the loop, stop it')
+                self.loop.fail('role_changed')
+                raise TaskEnd
 
         config: Orochi = self.config.orochi
         if not self.is_in_battle(True):
@@ -186,6 +262,14 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 这个时候我已经进入房间了哦
         while 1:
             self.screenshot()
+            if self.loop is not None:
+                if not self.loop.check():
+                    logger.info('Loop stopped, no more battles')
+                    success = False
+                    break
+                if self.loop.remaining() <= 0 and self.is_in_room():
+                    logger.info('Loop batch target reached')
+                    break
             if self.current_count >= self.limit_count:
                 if self.is_in_room():
                     logger.info('Orochi count limit out')
@@ -203,31 +287,25 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
             # 点击挑战
             if not is_first:
-                if self.run_invite(config=self.config.orochi.invite_config,
-                   fire_reaction=self.config.orochi.fire_reaction):
-                    self.run_general_battle(
-                        config=self.config.orochi.general_battle_config,
-                        battle_key=self._orochi_battle_key()
-                    )
-                else:
+                if not self._leader_fight_once(is_first=False):
                     # 邀请失败，退出任务
                     logger.warning('Invite failed and exit this orochi task')
                     success = False
                     break
             # 第一次会邀请队友
             if is_first:
-                if not self.run_invite(config=self.config.orochi.invite_config, is_first=True,
-                       fire_reaction=self.config.orochi.fire_reaction):
+                if not self._leader_fight_once(is_first=True):
                     logger.warning('Invite failed and exit this orochi task')
                     success = False
                     break
                 else:
                     is_first = False
-                    self.run_general_battle(
-                        config=self.config.orochi.general_battle_config,
-                        battle_key=self._orochi_battle_key()
-                    )
 
+        # 队长说了算：先告诉队员打完了（次数、时间、邀请失败三种退出都经过这里），队员不用空等邀请超时
+        self._team_report(done=True)
+        if self.loop is not None:
+            # 这一批是否完成由循环的可信计数决定，不用 current_count
+            self.loop.report_batch(ok_if_reached=success)
         # 当结束或者是失败退出循环的时候只有两个UI的可能，在房间或者是在组队界面
         # 如果在房间就退出
         if self.exit_room():
@@ -237,6 +315,40 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             pass
         if not success:
             return False
+        return True
+
+    def _battle_config(self) -> GeneralBattleConfig:
+        """循环里关掉内部连战，保证每一场都能单独确认；只改本次调用用的拷贝，不动用户配置。"""
+        config = self.config.orochi.general_battle_config
+        if self.loop is not None and config.continuous_battle:
+            return config.model_copy(update={'continuous_battle': False})
+        return config
+
+    def _leader_fight_once(self, is_first: bool) -> bool:
+        """队长邀请并打一场。返回 False 表示邀请失败。
+
+        循环模式下的可信计数：邀请前先记下「可能开战」；邀请没进战斗且没点过挑战按钮则撤销；
+        进入战斗并且看到结算页才记一场，其余情况无法确认，由控制器停止循环。
+        """
+        if self.loop is not None:
+            self.loop.attempt_begin()
+            self.fire_click_issued = False
+            self._battle_seen = False
+            self._result_seen = False
+        invited = self.run_invite(config=self.config.orochi.invite_config, is_first=is_first,
+                                  fire_reaction=self.config.orochi.fire_reaction)
+        if not invited:
+            if self.loop is not None:
+                self.loop.attempt_cancelled(self.fire_click_issued)
+            return False
+        self.run_general_battle(
+            config=self._battle_config(),
+            battle_key=self._orochi_battle_key()
+        )
+        self._team_report()
+        if self.loop is not None:
+            self.loop.attempt_resolved(fire_clicked=self.fire_click_issued, battle_seen=self._battle_seen,
+                                       result_seen=self._result_seen)
         return True
 
     def run_member(self):
@@ -249,8 +361,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
-            if self.current_count >= self.limit_count:
-                logger.info('Orochi count limit out')
+            if self._member_count_reached():
                 break
             if datetime.now() - self.start_time >= self.limit_time:
                 logger.info('Orochi time limit out')
@@ -263,7 +374,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 self.device.stuck_record_clear()
                 if self.wait_battle(wait_time=self.config.orochi.invite_config.wait_time):
                     self.run_general_battle(
-                        config=self.config.orochi.general_battle_config,
+                        config=self._battle_config(),
                         battle_key=self._orochi_battle_key()
                     )
                 else:
@@ -271,7 +382,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 队长秒开的时候，检测是否进入到战斗中
             if self.is_in_battle(False):
                 self.run_general_battle(
-                    config=self.config.orochi.general_battle_config,
+                    config=self._battle_config(),
                     battle_key=self._orochi_battle_key()
                 )
 

@@ -39,6 +39,7 @@ from tasks.Delegation.config import Delegation
 from tasks.WantedQuests.config import WantedQuests
 from tasks.Tako.config import Tako
 from tasks.AutoCheckinBigGod.config import AutoCheckinBigGod
+from tasks.XinLan.config import XinLan
 # ----------------------------------------------------------------------------------------------------------------------
 from tasks.Orochi.config import Orochi
 from tasks.OrochiMoans.config import OrochiMoans
@@ -84,6 +85,13 @@ from tasks.MysteryShop.config import MysteryShop
 from tasks.Duel.config import Duel
 from tasks.Chess.config import Chess
 # ----------------------------------------------------------------------------------------------------------------------
+from tasks.ActivityShikigami.args_layout import build_args_layout as activity_shikigami_args_layout
+
+# 目前只有式神活动提供展示信息，其他任务不推广
+TASK_ARGS_LAYOUTS = {
+    'activity_shikigami': activity_shikigami_args_layout,
+}
+
 
 class ConfigModel(ConfigBase):
     config_name: str = "oas"
@@ -111,6 +119,7 @@ class ConfigModel(ConfigBase):
     wanted_quests: WantedQuests = Field(default_factory=WantedQuests)
     tako: Tako = Field(default_factory=Tako)
     auto_checkin_big_god: AutoCheckinBigGod = Field(default_factory=AutoCheckinBigGod)
+    xin_lan: XinLan = Field(default_factory=XinLan)
 
     # 这些是刷御魂的
     orochi: Orochi = Field(default_factory=Orochi)
@@ -451,6 +460,18 @@ class ConfigModel(ConfigBase):
             result[key] = merge_value(groups_value[key], value, schema["$defs"], model=getattr(task, key, None))
 
         return result
+
+    def script_task_layout(self, task: str) -> dict:
+        """
+        GET /{script}/{task}/args/layout：可选的配置页展示信息，只读。
+        /args 的输出不受影响；没有展示信息的任务返回空字典，前端按原样渲染
+        """
+        task = convert_to_underscore(task)
+        builder = TASK_ARGS_LAYOUTS.get(task)
+        task_object = getattr(self, task, None)
+        if builder is None or task_object is None:
+            return {}
+        return builder(task_object)
 
     def script_set_arg(self, task: str, group: str, argument: str, value) -> bool:
         # 验证参数

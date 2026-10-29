@@ -28,6 +28,12 @@ class DailyTriflesAssets:
 	I_ENTER_DAILY = RuleImage(roi_front=(1131,122,84,76), roi_back=(1117,98,136,226), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_enter_daily.png")
 	# 右上角检查是否在日常中 
 	I_CHECK_IN_DAILY = RuleImage(roi_front=(1131,115,106,88), roi_back=(1128,94,151,281), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_check_in_daily.png")
+	# 是否完成所有庭院事务 
+	I_IS_COMPLETE = RuleImage(roi_front=(985,138,112,75), roi_back=(973,128,135,96), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_is_complete.png")
+	# 庭院事务一键完成奖励页面 
+	I_DAILYFFAIR_REWARD = RuleImage(roi_front=(302,29,187,49), roi_back=(279,17,231,71), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_dailyffair_reward.png")
+	# 庭院12、20点的体力 
+	I_COURTYARD_SUSHI = RuleImage(roi_front=(1000,433,24,24), roi_back=(781,331,343,231), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_courtyard_sushi.png")
 
 
 	# Image Rule Assets
@@ -96,6 +102,8 @@ class DailyTriflesAssets:
 	I_HARVEST_MAIL_CONFIRM = RuleImage(roi_front=(672,543,183,64), roi_back=(672,543,183,64), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_harvest_mail_confirm.png")
 	# 右上角的邮件图标 
 	I_DT_HARVEST_MAIL_COPY2 = RuleImage(roi_front=(1158,18,22,20), roi_back=(1127,0,61,56), threshold=0.9, method="Template matching", file="./tasks/DailyTrifles/dt/dt_harvest_mail_copy2.png")
+	# 获得插画标识 
+	I_GET_PICTURE = RuleImage(roi_front=(515,74,249,43), roi_back=(478,41,342,89), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_get_picture.png")
 
 
 	# Ocr Rule Assets

@@ -45,7 +45,6 @@ SCAN_TOP = ('tasks', 'module')
 # 项目决定 / 分支归属：整体排除 L2 reaction / 业务迁移。L1 点击执行入口不豁免（Stage 3B 起，见 click_entry_guard）
 EXCLUDED_MODULES = {
     'WeeklyPurchase': 'WeeklyPurchase 按项目决定排除（不做 Reaction Policy / FIRE 改造；L1 执行入口不豁免）',
-    'DailyTrifles': 'synevo 小号轮换业务，不做 L2 迁移（L1 执行入口不豁免）',
     'AccountRotation': 'synevo 小号轮换业务，不做 L2 迁移（L1 执行入口不豁免）',
     'MultiAccountEvo': 'synevo 小号轮换业务，不做 L2 迁移（L1 执行入口不豁免）',
     'tasks/Component/SwitchAccount': 'synevo 小号轮换业务，不做 L2 迁移（L1 执行入口不豁免）',

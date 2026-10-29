@@ -26,7 +26,7 @@ class MC(str, Enum):
 
 
 class MissionsConfig(BaseModel):
-    missions_select: MC = Field(default=MC.AW1, description='选择远远不够对应的任务')
+    missions_select: MC = Field(default=MC.AW1, description='选择远远不够对应的任务\n只做这个任务：一直点「换一个」直到出现为止；换不动时不捐任何东西，1 小时后再试')
 
 
 class CollectiveMissions(ConfigBase):

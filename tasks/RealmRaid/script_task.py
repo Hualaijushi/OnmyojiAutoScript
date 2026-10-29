@@ -19,6 +19,7 @@ from tasks.RealmRaid.page import page_shikigami_records
 
 from module.logger import logger
 from module.exception import TaskEnd
+from module.script.loop_controller import get_step_controller
 from module.base.timer import Timer
 from module.base.utils.random import random_delay
 from module.atom.image_grid import ImageGrid
@@ -50,6 +51,9 @@ RR_EXIT_FOUR_SURRENDERS = 4
 RR_AGAIN_MAX_TRIES = 4
 RR_AGAIN_TIMEOUT = 10
 RR_AGAIN_POST_CLICK_TIMEOUT = 3
+# 「再次挑战」/ 确认弹窗点击后的 settle：真机观测按钮约 0.9~1.0s 消失、约 1.1~1.5s 出准备页；
+# 窗口内旧失败页 / 弹窗 marker 仍可见只代表游戏尚未响应，不判 failure_page（2026-10-22 oas2 Level C）
+RR_AGAIN_POST_CLICK_SETTLE = 1.5
 # 退四「再次挑战」后的确认弹窗：确认按钮独立 reaction，不复用 I_FIRE_AGAIN 的 FIRE reaction。
 RR_AGAIN_CONFIRM_DELAY = (0.3, 0.6)
 
@@ -61,6 +65,23 @@ RR_CYCLE_STABLE_TIMEOUT = 10
 
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     init_tickets: int = -1
+    # 御魂 → 个人突破 循环的控制器；只有本次运行正是循环的个人突破步骤时才有，普通运行为 None，行为不变
+    loop = None
+    # 外部已要求停止（取消 / 失联）而没有开新战斗：run() 据此直接收尾，不走战败后的刷新 / 重试流程
+    _loop_halted = False
+
+    def _battle_allowed(self) -> bool:
+        """每次真正点击开战（挑战 / 再次挑战 / 确认弹窗）之前确认外部没有要求停止。
+
+        只在循环里生效。这不是根据退四输赢判断失败：退四内部某场输掉、投降、刷新都是个人突破自己的流程，
+        这里只是执行外部的停止请求——当前单场允许结算完，之后不再开新战斗。
+        """
+        if self.loop is None or self.loop.check(force=True):
+            return True
+        self._loop_halted = True
+        logger.info('Loop stopped by an outside request, do not start another battle')
+        return False
+
     PREPARE_CLICK_DELAY_RANGE = (2.5, 3.5)
     SETTLEMENT_CLICK_INTERVAL_RANGE = (0.65, 0.95)
 
@@ -76,6 +97,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
 
     def run(self):
         con = self.config.realm_raid
+        # 御魂 → 个人突破 循环里的步骤：每个目标开打前确认循环还有效；普通运行为 None，行为不变。
+        # 个人突破自己的结束规则（无票 / 达到上限 / 战败退出 / 无目标 / 刷新失败）一律照旧，
+        # 正常走到下面的 TaskEnd 就算这一步完成
+        loop = self.loop = get_step_controller(getattr(self.config, 'config_name', ''), 'RealmRaid')
+        self._loop_halted = False
         # 直接进入个人突破页面
         self.goto_page(page_realm_raid)
 
@@ -129,6 +155,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         self.begin_fatigue_task('RealmRaid')
         while 1:
             self.screenshot()
+            if loop is not None and not loop.check():
+                logger.info('Loop stopped, no more battles')
+                break
             con.general_battle_config.lock_team_enable = lock_default
             # 检查票数
             if not self.check_ticket(con.raid_config.number_base):
@@ -184,6 +213,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 finally:
                     # 无论正常结束 / continue / break / 异常，都恢复用户原本的锁定阵容配置
                     self.ensure_lock(lock_default)
+                if self._loop_halted:
+                    # 外部要求停止：不把它当成退四中断，不刷新、不重试，直接收尾
+                    break
                 if aborted or not last_battle:
                     # 退四中断 / 退四完成后的最终失败 → 一律刷新，不再点「再次挑战」
                     logger.info('Exit four: aborted or final battle lost -> refresh (no more fire again)')
@@ -631,6 +663,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 # reaction 期间 FIRE 消失：不点旧坐标，回循环顶按当前页面判断
                 logger.info(f'Fire {order}: FIRE gone during reaction, re-evaluate')
                 continue
+            if not self._battle_allowed():
+                return False
             self.appear_then_click(self.I_FIRE, interval=0, threshold=0.8)
             # post-state：有界区分 battle / retryable / transition-unknown
             state = self._wait_fire_entered_battle()
@@ -716,8 +750,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         `page_battle_prepare` marker 尚未渲染完成」的过渡帧，会直接耗尽 attempt 判超时，任务遗留
         在已经成功进入的 `page_battle_prepare`。
 
+        Level C 2026-10-22 实测修复：点击「再次挑战」/ 确认弹窗后的有界等待传 `settle`——点击后
+        首帧仍是旧失败页只代表游戏尚未响应，不再判 `failure_page` 耗尽最后一次 attempt；确认弹窗
+        点击后等结果，不在过渡帧补点「再次挑战」。
+
         「不再提示」复选框 `I_SHOW_AGAIN` / 共享确认弹窗 `I_FRESH_ENSURE` 是失败结果流程的中间
-        点击（无 reaction），先点掉再判「再次挑战」按钮。**只用于退四内部**，普通目标失败绝不调用。
+        点击（无 reaction），先点掉再判「再次挑战」按钮（确认弹窗点击后有界等结果）。
+        **只用于退四内部**，普通目标失败绝不调用。
 
         :return: True 已进入战斗；False 有限重试 / 超时仍未进入
         """
@@ -735,8 +774,15 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             # 弹窗 / 复选框先点掉（失败结果流程的中间点击、无 reaction）
             if self.appear_then_click(self.I_SHOW_AGAIN, interval=2):
                 continue
+            # 确认弹窗点击才是真正开始下一场：外部已要求停止就不点
+            if self.appear(self.I_FRESH_ENSURE) and not self._battle_allowed():
+                return False
             if self.appear_then_click(self.I_FRESH_ENSURE, interval=2,
                                       confirm_delay=RR_AGAIN_CONFIRM_DELAY):
+                # 确认弹窗才是真正开始下一场的动作：等结果，不在过渡帧补点「再次挑战」
+                if self._wait_again_entered_battle(settle=RR_AGAIN_POST_CLICK_SETTLE) == 'battle':
+                    logger.info('Fire again: entered battle after confirm')
+                    return True
                 continue
             # 「再次挑战」未就绪：有界等一个决定性状态，不在过渡帧乱点
             if not self.appear(self.I_FIRE_AGAIN, threshold=0.8):
@@ -763,8 +809,10 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                     logger.info('Fire again: entered battle')
                     return True
                 continue
+            if not self._battle_allowed():
+                return False
             self.appear_then_click(self.I_FIRE_AGAIN, interval=0, threshold=0.8)
-            state = self._wait_again_entered_battle()
+            state = self._wait_again_entered_battle(settle=RR_AGAIN_POST_CLICK_SETTLE)
             if state == 'battle':
                 logger.info('Fire again: entered battle after click')
                 return True
@@ -772,7 +820,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         logger.warning('Fire again: bounded retry / timeout without entering battle')
         return False
 
-    def _wait_again_entered_battle(self, timeout: float = RR_AGAIN_POST_CLICK_TIMEOUT) -> str:
+    def _wait_again_entered_battle(self, timeout: float = RR_AGAIN_POST_CLICK_TIMEOUT,
+                                   settle: float = 0) -> str:
         """「再次挑战」post-click / 未就绪时的有界状态轮询，**不点任何坐标**：
 
         - `'battle'`：`_is_active_battle_entry()`（准备 / 战斗进行页的窄 detector）—— 唯一
@@ -785,12 +834,20 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
 
         复用 GeneralBattle 已有的窄 detector（`is_in_prepare` / `is_in_real_battle`）+ 已有失败页
         marker，不新造 page detector，不改 `is_in_battle()`。
+
+        `settle > 0`（仅刚点过「再次挑战」/ 确认弹窗的调用传入）：settle 窗口内只认 `'battle'`，
+        旧失败页 / 弹窗 marker 仍可见只代表游戏尚未响应、不作结论；窗口过后才按 `failure_page`
+        判定。2026-10-22 Level C：点击后 0.1~0.2s 的第一帧仍是失败页，被当成 `failure_page`
+        耗尽最后一次 attempt，实际游戏已进准备页。
         """
         timer = Timer(timeout).start()
+        settle_timer = Timer(settle).start() if settle else None
         while not timer.reached():
             self.screenshot()
             if self._is_active_battle_entry():
                 return 'battle'
+            if settle_timer is not None and not settle_timer.reached():
+                continue
             if self.appear(self.I_FIRE_AGAIN, threshold=0.8) or self.appear(self.I_FRESH_ENSURE):
                 return 'failure_page'
             # 否则 = TRANSITION_UNKNOWN：什么都不点，继续等

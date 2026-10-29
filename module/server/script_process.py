@@ -105,8 +105,26 @@ class ScriptProcess(ScriptWSManager):
         if not self._process.is_alive():
             logger.warning(f'Script {self.config_name} is not running')
             return
+        await self._notify_loop_cancel()
         self._process.terminate()
         self._process = None
+
+    async def _notify_loop_cancel(self) -> None:
+        """有活动的御魂循环时，终止前先让脚本进程自己把循环写成已取消，对端不用等失联判定。
+
+        只读在场文件确认，不替脚本进程写；没有循环时立刻返回，超时也照常终止（对端按失联处理）。
+        """
+        try:
+            from pathlib import Path
+            from module.script import loop_controller
+            root = Path.cwd() / 'log' / 'instance_sync'
+            result = await loop_controller.notify_cancel(
+                root, self.config_name, self._process.pid, self.command_queue, sleep=sleep,
+                timeout=loop_controller.STOP_ACK_TIMEOUT, poll=loop_controller.STOP_ACK_POLL)
+            if result != 'none':
+                logger.info(f'Script {self.config_name} loop cancel notice: {result}')
+        except Exception as e:
+            logger.warning(f'Script {self.config_name} loop cancel notice failed: {e}')
 
     async def coroutine_broadcast_state(self):
         try:

@@ -536,14 +536,16 @@ class SettlementMicroBurstTest(unittest.TestCase):
         self.assertIn("region_provider=self._select_reward_region", reward_src)
 
     def test_case13_lose_frame_uses_same_burst_path_as_win(self):
-        # CASE 13：Lose（I_FALSE）本就属于 `_is_generic_result_context()`（既有范围，未缩小
-        # 也未扩大），因此和 Win 一样纳入同一个 Micro-Burst Session，不做特殊排除。
+        # CASE 13：Lose（I_FALSE）本就属于 `_is_generic_result_context()`，和 Win 一样纳入同一个
+        # Micro-Burst Session，不做特殊排除。2026-10-25 起明确失败页的区域改为右侧 / 底部
+        # （通用战败页的「再次挑战」按钮落在默认区内），其余 session / burst 机制不变；
+        # 胜利仍用 random_default，见 `test_ryoutoppa_settlement_avoids_again_button`。
         h = _SettlementHarness()
         h.task.appear = Mock(side_effect=lambda r, **kw: r is h.task.I_FALSE)
-        with patch.object(gb, "random_int", side_effect=[1, 1]):
+        with patch.object(gb, "random_int", side_effect=[1, 1, 1]):   # 区域骰子（80 内→右侧）、段预算、burst
             h.task._handle_result(h.context, SimpleNamespace())
         self.assertTrue(h.context.settlement_session_active)     # 走的是 session/burst 路径
-        self.assertEqual(h.context.settlement_region_name, "random_default")
+        self.assertEqual(h.context.settlement_region_name, "random_save_right")
         h.task.device.click.assert_called()                      # 真实产生了点击（未被特殊排除）
 
     def test_v12_case1_level_c_budget2_result_reward_then_reward_renews(self):

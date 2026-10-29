@@ -16,6 +16,8 @@ EMULATOR_CAPTURE_RETRY_BACKOFF_SECONDS = 1.0
 def _build_device(session_id: str, config_name: str, config: Config, interval: float) -> Device:
     device = Device(config=config)
     device.disable_stuck_detection()
+    # 同名配置的脚本可能正在运行：不注册帧，避免顶掉它的截图槽位（Unknown frame id）
+    device.register_image_frame = False
     device.screenshot_interval_set(interval)
     logger.info(
         f"[annotator] emulator device ready, session={session_id}, "
