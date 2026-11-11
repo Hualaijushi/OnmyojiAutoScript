@@ -36,6 +36,7 @@ from tasks.MultiAccountEvo.event import EventGoalError, event_complete, parse_ti
 from tasks.MultiAccountEvo.recovery import GroupGameRestart, TeamStallError, wait_for_ocr_recovery
 from tasks.MultiAccountEvo.sync import (
     ROLES, MultiAccountEvoSync, MultiAccountEvoSyncError, RecoveryRequested, SyncTimeoutError,
+    SessionReplacedError, SyncStateError,
 )
 
 
@@ -115,16 +116,24 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         context = self._event_segment
         if self._event_sample_token is not None or not self._event_sample_due():
             return True
+        now = time.monotonic()
+        started = getattr(self, "_event_reward_wait_started", None)
+        if started is None:
+            started = self._event_reward_wait_started = now
+        if now - started >= 30:
+            self._save_event_ocr_evidence("奖励画面等待稳定超时", [])
+            raise EventGoalError("奖励画面等待稳定超时，停止门票识别；已保存截图")
         if not self._event_reward_visible():
-            started = getattr(self, "_event_reward_wait_started", None)
-            if started is None:
-                self._event_reward_wait_started = time.monotonic()
-                return False
-            if time.monotonic() - started < 5:
-                return False
-            self._save_event_ocr_evidence("奖励袋未出现", [])
-            raise EventGoalError("未确认奖励领取页的奖励袋，停止门票识别；已保存截图")
+            self._event_reward_visible_since = None
+            return False
+        visible_since = getattr(self, "_event_reward_visible_since", None)
+        if visible_since is None:
+            self._event_reward_visible_since = now
+            return False
+        if now - visible_since < 1:
+            return False
         self._event_reward_wait_started = None
+        self._event_reward_visible_since = None
         started = time.monotonic()
         value, raw, confirmed = None, "", False
         readings = []
@@ -333,6 +342,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         self._team_battle_settled = False
         self._event_sample_token = None
         self._event_reward_wait_started = None
+        self._event_reward_visible_since = None
         sample_due = self._event_sample_due()
         result = super().run_general_battle(*args, **kwargs)
         checkpoint = getattr(self, "_team_battle_checkpoint", None)
@@ -472,6 +482,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
 
     def _handle_result(self, context, config) -> BattleAction:
         """Handle this task's settlement without using the common left area."""
+        self._event_reward_visible_since = None
         self._team_battle_settled = True
         context.reward_no_battle_ts = None
         context.is_win = not self.appear(self.I_FALSE, threshold=0.8)
@@ -489,6 +500,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         event_mode = getattr(self, "_event_segment", None) is not None
         skin_closed = self.appear_then_click(self.I_GB_SKIN_CONFIRM, interval=0.8)
         if event_mode and skin_closed:
+            self._event_reward_visible_since = None
             return BattleAction.CONTINUE
         self._team_battle_settled = True
         context.reward_no_battle_ts = None
@@ -769,6 +781,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         self._refresh_status_report(status_report, daily_state)
         run_id = None
         group = None
+        self._team_bound_session = None
 
         try:
             config.validate_runtime_accounts()
@@ -847,40 +860,9 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                     apple_or_android=account.apple_or_android,
                     related_account=account.related_account,
                 )
-                switch_result = AccountSwitcher(
-                    self.config,
-                    self.device,
-                    max_attempts=3,
-                    retry_delay=2,
-                    timeout=config.sync_timeout_seconds,
-                    home_verifier=self._verify_courtyard_character,
-                    fast=True,
-                ).ensure_account(
-                    managed_account,
+                run_id, group_state = self._run_prebattle_session(
+                    config, sync, run_id, group, role, managed_account, checkpoint_key,
                 )
-                if not switch_result.success:
-                    raise RuntimeError(
-                        f"account switch failed for group {group}: {switch_result.error_code.value}"
-                    )
-
-                # Release the next instance only after the courtyard character
-                # has been verified, not merely after selecting a saved login.
-                sync.update_role(
-                    run_id,
-                    group,
-                    role,
-                    "ocr_done",
-                    character=account.character,
-                )
-
-                sync.update_role(
-                    run_id,
-                    group,
-                    role,
-                    "ready",
-                    character=account.character,
-                )
-                group_state = self._run_group_with_recovery(config, sync, run_id, group, role, managed_account)
                 if config.role == MultiAccountEvoRole.LEADER:
                     # Persist completion before advancing. If the process exits
                     # after this write, today's next run will safely skip the
@@ -908,6 +890,9 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         except Exception as exc:
             message = str(exc) or exc.__class__.__name__
             logger.error("MultiAccountEvo failed: %s", message)
+            bound = getattr(self, "_team_bound_session", None)
+            if bound is not None and bound[0] == group:
+                run_id = bound[1]
             if run_id is not None and group is not None:
                 try:
                     sync.fail(run_id, group, role, message)
@@ -948,6 +933,50 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             GameNotRunningError, GamePageUnknownError, GameBugError,
             OcrUnavailableError, ImageFrameExpiredError,
         ))
+
+    def _run_prebattle_session(self, config, sync, run_id, group, role, account, checkpoint_key):
+        """切号和等待就绪时允许有限换代；进入嵌入式战斗流程后保留旧执行段隔离。"""
+        deadline = time.monotonic() + config.sync_timeout_seconds
+        run_date = date.today().isoformat()
+        verified = False
+        rejoined = 0
+        self._team_group_entered = False
+        self._team_bound_session = (group, run_id)
+        while True:
+            if time.monotonic() >= deadline:
+                raise SyncTimeoutError("等待本组启动就绪超时")
+            try:
+                if verified:
+                    if not self._verify_courtyard_character(account):
+                        raise SyncStateError("重新接入前未确认当前账号庭院，停止本组")
+                else:
+                    result = AccountSwitcher(
+                        self.config, self.device, max_attempts=3, retry_delay=2,
+                        timeout=max(.01, deadline-time.monotonic()),
+                        home_verifier=self._verify_courtyard_character, fast=True,
+                    ).ensure_account(account)
+                    if not result.success:
+                        raise RuntimeError(f"account switch failed for group {group}: {result.error_code.value}")
+                    verified = True
+                sync.update_role(run_id, group, role, "ocr_done", character=account.character)
+                sync.update_role(run_id, group, role, "ready", character=account.character)
+                sync.wait_all_ready(run_id, group, deadline=deadline)
+                state = self._run_group_with_recovery(config, sync, run_id, group, role, account)
+                return run_id, state
+            except SessionReplacedError:
+                if role == "leader" or self._team_group_entered or rejoined >= 2:
+                    raise
+                logger.warning("队长会话已更换，当前组尚未开战，等待队长就绪后重新核验接入")
+                state = sync.wait_for_session(run_date, exclude_run_id=run_id, deadline=deadline)
+                if (date.today().isoformat() != run_date or state["complete"]
+                        or state["current_group"] != group or state.get("checkpoint_key") != checkpoint_key
+                        or state["group_count"] != config.group_count or state["battle_count"] != config.battle_count
+                        or (state.get("group_start", 1), state.get("group_end", config.group_count))
+                        != (config.group_start, config.group_end)):
+                    raise SyncStateError("新会话的日期、账号身份、组号或范围不同，禁止重新接入")
+                run_id = state["run_id"]
+                self._team_bound_session = (group, run_id)
+                rejoined += 1
 
     def _run_group_with_recovery(self, config, sync, run_id, group, role, account) -> dict:
         """只重入当前组；真正成功前不写每日完成状态或推进账号组。"""
@@ -1011,6 +1040,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                                     group, role, segment["bases"][role], remaining)
                     success = True
                     if remaining and not (ready.get("event_mode") and self._event_stop):
+                        self._team_group_entered = True
                         success = self.run_embedded(
                             user_status=evo_role, limit_count=remaining,
                             kirin_type=config.kirin_type, layer=config.layer,

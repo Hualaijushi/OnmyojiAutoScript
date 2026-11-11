@@ -10,6 +10,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Callable
 
+import psutil
+
 from module.multi_account.file_lock import atomic_replace_with_retry
 from tasks.MultiAccountEvo.event import event_complete
 
@@ -40,6 +42,10 @@ class PeerFailedError(MultiAccountEvoSyncError):
 
 class RunChangedError(MultiAccountEvoSyncError):
     pass
+
+
+class SessionReplacedError(RunChangedError):
+    """队长换代；仅尚未进入战斗流程的队员可以重新接入。"""
 
 
 class RecoveryRequested(MultiAccountEvoSyncError):
@@ -238,7 +244,7 @@ class MultiAccountEvoSync:
     def _check_control(state: dict, run_id: str, group: int, *,
                        epoch: int | None = None, allow_recovery: bool = False) -> None:
         if state["run_id"] != run_id:
-            raise RunChangedError("leader started a new synchronization run")
+            raise SessionReplacedError("leader started a new synchronization run")
         if state["current_group"] != group:
             raise RunChangedError("leader advanced to a different group")
         if state.get("event_mode") and state["date"] != date.today().isoformat():
@@ -317,6 +323,7 @@ class MultiAccountEvoSync:
             state = {
                 "date": run_date,
                 "run_id": uuid.uuid4().hex,
+                "leader_process": {"pid": os.getpid(), "created": psutil.Process().create_time()},
                 "current_group": current_group,
                 "group_count": int(group_count),
                 "group_start": group_start,
@@ -475,7 +482,7 @@ class MultiAccountEvoSync:
                 state = self._read_unlocked(allow_missing=True)
             if state is not None:
                 if run_id is not None and state["run_id"] != run_id:
-                    raise RunChangedError("leader started a new synchronization run")
+                    raise SessionReplacedError("leader started a new synchronization run")
                 matched = predicate(state)
                 failures = [
                     f"{role}: {info.get('error') or 'unknown error'}"
@@ -496,13 +503,32 @@ class MultiAccountEvoSync:
                 raise SyncTimeoutError(f"timed out waiting for {description}")
             time.sleep(self.poll_interval)
 
-    def wait_for_session(self, run_date: str | None = None) -> dict:
+    @staticmethod
+    def _leader_session_alive(state: dict) -> bool:
+        """旧JSON不能证明队长还在；进程创建时间防止PID被复用后误接旧会话。"""
+        owner = state.get("leader_process", {})
+        pid, created = owner.get("pid"), owner.get("created")
+        if type(pid) is not int or pid <= 0 or not isinstance(created, (int, float)):
+            return False
+        try:
+            process = psutil.Process(pid)
+            return process.is_running() and abs(process.create_time()-created) < .001
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
+    def wait_for_session(self, run_date: str | None = None, *,
+                         exclude_run_id: str | None = None, deadline: float | None = None) -> dict:
         run_date = run_date or date.today().isoformat()
         return self._wait(
             lambda state: state["date"] == run_date
+            and state["run_id"] != exclude_run_id
+            and (state["complete"] or (
+                state["roles"]["leader"]["status"] in {"ready", "running", "done"}
+                and self._leader_session_alive(state)))
             and all(info["status"] != "failed" for info in state["roles"].values()),
-            "leader session",
+            "live leader READY session",
             ignore_failures_until_match=True,
+            deadline=deadline,
         )
 
     def update_role(
@@ -521,7 +547,7 @@ class MultiAccountEvoSync:
         with self._lock():
             state = self._read_unlocked()
             if state["run_id"] != run_id:
-                raise RunChangedError("leader started a new synchronization run")
+                raise SessionReplacedError("leader started a new synchronization run")
             if state["current_group"] != group:
                 raise RunChangedError("leader advanced to a different group")
             if status != "failed":
@@ -546,13 +572,14 @@ class MultiAccountEvoSync:
             self._write_unlocked(state)
             return state
 
-    def wait_all_ready(self, run_id: str, group: int) -> dict:
+    def wait_all_ready(self, run_id: str, group: int, *, deadline: float | None = None) -> dict:
         acceptable = {"ready", "running", "done"}
         return self._wait(
             lambda state: state["current_group"] == group
             and all(info["status"] in acceptable for info in state["roles"].values()),
             f"all roles READY for group {group}",
             run_id,
+            deadline=deadline,
         )
 
     def wait_roles_ready(self, run_id: str, group: int, roles: tuple[str, ...]) -> dict:

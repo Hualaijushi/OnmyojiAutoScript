@@ -2,7 +2,7 @@
 
 ### 门票采样的奖励袋门槛（2026-11-11）
 
-通用page_reward分发到MultiAccountEvo._handle_reward → 原皮肤确认关闭时本轮立即返回 → 采样点核验I_GET_BATTLE_REWARD/I_GET_BATTLE_REWARD_2 → 奖励袋出现后读取固定右上ROI并在新帧复核50 → 原奖励空白点击。未出现奖励袋只等待新帧，5秒期限不反复刷新，超时或无效读值保存当时全帧/裁图/元数据后未完成停止。胜负结果_handle_result不读票；非采样场次不增加奖励袋识别。
+通用page_reward分发到MultiAccountEvo._handle_reward → 原皮肤确认关闭时本轮立即返回 → 采样点核验I_GET_BATTLE_REWARD/I_GET_BATTLE_REWARD_2 → 奖励袋连续可见至少1秒后读取固定右上ROI并在新帧复核50 → 原奖励空白点击。未出现奖励袋只等待新帧，30秒期限不反复刷新，超时或无效读值保存当时全帧/裁图/元数据后未完成停止。胜负结果_handle_result不读票；非采样场次不增加奖励袋识别。
 
 部署范围通过运行中的script_router配置PUT更新MainManager缓存及磁盘，随后GET反查，避免仅写JSON却被旧缓存保存覆盖；共享状态与账号资料不通过该修复迁移或清空。
 

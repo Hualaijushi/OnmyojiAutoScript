@@ -1,5 +1,13 @@
 # 验证规则
 
+## 当前验证方式（2026-11-11，用户明确要求）
+
+- 默认先做最小修改，由用户直接现场验证；AI不自动运行单元测试、全量回归、compileall、构建、性能测试或隔离副本验证，不为小修复新增测试。
+- 仅用户明确要求测试时才执行指定范围，不自行扩大，不反复跑全量；需要Python时使用toolkit/python.exe。
+- 默认只快速走查相关代码与差异，简短说明修改点、是否测试及用户验证方法。不自动启动任务、游戏、设备或识别服务。
+- 取消每轮六份文档检查和固定“文档同步”报告，文档仅在事实变化时按需更新。
+- 下文历史验证记录、命令和专项用例保留备查；其强制测试措辞不再构成默认执行要求，本节优先。
+
 ### 2026-11-11 本次启动准备补充
 
 三端旧任务已分别退出；随后只通过后端配置接口把本次失败生成的next_run等待统一设为2026-11-11 12:57:17，准备用户重新启动，未启动进程或设备，任务开关和其他配置不变。活动/每日状态逐字节核对保留，备份config/.evo_ready_backup_20261111_125722_735074/只留本机。
@@ -38,32 +46,7 @@
 
 ## 1. 默认验证流程
 
-任何源码修改后，默认依次执行：
-
-```
-1. 相关单元测试
-   toolkit/python.exe -m unittest tests.<改动相关的测试模块> -v
-
-2. 语法 / 编译检查
-   toolkit/python.exe -m compileall -q <改动的文件或目录>
-   （或整目录：toolkit/python.exe -m compileall -q module/ tasks/ tests/ script.py）
-
-3. 完整回归
-   toolkit/python.exe -m unittest discover -s tests
-
-4. 行尾 / 空白检查
-   git diff --check
-```
-
-说明：
-
-- **解释器**：项目自带 `toolkit/python.exe`（Python 3.10.11）。系统 `python` 可能缺 `zerorpc` / `websockets`，用它跑不了完整回归——**一律用 `toolkit/python.exe`**。
-- 完整回归当前基线数字见 `docs/AI_CONTEXT.md` §7。修改后要求：**原有全部用例通过 + 新增用例全部通过**。基线数字会随每次加测试增长，不要盲写历史数字。
-- `git diff --check` 只报空白 / 行尾错误。`docs/*.md` 出现 `LF will be replaced by CRLF` 是**警告不是错误**，不影响通过。
-- 项目**没有测试 / lint CI**。`.github/workflows/auto-create-pr.yaml` 是上游的「每周四自动从 `dev` 建 PR 到 `master`」helper，不跑测试、不跑 lint，与本地 AI 开发无关（本 fork 直接在 `master` 工作、默认不提交）。
-- 没有强制 lint / formatter（无 `pyproject.toml` / `.flake8` / `.ruff.toml` / `.pre-commit-config`）。不要为验证任务引入新工具（black / ruff / mypy 等），除非用户要求。
-
----
+直接修改必要代码，快速走查相关差异，交由用户现场验证。默认不执行自动化测试或编译检查；用户明确要求时按指定范围执行。
 
 ## 2. 测试分级
 
@@ -249,17 +232,9 @@
 
 ---
 
-## 7. 收尾（每轮开发 / 正式设计结束前）
+## 7. 收尾
 
-```
-工作完成
- → 有源码改动则跑 §1 默认验证流程全部通过
- → git diff / git status 人工过一遍（确认没有误改、没有调试残留）
- → 逐项检查 6 份项目文档，按「本轮是否改变了该文档负责的项目事实」决定更新哪些
-   （见 CLAUDE.md 核心规则 2 / docs/AI_CONTEXT.md §0 表 + §10.1）
- → 再次 git diff --check
- → 输出报告（含固定的「## 文档同步」段）
-```
+快速查看本轮相关差异，简短说明修改点和用户现场验证方法；不默认运行测试，不逐项检查六份文档。
 
 ## L1 / L2 整合后的验证基线（2026-09-22，集成分支 `zoombies-account-rotation-dailytask/synevo-l1l2-integration`）
 
