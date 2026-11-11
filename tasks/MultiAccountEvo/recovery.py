@@ -62,6 +62,38 @@ class TeamStallError(ScriptError):
     """可交给当前觉醒组自动恢复的房间或战后等待故障。"""
 
 
+class ImageServiceUnavailable(TeamStallError):
+    """批量图像识别重试后仍不可用。"""
+
+
+def wait_for_image_recovery(*, deadline, check):
+    """等待已有图像服务响应，不在任务内启动或重启服务。"""
+    import zerorpc
+    from zerorpc.exceptions import LostRemote, RemoteError, TimeoutExpired
+    from module.server.setting import State
+
+    address = State.deploy_config.ImageClientAddress or '127.0.0.1:22269'
+    if not address.startswith('tcp://'):
+        address = 'tcp://' + address
+    while time.monotonic() < deadline:
+        check()
+        client = zerorpc.Client(timeout=min(2, max(.001, deadline-time.monotonic())))
+        try:
+            client.connect(address)
+            info = client.get_server_info()
+            check()
+            if isinstance(info, dict) and isinstance(info.get('scheduler'), dict) and time.monotonic() < deadline:
+                return
+        except (LostRemote, RemoteError, TimeoutExpired):
+            pass
+        finally:
+            client.close()
+        remaining = deadline-time.monotonic()
+        if remaining > 0:
+            time.sleep(min(.5, remaining))
+    raise ImageServiceUnavailable('等待图像服务恢复超时，停止当前组')
+
+
 class GroupGameRestart(RestartTask):
     """复用强制游戏重启，不运行每日任务或修改 Restart 调度。"""
 

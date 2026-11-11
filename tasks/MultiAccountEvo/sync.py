@@ -300,7 +300,8 @@ class MultiAccountEvoSync:
 
     def start_or_resume(self, group_count: int, battle_count: int, run_date: str | None = None,
                         *, checkpoint_key: str = "", group_start: int = 1, group_end: int = 0,
-                        event_ocr_start: int = 200, event_ocr_interval: int = 10) -> dict:
+                        event_ocr_start: int = 200, event_ocr_interval: int = 10,
+                        checkpoint_key_for_count: Callable[[int], str] | None = None) -> dict:
         run_date = run_date or date.today().isoformat()
         group_end = group_end or group_count
         if not 1 <= group_start <= group_end <= group_count:
@@ -311,10 +312,24 @@ class MultiAccountEvoSync:
             if same_day and (previous.get("group_start", 1), previous.get("group_end", group_count)) != (group_start, group_end):
                 raise SyncStateError("local group range changed; explicit progress migration is required")
             if same_day and previous.get("checkpoint_key"):
-                if (checkpoint_key != previous["checkpoint_key"]
+                increase_limit = (self.event_mode and not previous["complete"]
+                                  and battle_count > previous["battle_count"]
+                                  and group_count == previous["group_count"]
+                                  and checkpoint_key_for_count is not None
+                                  and checkpoint_key_for_count(previous["battle_count"]) == previous["checkpoint_key"])
+                if not increase_limit and (checkpoint_key != previous["checkpoint_key"]
                         or group_count != previous["group_count"]
                         or battle_count != previous["battle_count"]):
                     raise SyncStateError("checkpoint configuration changed; cannot reuse today's progress")
+                if increase_limit:
+                    # 新会话仍保留原逐场及门票记录；先保存迁移前的精确状态。
+                    backup = self.state_path.with_name(
+                        f"{self.state_path.name}.before-limit-{uuid.uuid4().hex}.bak"
+                    )
+                    with backup.open("xb") as stream:
+                        stream.write(self.state_path.read_bytes())
+                        stream.flush()
+                        os.fsync(stream.fileno())
             if previous and previous["date"] == run_date and previous["complete"]:
                 return previous
             current_group = group_start

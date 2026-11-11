@@ -2,6 +2,7 @@
 
 from datetime import date
 from html import escape
+import json
 import os
 from pathlib import Path
 import threading
@@ -28,8 +29,9 @@ def ticket_entry(day: str) -> str:
     )
 
 
-def render_ticket_report(state: dict) -> str:
+def render_ticket_report(state: dict, account_emails: dict | None = None) -> str:
     day = str(state['date'])
+    account_emails = account_emails or {}
     rows = []
     groups = state.get('event_groups', {})
     start, end = state.get('group_start', 1), state.get('group_end', state.get('group_count', 20))
@@ -41,13 +43,19 @@ def render_ticket_report(state: dict) -> str:
             value = info.get('value')
             display = '未采集' if value is None else f'{value}/50'
             suffix = ' · 已达标，继续跟队' if info.get('reached') else ''
-            character = escape(str(info.get('character') or ''))
-            cells.append(f'<td><strong>{prefix}{number:02d} {character}</strong><br>{escape(display + suffix)}</td>')
+            account = f'{prefix}{number:02d}'
+            email = escape(str(account_emails.get(account) or '邮箱未配置'))
+            cells.append(f'<td><label><input type="checkbox" class="ghost-account" '
+                         f'data-account="{account}" data-group="{number}" '
+                         f'aria-label="{account}超鬼王已打"> '
+                         f'<strong>{account} {email}</strong></label><br>{escape(display + suffix)}</td>')
         counts = state.get('battle_progress', {}).get(str(number), {})
         progress = escape(' / '.join(str(counts.get(role, '—')) for role in ROLES))
         status = ('人工确认完成' if node.get('completion_source') == 'user_confirmed'
                   else STATUS.get(node.get('status'), '尚无记录'))
-        rows.append(f'<tr><td>第{number:02d}组</td>' + ''.join(cells)
+        rows.append(f'<tr><td><label><input type="checkbox" class="ghost-group" '
+                    f'data-group="{number}" aria-label="第{number:02d}组三个账号超鬼王已打"> '
+                    f'第{number:02d}组</label></td>' + ''.join(cells)
                     + f'<td>{progress}</td><td>{status}</td>'
                     + f'<td>{escape(str(node.get("updated_at") or "—"))}</td></tr>')
         history = []
@@ -81,9 +89,30 @@ def render_ticket_report(state: dict) -> str:
         f'最后更新：{escape(str(state.get("updated_at") or "尚无采集记录"))}</p>'
         f'<p>第{int(state.get("event_ocr_start", 200))}把开始，每{int(state.get("event_ocr_interval", 10))}把检查一次，'
         f'{int(state.get("battle_count", 250))}把为保护上限。未采集不代表0/50；刷新页面查看最新记录。</p>'
+        '<p>勾选表示超鬼王已打；可单独勾选账号，勾选组号会同时勾选或取消该组三个账号。'
+        '<span id="ghost-save-status">勾选保存在当前浏览器。</span></p>'
         '<div class="card"><table><thead><tr><th>账号组</th><th>oas3 · 队长</th><th>oas4 · 队员一</th>'
         '<th>oas5 · 队员二</th><th>已确认场数（A/B/C）</th><th>组状态</th><th>更新时间</th></tr></thead><tbody>'
-        + ''.join(rows) + '</tbody></table></div></main></body></html>\n'
+        + ''.join(rows) + '</tbody></table></div></main>'
+        '<script>'
+        "const ghostKey='oas-ghost-done-'+" + repr(date.fromisoformat(day).isoformat()) + ';'
+        "const accounts=[...document.querySelectorAll('.ghost-account')];"
+        "const groups=[...document.querySelectorAll('.ghost-group')];"
+        "const status=document.getElementById('ghost-save-status');let saved={};let available=true;"
+        "try{const data=JSON.parse(localStorage.getItem(ghostKey)||'{}');"
+        "if(data&&typeof data==='object'&&!Array.isArray(data))saved=data;}catch(e){available=false;}"
+        "accounts.forEach(a=>a.checked=saved[a.dataset.account]===true);"
+        "function updateGroups(){groups.forEach(g=>{const items=accounts.filter(a=>a.dataset.group===g.dataset.group);"
+        "const checked=items.filter(a=>a.checked).length;g.checked=checked===items.length;"
+        "g.indeterminate=checked>0&&checked<items.length;});}"
+        "function save(){accounts.forEach(a=>{if(a.checked)saved[a.dataset.account]=true;else delete saved[a.dataset.account];});"
+        "try{localStorage.setItem(ghostKey,JSON.stringify(saved));available=true;}catch(e){available=false;}"
+        "status.textContent=available?'勾选保存在当前浏览器。':'浏览器无法保存勾选，刷新后可能丢失。';updateGroups();}"
+        "accounts.forEach(a=>a.addEventListener('change',save));"
+        "groups.forEach(g=>g.addEventListener('change',()=>{accounts.filter(a=>a.dataset.group===g.dataset.group)"
+        ".forEach(a=>a.checked=g.checked);save();}));updateGroups();"
+        "if(!available)status.textContent='浏览器无法保存勾选，刷新后可能丢失。';"
+        '</script></body></html>\n'
     )
 
 
@@ -96,6 +125,21 @@ class EventTicketReport:
                            event_ocr_start=event_ocr_start, event_ocr_interval=event_ocr_interval,
                            battle_count=battle_count)
         self.output_dir = Path(output_dir) if output_dir else Path(__file__).resolve().parents[2] / 'log/dailytask'
+
+    def _account_emails(self):
+        """仅从本机三端配置读取邮箱，不写回同步状态。"""
+        result = {}
+        for instance, prefix in (('oas3', 'A'), ('oas4', 'B'), ('oas5', 'C')):
+            try:
+                data = json.loads((self.sync.directory / f'{instance}.json').read_text(encoding='utf-8-sig'))
+                accounts = data.get('multi_account_evo', {})
+                for number in range(1, self.group_count + 1):
+                    info = accounts.get(f'account_list_{number}', {})
+                    if isinstance(info, dict):
+                        result[f'{prefix}{number:02d}'] = str(info.get('account') or '').strip()
+            except (OSError, UnicodeError, json.JSONDecodeError, AttributeError, TypeError):
+                continue
+        return result
 
     @staticmethod
     def _write(path, text):
@@ -118,7 +162,7 @@ class EventTicketReport:
             }
             day = date.fromisoformat(state['date']).isoformat()
             path = self.output_dir / f'OAS超鬼王门票刷取情况_{day}.html'
-            self._write(path, render_ticket_report(state))
+            self._write(path, render_ticket_report(state, self._account_emails()))
             daily = self.output_dir / f'OAS每日任务结果_{day}.html'
             if daily.exists():
                 content = daily.read_text(encoding='utf-8-sig')

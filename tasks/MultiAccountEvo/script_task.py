@@ -33,7 +33,10 @@ from tasks.GameUi.default_pages import page_battle, page_battle_prepare, page_ba
 from tasks.GameUi.game_ui import GameUi
 from tasks.MultiAccountEvo.config import MultiAccountEvoRole
 from tasks.MultiAccountEvo.event import EventGoalError, event_complete, parse_ticket_value
-from tasks.MultiAccountEvo.recovery import GroupGameRestart, TeamStallError, wait_for_ocr_recovery
+from tasks.MultiAccountEvo.recovery import (
+    GroupGameRestart, ImageServiceUnavailable, TeamStallError,
+    wait_for_image_recovery, wait_for_ocr_recovery,
+)
 from tasks.MultiAccountEvo.sync import (
     ROLES, MultiAccountEvoSync, MultiAccountEvoSyncError, RecoveryRequested, SyncTimeoutError,
     SessionReplacedError, SyncStateError,
@@ -59,15 +62,18 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         """只重试当前识别，使用新截图，不重放调用方已经执行的点击。"""
         try:
             return operation()
-        except (TimeoutExpired, LostRemote):
+        except (TimeoutExpired, LostRemote) as exc:
             used = getattr(self, "_image_read_retries", 0)
             if used >= 2:
-                raise
+                raise ImageServiceUnavailable("批量图像识别持续超时") from exc
             self._image_read_retries = used + 1
             logger.warning("组队觉醒图像识别暂时超时，新截图后只读重试，本组已用=%s/2", used + 1)
             self.screenshot()
             # 每次调用只补试一次；第二次失败透传，避免服务持续繁忙时不断叠加请求。
-            return operation()
+            try:
+                return operation()
+            except (TimeoutExpired, LostRemote) as retry_exc:
+                raise ImageServiceUnavailable("批量图像识别新帧重试仍失败") from retry_exc
 
     def prepare_appear_cache(self, targets):
         targets = list(targets)
@@ -363,7 +369,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             self._event_stop = event_complete(state, context["group"])
             self._refresh_event_report()
             if not self._event_stop and max(state["battle_progress"][str(context["group"])].values()) >= state["battle_count"]:
-                raise EventGoalError("已到250把保护上限，三端门票仍未全部确认50/50")
+                raise EventGoalError(f"已到{state['battle_count']}把保护上限，三端门票仍未全部确认50/50")
         return result
 
     def invite_friends(self, config, open_invite: bool = True, confirm_rule=None) -> bool:
@@ -789,12 +795,18 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             self._validate_checkpoint_runtime_config(peers)
             checkpoint_key = self._battle_checkpoint_key(peers)
 
+            def checkpoint_key_for_count(count):
+                # 还原旧上限核对摘要，其他账号和任务设置必须完全一致。
+                previous_peers = [dict(peer, battle_count=count) for peer in peers]
+                return self._battle_checkpoint_key(previous_peers)
+
             if config.role == MultiAccountEvoRole.LEADER:
                 state = sync.start_or_resume(
                     config.group_count, config.battle_count, checkpoint_key=checkpoint_key,
                     group_start=config.group_start, group_end=config.group_end,
                     event_ocr_start=config.multi_account_evo_config.event_ocr_start,
                     event_ocr_interval=config.multi_account_evo_config.event_ocr_interval,
+                    checkpoint_key_for_count=checkpoint_key_for_count,
                 )
             else:
                 state = sync.wait_for_session(date.today().isoformat())
@@ -1065,7 +1077,12 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             except Exception as exc:
                 if not self._is_recoverable_stall(exc):
                     raise
-                reason = f'OCR_UNAVAILABLE: {exc}' if isinstance(exc, OcrUnavailableError) else str(exc)
+                if isinstance(exc, OcrUnavailableError):
+                    reason = f'OCR_UNAVAILABLE: {exc}'
+                elif isinstance(exc, ImageServiceUnavailable):
+                    reason = f'IMAGE_UNAVAILABLE: {exc}'
+                else:
+                    reason = str(exc)
                 state = sync.request_recovery(
                     run_id, group, role, reason, max_attempts=self.auto_recovery_attempts,
                 )
@@ -1092,6 +1109,9 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             if recovery['recovery'].get('reason', '').startswith('OCR_UNAVAILABLE:'):
                 # 先等共享 OCR 就绪，再允许原有整组游戏恢复；服务不恢复则不重启游戏。
                 wait_for_ocr_recovery(deadline=deadline, check=check)
+            if recovery['recovery'].get('reason', '').startswith('IMAGE_UNAVAILABLE:'):
+                # 图像服务仍不可用时重启游戏无法解决问题，先等待健康响应。
+                wait_for_image_recovery(deadline=deadline, check=check)
             # 按队长、队员一、队员二顺序重启，避免同时登录占用识别服务。
             sync.wait_recovery_stage(
                 run_id, group, epoch, "restarted", ROLES[:ROLES.index(role)], deadline=deadline,
