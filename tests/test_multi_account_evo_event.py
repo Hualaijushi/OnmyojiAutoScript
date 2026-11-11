@@ -176,6 +176,7 @@ class EventTaskIntegrationTest(unittest.TestCase):
                 task.appear_then_click = Mock(return_value=False)
                 task.click = Mock()
                 task._wait_post_battle_state = Mock(return_value='room')
+                task._event_reward_visible = Mock(return_value=True)
                 def embedded(*, task=task, **kwargs):
                     task.current_count = 0
                     task.limit_count = kwargs['limit_count']

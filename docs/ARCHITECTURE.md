@@ -1,5 +1,11 @@
 # 项目架构地图
 
+### 门票采样的奖励袋门槛（2026-11-11）
+
+通用page_reward分发到MultiAccountEvo._handle_reward → 原皮肤确认关闭时本轮立即返回 → 采样点核验I_GET_BATTLE_REWARD/I_GET_BATTLE_REWARD_2 → 奖励袋出现后读取固定右上ROI并在新帧复核50 → 原奖励空白点击。未出现奖励袋只等待新帧，5秒期限不反复刷新，超时或无效读值保存当时全帧/裁图/元数据后未完成停止。胜负结果_handle_result不读票；非采样场次不增加奖励袋识别。
+
+部署范围通过运行中的script_router配置PUT更新MainManager缓存及磁盘，随后GET反查，避免仅写JSON却被旧缓存保存覆盖；共享状态与账号资料不通过该修复迁移或清空。
+
 ## 2026-11-11 组队觉醒活动与本机范围
 
 MultiAccountEvo配置/三端账号握手 → 校验身份摘要及本机范围 → MultiAccountEvoSync建立本地会话 → 原切号/邀请/嵌入式EvoZone → 战后确认逐场落盘 → 安全回房/推进原绝对组号。本机仅执行group_start～group_end；0结束值归一为group_count。范围独立于账号身份摘要保存在共享状态且严格核验，同日改范围需显式迁移；旧配置默认全范围，不改变既有摘要。

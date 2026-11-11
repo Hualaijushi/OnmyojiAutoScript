@@ -111,12 +111,23 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         return (next_round == context["remaining"] or context["pending"]
                 or point >= context["start"] and (point - context["start"]) % context["interval"] == 0)
 
-    def _read_event_sample(self) -> None:
+    def _read_event_sample(self) -> bool:
         context = self._event_segment
         if self._event_sample_token is not None or not self._event_sample_due():
-            return
+            return True
+        if not self._event_reward_visible():
+            started = getattr(self, "_event_reward_wait_started", None)
+            if started is None:
+                self._event_reward_wait_started = time.monotonic()
+                return False
+            if time.monotonic() - started < 5:
+                return False
+            self._save_event_ocr_evidence("奖励袋未出现", [])
+            raise EventGoalError("未确认奖励领取页的奖励袋，停止门票识别；已保存截图")
+        self._event_reward_wait_started = None
         started = time.monotonic()
         value, raw, confirmed = None, "", False
+        readings = []
         if context["reached"]:
             value, raw, confirmed = 50, "50/50（复用已确认达标）", True
         else:
@@ -124,9 +135,11 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             for attempt in range(3):
                 if attempt:
                     self.screenshot()
-                    if GameUi.detect_page_in(self, page_reward, include_global=False) != page_reward:
+                    if not self._event_reward_visible():
+                        self._save_event_ocr_evidence("复核时奖励袋消失", readings)
                         raise EventGoalError("门票复核时奖励页已离开，未确认达标")
                 raw = str(self.O_EVENT_PROGRESS_50.ocr(self.device.image))
+                readings.append(raw)
                 value = parse_ticket_value(raw)
                 if value is not None and value < 50:
                     break
@@ -138,6 +151,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                 else:
                     consecutive = 0
             if value is None or value == 50 and not confirmed:
+                self._save_event_ocr_evidence("门票读值无效或50未经复核", readings)
                 raise EventGoalError(f"门票OCR未能可靠确认，最后读值：{raw[:80]}")
         self._event_sample_token = context["sync"].record_event_sample(
             context["run_id"], context["group"], context["epoch"], context["role"],
@@ -147,6 +161,36 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         logger.info("超鬼王门票：组=%s 角色=%s 采样场=%s 读值=%s/50 达标=%s",
                     context["group"], context["role"], context["floor"] + context["completed"] + 1,
                     value, confirmed)
+        return True
+
+    def _event_reward_visible(self) -> bool:
+        """门票截图中的奖励袋是采样锚点，通用结算/皮肤确认标志不足以放行。"""
+        return (self.appear(self.I_GET_BATTLE_REWARD)
+                or self.appear(self.I_GET_BATTLE_REWARD_2))
+
+    def _save_event_ocr_evidence(self, reason, readings):
+        """保存失败现场原帧与实际ROI，不再用事后的庭院截图猜测识别原因。"""
+        try:
+            import cv2
+            context = self._event_segment
+            name = str(getattr(self.config, "config_name", "unknown"))
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            folder = Path.cwd()/"log/dailytask/ticket_ocr_debug"/f"{name}_g{context['group']:02d}_{stamp}"
+            folder.mkdir(parents=True)
+            frame = self.device.image.copy()
+            x, y, width, height = self.O_EVENT_PROGRESS_50.roi
+            for filename, pixels in (("frame.png", frame), ("roi.png", frame[y:y+height, x:x+width])):
+                ok, encoded = cv2.imencode(".png", pixels)
+                if not ok:
+                    raise OSError("截图编码失败")
+                (folder/filename).write_bytes(encoded.tobytes())
+            (folder/"sample.json").write_text(json.dumps({
+                "reason": reason, "readings": readings, "roi": [x,y,width,height],
+                "group": context["group"], "point": context["floor"]+context["completed"]+1,
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            logger.warning("门票OCR失败现场已保存：%s", folder)
+        except Exception:
+            logger.exception("门票OCR失败截图未能保存，原识别错误仍会透传")
 
     def _refresh_event_report(self) -> None:
         report = getattr(self, "_event_report", None)
@@ -288,6 +332,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         """战斗结果返回后确认房间，避免结算过渡帧直接触发觉醒外层失败分支。"""
         self._team_battle_settled = False
         self._event_sample_token = None
+        self._event_reward_wait_started = None
         sample_due = self._event_sample_due()
         result = super().run_general_battle(*args, **kwargs)
         checkpoint = getattr(self, "_team_battle_checkpoint", None)
@@ -441,12 +486,16 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                 self.appear(self.I_GI_SURE):
             self._post_battle_invite_step()
             return BattleAction.CONTINUE
+        event_mode = getattr(self, "_event_segment", None) is not None
+        skin_closed = self.appear_then_click(self.I_GB_SKIN_CONFIRM, interval=0.8)
+        if event_mode and skin_closed:
+            return BattleAction.CONTINUE
         self._team_battle_settled = True
         context.reward_no_battle_ts = None
         context.is_win = True
-        if getattr(self, "_event_segment", None) is not None:
-            self._read_event_sample()
-        self.appear_then_click(self.I_GB_SKIN_CONFIRM, interval=0.8)
+        if event_mode:
+            if not self._read_event_sample():
+                return BattleAction.CONTINUE
         if context.last_page != page_reward:
             self.device.click_record_clear()
         self.click(self._multi_account_settlement_click(), interval=0.8)
