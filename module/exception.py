@@ -60,3 +60,11 @@ class RequestHumanTakeover(Exception):
 
 class TaskEnd(Exception):
     pass
+
+
+class OcrUnavailableError(Exception):
+    """识别暂时不可用，由任务边界延期或协同恢复。"""
+
+
+class ImageFrameExpiredError(Exception):
+    """旧截图缓存失效且缺少原图，不能继续使用旧坐标。"""

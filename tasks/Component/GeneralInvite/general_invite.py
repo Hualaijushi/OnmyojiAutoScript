@@ -60,6 +60,18 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
     invite_retry_seconds_first: float = 20.0
     invite_retry_seconds: float = 30.0
 
+    def invite_retry_starts_after_initial_invite(self) -> bool:
+        """首轮重邀计时是否在邀请确认后才开始。
+
+        默认保持普通任务的原有计时；好友 OCR 耗时较长的任务可以开启，
+        避免首次识别时间占用重邀窗口。
+        """
+        return False
+
+    def _room_snapshot_after_screenshot(self) -> bool | None:
+        """默认不复用；任务可返回当前帧房间状态，仅供本轮动作前判断。"""
+        return None
+
     def run_invite(self, config: InviteConfig, is_first: bool = False, fire_reaction=None) -> bool:
         """
         队长！！身份。。。在组队界面邀请好友（ 如果开启is_first） 等待队员进入开启挑战
@@ -75,10 +87,13 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             return False
         if is_first:
             _ = self.room_type
-            self.timer_invite = Timer(self.invite_retry_seconds_first)
-            self.timer_invite.start()
+            start_retry_after_invite = self.invite_retry_starts_after_initial_invite()
+            if not start_retry_after_invite:
+                self.timer_invite = Timer(self.invite_retry_seconds_first).start()
             self.ensure_room_type(len(config.friend_list.split('\n')))
             self.invite_friends(config)
+            if start_retry_after_invite:
+                self.timer_invite = Timer(self.invite_retry_seconds_first).start()
         else:
             self.timer_invite = Timer(self.invite_retry_seconds)
             self.timer_invite.start()
@@ -96,7 +111,8 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 logger.warning('Timeout, now is no room')
                 return False
 
-            if not self.is_in_room():
+            room_snapshot = self._room_snapshot_after_screenshot()
+            if not (room_snapshot if room_snapshot is not None else self.is_in_room()):
                 continue
 
             if self.timer_emoji and self.timer_emoji.reached():
@@ -115,12 +131,16 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 return False
             if self.timer_invite and self.timer_invite.reached():
                 if is_first:
-                    logger.info('Invitation is triggered every 20s')
-                    self.timer_invite.reset()
+                    logger.info('Invitation retry timer reached')
+                    if not self.invite_retry_starts_after_initial_invite():
+                        self.timer_invite.reset()
                 else:
-                    logger.info('Wait for 30s and invite again')
+                    logger.info('Invitation retry timer reached; invite again')
                     self.timer_invite = None
                 invite_success = self.invite_friends(config)
+                if is_first and self.invite_retry_starts_after_initial_invite():
+                    # 耗时的好友选择和确认完成后，才开始完整的新一轮间隔。
+                    self.timer_invite.reset()
                 if not is_first and self.room_type == RoomType.BONDLING_FAIRYLAND and not invite_success:
                     self._ensure_midway_bondling_invite(config)
         return False
@@ -312,18 +332,19 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             return 'retryable'
         return 'unknown'
 
-    def _wait_room_entry_state(self, timeout: float = GI_FIRE_POST_CLICK_TIMEOUT) -> str:
+    def _wait_room_entry_state(self, timeout: float = GI_FIRE_POST_CLICK_TIMEOUT,
+                               terminal_only: bool = False) -> str:
         """post-click / 挑战未就绪时的有界状态轮询，**期间不点任何坐标**。
 
-        返回 `'battle'` / `'room_failed'` / `'retryable'`（出现决定性状态即返回）/ `'timeout'`
-        （整个 timer 内一直是 `'unknown'` 过渡 / 未知帧 —— **既不当 success 也不当 failure**，
-        timer 内持续等）。
+        通常在出现 `'battle'` / `'room_failed'` / `'retryable'` 时返回；末轮确认时
+        `terminal_only=True`，继续观察暂时可重试的房间画面，只在战斗或房间失效时提前返回。
+        其余情况等到本次有限计时结束，返回 `'timeout'`。
         """
         timer = Timer(timeout).start()
         while not timer.reached():
             self.screenshot()
             state = self._classify_room_entry_state()
-            if state != 'unknown':
+            if state in ('battle', 'room_failed') or (state == 'retryable' and not terminal_only):
                 return state
         return 'timeout'
 
@@ -334,7 +355,7 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
         - `'battle'`：**正向战斗确认**（`_battle_entry_positive()` —— 复用 `is_in_battle()`）——
           唯一 success，caller 才交接 `run_general_battle`；
         - `'room_failed'`：明确房间失效（回庭院 / 探索 / 匹配页）——立即失败，不再点挑战；
-        - `'timeout'`：有限 attempt（`GI_FIRE_MAX_TRIES`）/ 墙钟（`GI_FIRE_TIMEOUT`）用尽仍未确认。
+        - `'timeout'`：有限 attempt（`GI_FIRE_MAX_TRIES`）及末轮只读确认用尽仍未确认。
 
         **四态**（`_classify_room_entry_state` / `_wait_room_entry_state`）：BATTLE / ROOM_FAILED /
         RETRYABLE_ROOM / TRANSITION_UNKNOWN。**「不在房间」单独发生 ≠ success**——无 battle / 无
@@ -348,12 +369,15 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
 
         `is_in_room` 状态判据、`run_invite` 的 `Timer(20/30)` / `timer_wait`、`interval=1` click
         节流、minitouch dwell 均不变；不叠 `confirm_delay` / 第二套 reaction。**不接 Fatigue**
-        （组队 critical path）。`GI_FIRE_*` 常量 PROVISIONAL / Level C 待标定。
+        （组队 critical path）。attempt 耗尽后再用 `GI_FIRE_POST_CLICK_TIMEOUT` 只读确认一次，
+        防止最后一帧恰好处于房间到战斗的过渡。`GI_FIRE_*` 常量 PROVISIONAL / Level C 待标定。
         """
         overall_timer = Timer(GI_FIRE_TIMEOUT).start()
+        attempt_started = False
         for attempt in range(1, GI_FIRE_MAX_TRIES + 1):
             if overall_timer.reached():
                 break
+            attempt_started = True
             self.screenshot()
             state = self._classify_room_entry_state()
             if state == 'battle':
@@ -414,6 +438,15 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 logger.warning('Room challenge: room disbanded after click')
                 return 'room_failed'
             # 'retryable' / 'timeout' → 下一 attempt
+        # 最后一次可能正好处于房间消失与战斗标识出现之间；停止点击后仍需有限观察。
+        if attempt_started:
+            state = self._wait_room_entry_state(terminal_only=True)
+            if state == 'battle':
+                logger.info('Room challenge: entered battle during final confirmation')
+                return 'battle'
+            if state == 'room_failed':
+                logger.warning('Room challenge: room disbanded during final confirmation')
+                return 'room_failed'
         logger.warning('Room challenge: bounded attempts / timeout without entering battle')
         return 'timeout'
 

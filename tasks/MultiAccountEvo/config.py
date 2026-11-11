@@ -23,11 +23,18 @@ class MultiAccountEvoConfig(ConfigBase):
     role: MultiAccountEvoRole = Field(default=MultiAccountEvoRole.LEADER, description="multi_account_evo_role_help")
     kirin_type: KirinType = Field(default=KirinType.LIGHTNINGKIRIN, description="multi_account_evo_kirin_type_help")
     layer: Layer = Field(default=Layer.TEN, description="multi_account_evo_layer_help")
-    group_count: int = Field(default=18, ge=1, le=18, description="group_count_help")
-    ios_count: int = Field(default=9, ge=0, le=18, description="ios_count_help")
+    group_count: int = Field(default=18, ge=1, le=20, description="group_count_help")
+    group_start: int = Field(default=1, ge=1, le=20, description="本机起始账号组（保留原组号）")
+    group_end: int = Field(default=0, ge=0, le=20, description="本机结束账号组（0表示全部组）")
+    ios_count: int = Field(default=9, ge=0, le=20, description="ios_count_help")
     battle_count: int = Field(default=20, ge=1, description="battle_count_help")
+    event_progress_enable: bool = Field(default=False, description="超鬼王门票模式：三端50/50才完成")
+    event_ocr_start: int = Field(default=200, ge=1, description="门票首次OCR场数")
+    event_ocr_interval: int = Field(default=10, ge=1, description="门票OCR间隔场数")
     sync_timeout: Time = Field(default=Time(minute=10), description="sync_timeout_help")
     strict_platform_order: bool = Field(default=True, description="strict_platform_order_help")
+    failure_notify_enable: bool = Field(default=False, description="失败时发送任务通知")
+    failure_pushplus_token: str = Field(default="", description="任务失败通知的 PushPlus Token")
 
     @model_validator(mode="after")
     def validate_counts(self):
@@ -110,13 +117,28 @@ class MultiAccountEvo(ConfigBase):
         return self.multi_account_evo_config.battle_count
 
     @property
+    def group_start(self) -> int:
+        return self.multi_account_evo_config.group_start
+
+    @property
+    def group_end(self) -> int:
+        return self.multi_account_evo_config.group_end or self.group_count
+
+    @property
     def sync_timeout_seconds(self) -> int:
         return self.multi_account_evo_config.sync_timeout_seconds
 
     def validate_runtime_accounts(self) -> None:
-        if len(self.account_list) < 18:
-            raise ValueError("at least 18 accounts are required")
-        for index, account in enumerate(self.account_list[:18], start=1):
+        settings = self.multi_account_evo_config
+        if not 1 <= self.group_start <= self.group_end <= self.group_count:
+            raise ValueError("group range must be within group_count")
+        if settings.event_progress_enable and settings.event_ocr_start > self.battle_count:
+            raise ValueError("event OCR start cannot exceed battle count limit")
+        # 保留旧配置的 18 个槽位要求，并完整校验新增的第 19、20 组。
+        required = max(18, self.group_count)
+        if len(self.account_list) < required:
+            raise ValueError(f"at least {required} accounts are required")
+        for index, account in enumerate(self.account_list[:required], start=1):
             missing = [
                 field
                 for field in ("character", "svr", "account")

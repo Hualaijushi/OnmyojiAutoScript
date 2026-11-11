@@ -1,0 +1,11 @@
+[
+  {
+    "itemName": "o_event_progress_50",
+    "roiFront": "1128,10,104,24",
+    "roiBack": "1128,10,104,24",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "结算页右上角超鬼王门票，完整读取当前值/50；ROI已审阅并接入，实际OCR准确率待自然运行验证"
+  }
+]

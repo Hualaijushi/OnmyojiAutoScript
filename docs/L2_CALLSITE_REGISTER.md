@@ -15,8 +15,8 @@
 
 ## 2. 汇总
 
-- 调用点总数：**1127**
-- 按 basis：human **180** / c0 **17** / rule **930**
+- 调用点总数：**1130**
+- 按 basis：human **180** / c0 **17** / rule **933**
 - 显式调用 `execute_single_click` 的调用点：**47**（其中 BaseTask primitive **9**）。**这不是「享受 ROI 采样的点击数」**：  Rule / helper 点击（约 900 处）早在 `Rule*.coord()` 内按 ROI 采样一次，并经 BaseTask primitive 汇入统一执行器。
 - 仍是裸 `device.click` / 后端直调：**5** = 底层与非点击 4 + BaseTask primitive 0 + 生产消费点 0 + 项目排除 1。
 - 已显式声明 L2 `policy=`：**36**；仍用 legacy `confirm_delay=`：**3**
@@ -30,15 +30,15 @@
 | NEEDS_C | 7 |
 | DEFERRED | 6 |
 | PRIMITIVE | 35 |
-| EXCLUDED | 172 |
-| **合计** | **1127** |
+| EXCLUDED | 175 |
+| **合计** | **1130** |
 
 ### 2.1 按调用种类
 
 | kind | 数量 |
 | --- | ---: |
-| appear_then_click | 507 |
-| click | 240 |
+| appear_then_click | 509 |
+| click | 241 |
 | ui_click | 155 |
 | ui_click_until_disappear | 91 |
 | execute_single_click | 47 |
@@ -72,8 +72,8 @@
 ### 2.4 C0 复核批次（L2 Stage C0 → C1-A1）与开发状态
 
 - **两个维度，不可相加**：`decision` = 技术分类（互斥、可加总，见 §2 表）；`dev_status` = 开发排期（只对 C0 复核的点位有意义：COMPLETED / DEFERRED / NOT_APPLICABLE）。`NEEDS_C` + `DEFERRED` = 技术上需要真机依据、且用户决定暂缓；`decision=DEFERRED` = C0 技术建议为 MIGRATE、但用户决定暂缓（原建议保留在下表「C0 建议」列）。**DEFERRED 是用户排期决策，不是技术完成，也不是永久禁止。**
-- **口径区分**：全仓点击调用点 **1127**（本表）；最初 L2-2 人工审计 **180**（basis=human，历史结论不改写）；C0 复核的原 NEEDS_C **24**（`c0_reviewed`，与 basis 不是互斥维度：其中 GeneralInvite / GeneralBattle 7 点的决定来源仍是 human）；C1-A1 已实际迁移 **4**。
-- **basis 统计**（互斥、可加总）：human **180** / c0 **17** / rule **930**。
+- **口径区分**：全仓点击调用点 **1130**（本表）；最初 L2-2 人工审计 **180**（basis=human，历史结论不改写）；C0 复核的原 NEEDS_C **24**（`c0_reviewed`，与 basis 不是互斥维度：其中 GeneralInvite / GeneralBattle 7 点的决定来源仍是 human）；C1-A1 已实际迁移 **4**。
+- **basis 统计**（互斥、可加总）：human **180** / c0 **17** / rule **933**。
 - **C0 24 点的开发状态**：COMPLETED **4** / DEFERRED **13**（decision=DEFERRED 6 + decision=NEEDS_C 7） / NOT_APPLICABLE **7**（KEEP_IMMEDIATE 3 + KEEP_SPECIAL 4，已有明确决策，不属于迁移积压）。
 
 | # | 文件 | 函数 | 目标 | C0 建议 | decision | dev_status | 说明 |
@@ -141,6 +141,7 @@
 | RealmRaid | 15 | 0 | 9 | 4 | 2 | 0 | 0 | 0 | 0 |
 | Delegation | 14 | 0 | 0 | 7 | 7 | 0 | 0 | 0 | 0 |
 | KekkaiActivation | 13 | 0 | 0 | 5 | 8 | 0 | 0 | 0 | 0 |
+| MultiAccountEvo | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 12 |
 | Quiz | 12 | 0 | 0 | 12 | 0 | 0 | 0 | 0 | 0 |
 | CollectiveMissions | 11 | 0 | 0 | 8 | 3 | 0 | 0 | 0 | 0 |
 | TrueOrochi | 11 | 0 | 0 | 11 | 0 | 0 | 0 | 0 | 0 |
@@ -149,7 +150,6 @@
 | TalismanPass | 10 | 0 | 0 | 7 | 3 | 0 | 0 | 0 | 0 |
 | tasks/Component/SwitchSoul | 10 | 0 | 0 | 9 | 1 | 0 | 0 | 0 | 0 |
 | FallenSun | 9 | 0 | 0 | 0 | 9 | 0 | 0 | 0 | 0 |
-| MultiAccountEvo | 9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 9 |
 | Orochi | 9 | 0 | 3 | 3 | 3 | 0 | 0 | 0 | 0 |
 | RyouToppa | 9 | 0 | 4 | 3 | 2 | 0 | 0 | 0 | 0 |
 | DyeTrials | 8 | 0 | 0 | 8 | 0 | 0 | 0 | 0 | 0 |
@@ -1255,411 +1255,414 @@
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
 | 809 | `MultiAccountEvo/script_task.py` | `ScriptTask.appear_then_click#1` | appear_then_click | `target` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 810 | `MultiAccountEvo/script_task.py` | `ScriptTask._detect_select#1` | execute_single_click | `self.device` | IMMEDIATE | Y | - | EXCLUDED | rule/R1 |
-| 811 | `MultiAccountEvo/script_task.py` | `ScriptTask.check_then_accept#1` | appear_then_click | `self.I_I_NO_DEFAULT` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 812 | `MultiAccountEvo/script_task.py` | `ScriptTask.check_then_accept#2` | appear_then_click | `self.I_GI_SURE` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 813 | `MultiAccountEvo/script_task.py` | `ScriptTask.check_then_accept#3` | appear_then_click | `self.I_I_ACCEPT_DEFAULT` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 814 | `MultiAccountEvo/script_task.py` | `ScriptTask.check_then_accept#4` | execute_single_click | `self.device` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 815 | `MultiAccountEvo/script_task.py` | `ScriptTask._handle_result#1` | click | `self._multi_account_settlement_click()` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 816 | `MultiAccountEvo/script_task.py` | `ScriptTask._handle_reward#1` | appear_then_click | `self.I_GB_SKIN_CONFIRM` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 817 | `MultiAccountEvo/script_task.py` | `ScriptTask._handle_reward#2` | click | `self._multi_account_settlement_click()` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 810 | `MultiAccountEvo/script_task.py` | `ScriptTask._post_battle_invite_step#1` | appear_then_click | `self.I_I_NO_DEFAULT` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 811 | `MultiAccountEvo/script_task.py` | `ScriptTask._post_battle_invite_step#2` | appear_then_click | `self.I_GI_SURE` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 812 | `MultiAccountEvo/script_task.py` | `ScriptTask._wait_post_battle_state#1` | click | `self._multi_account_settlement_click()` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 813 | `MultiAccountEvo/script_task.py` | `ScriptTask._detect_select#1` | execute_single_click | `self.device` | IMMEDIATE | Y | - | EXCLUDED | rule/R1 |
+| 814 | `MultiAccountEvo/script_task.py` | `ScriptTask.check_then_accept#1` | appear_then_click | `self.I_I_NO_DEFAULT` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 815 | `MultiAccountEvo/script_task.py` | `ScriptTask.check_then_accept#2` | appear_then_click | `self.I_GI_SURE` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 816 | `MultiAccountEvo/script_task.py` | `ScriptTask.check_then_accept#3` | appear_then_click | `self.I_I_ACCEPT_DEFAULT` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 817 | `MultiAccountEvo/script_task.py` | `ScriptTask.check_then_accept#4` | execute_single_click | `self.device` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 818 | `MultiAccountEvo/script_task.py` | `ScriptTask._handle_result#1` | click | `self._multi_account_settlement_click()` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 819 | `MultiAccountEvo/script_task.py` | `ScriptTask._handle_reward#1` | appear_then_click | `self.I_GB_SKIN_CONFIRM` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 820 | `MultiAccountEvo/script_task.py` | `ScriptTask._handle_reward#2` | click | `self._multi_account_settlement_click()` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
 
 ### MysteryShop
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 818 | `MysteryShop/script_task.py` | `ScriptTask.run#1` | ui_click | `self.I_ME_ENTER` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 819 | `MysteryShop/script_task.py` | `ScriptTask.next_one#1` | appear_then_click | `self.I_MS_NEXT` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R8 |
-| 820 | `MysteryShop/script_task.py` | `ScriptTask.next_one#2` | appear_then_click | `self.I_MS_NEXT` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R8 |
-| 821 | `MysteryShop/script_task.py` | `ScriptTask.share#1` | ui_click | `self.I_MS_SHARE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 822 | `MysteryShop/script_task.py` | `ScriptTask.shop_reward#1` | ui_get_reward | `self.I_MS_REWARD_3` | IMMEDIATE | - | sleep | KEEP_SPECIAL | rule/R4 |
-| 823 | `MysteryShop/script_task.py` | `ScriptTask.shop_reward#2` | ui_get_reward | `self.I_MS_REWARD_5` | IMMEDIATE | - | sleep | KEEP_SPECIAL | rule/R4 |
-| 824 | `MysteryShop/script_task.py` | `ScriptTask.shop_reward#3` | ui_get_reward | `self.I_MS_REWARD_10` | IMMEDIATE | - | sleep | KEEP_SPECIAL | rule/R4 |
+| 821 | `MysteryShop/script_task.py` | `ScriptTask.run#1` | ui_click | `self.I_ME_ENTER` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 822 | `MysteryShop/script_task.py` | `ScriptTask.next_one#1` | appear_then_click | `self.I_MS_NEXT` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R8 |
+| 823 | `MysteryShop/script_task.py` | `ScriptTask.next_one#2` | appear_then_click | `self.I_MS_NEXT` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R8 |
+| 824 | `MysteryShop/script_task.py` | `ScriptTask.share#1` | ui_click | `self.I_MS_SHARE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 825 | `MysteryShop/script_task.py` | `ScriptTask.shop_reward#1` | ui_get_reward | `self.I_MS_REWARD_3` | IMMEDIATE | - | sleep | KEEP_SPECIAL | rule/R4 |
+| 826 | `MysteryShop/script_task.py` | `ScriptTask.shop_reward#2` | ui_get_reward | `self.I_MS_REWARD_5` | IMMEDIATE | - | sleep | KEEP_SPECIAL | rule/R4 |
+| 827 | `MysteryShop/script_task.py` | `ScriptTask.shop_reward#3` | ui_get_reward | `self.I_MS_REWARD_10` | IMMEDIATE | - | sleep | KEEP_SPECIAL | rule/R4 |
 
 ### Nian
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 825 | `Nian/script_task.py` | `ScriptTask.run#1` | appear_then_click | `self.I_GR_AUTO_MATCH` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 826 | `Nian/script_task.py` | `ScriptTask.run#2` | click | `self.C_CLIC_SAFE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R6 |
-| 827 | `Nian/script_task.py` | `ScriptTask.run#3` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 828 | `Nian/script_task.py` | `ScriptTask.run#4` | appear_then_click | `self.I_UI_CONFIRM_SAMLL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 829 | `Nian/script_task.py` | `ScriptTask.run#5` | appear_then_click | `self.I_N_WAITING` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 828 | `Nian/script_task.py` | `ScriptTask.run#1` | appear_then_click | `self.I_GR_AUTO_MATCH` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 829 | `Nian/script_task.py` | `ScriptTask.run#2` | click | `self.C_CLIC_SAFE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R6 |
+| 830 | `Nian/script_task.py` | `ScriptTask.run#3` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 831 | `Nian/script_task.py` | `ScriptTask.run#4` | appear_then_click | `self.I_UI_CONFIRM_SAMLL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 832 | `Nian/script_task.py` | `ScriptTask.run#5` | appear_then_click | `self.I_N_WAITING` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
 
 ### Orochi
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 830 | `Orochi/script_task.py` | `ScriptTask._close_orochi_soul_choice_popup#1` | appear_then_click | `self.I_GB_CLOSE_RED` | IMMEDIATE | - | - | KEEP_SPECIAL | human/H |
-| 831 | `Orochi/script_task.py` | `ScriptTask.check_layer#1` | execute_single_click | `self.device` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R3 |
-| 832 | `Orochi/script_task.py` | `ScriptTask.run_leader#1` | appear_then_click | `self.I_FORM_TEAM` | NORMAL | Y | - | ALREADY_L2 | human/H |
-| 833 | `Orochi/script_task.py` | `ScriptTask.run_member#1` | appear_then_click | `self.I_PET_PRESENT` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
-| 834 | `Orochi/script_task.py` | `ScriptTask._fire_orochi_alone#1` | appear_then_click | `self.I_OROCHI_FIRE` | IMMEDIATE | Y | Timer,random_delay,sleep | ALREADY_L2 | human/H |
-| 835 | `Orochi/script_task.py` | `ScriptTask.run_alone#1` | appear_then_click | `self.I_PET_PRESENT` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
-| 836 | `Orochi/script_task.py` | `ScriptTask.run_wild#1` | appear_then_click | `self.I_FORM_TEAM` | NORMAL | Y | - | ALREADY_L2 | human/H |
-| 837 | `Orochi/script_task.py` | `ScriptTask.run_wild#2` | appear_then_click | `self.I_PET_PRESENT` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
-| 838 | `Orochi/script_task.py` | `ScriptTask.run_wild#3` | appear_then_click | `self.I_OROCHI_WILD_FIRE` | IMMEDIATE | Y | - | KEEP_SPECIAL | human/H |
+| 833 | `Orochi/script_task.py` | `ScriptTask._close_orochi_soul_choice_popup#1` | appear_then_click | `self.I_GB_CLOSE_RED` | IMMEDIATE | - | - | KEEP_SPECIAL | human/H |
+| 834 | `Orochi/script_task.py` | `ScriptTask.check_layer#1` | execute_single_click | `self.device` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R3 |
+| 835 | `Orochi/script_task.py` | `ScriptTask.run_leader#1` | appear_then_click | `self.I_FORM_TEAM` | NORMAL | Y | - | ALREADY_L2 | human/H |
+| 836 | `Orochi/script_task.py` | `ScriptTask.run_member#1` | appear_then_click | `self.I_PET_PRESENT` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
+| 837 | `Orochi/script_task.py` | `ScriptTask._fire_orochi_alone#1` | appear_then_click | `self.I_OROCHI_FIRE` | IMMEDIATE | Y | Timer,random_delay,sleep | ALREADY_L2 | human/H |
+| 838 | `Orochi/script_task.py` | `ScriptTask.run_alone#1` | appear_then_click | `self.I_PET_PRESENT` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
+| 839 | `Orochi/script_task.py` | `ScriptTask.run_wild#1` | appear_then_click | `self.I_FORM_TEAM` | NORMAL | Y | - | ALREADY_L2 | human/H |
+| 840 | `Orochi/script_task.py` | `ScriptTask.run_wild#2` | appear_then_click | `self.I_PET_PRESENT` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
+| 841 | `Orochi/script_task.py` | `ScriptTask.run_wild#3` | appear_then_click | `self.I_OROCHI_WILD_FIRE` | IMMEDIATE | Y | - | KEEP_SPECIAL | human/H |
 
 ### OtherWorldTwilight
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 839 | `OtherWorldTwilight/script_task.py` | `ScriptTask.run_leader#1` | ui_click | `self.I_OWT_TEAM` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 840 | `OtherWorldTwilight/script_task.py` | `ScriptTask.run_alone#1` | appear_then_click | `self.I_OWT_FIRE` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 842 | `OtherWorldTwilight/script_task.py` | `ScriptTask.run_leader#1` | ui_click | `self.I_OWT_TEAM` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 843 | `OtherWorldTwilight/script_task.py` | `ScriptTask.run_alone#1` | appear_then_click | `self.I_OWT_FIRE` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
 
 ### Pets
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 841 | `Pets/script_task.py` | `ScriptTask._feed#1` | ui_click | `self.I_PET_FEAST` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 842 | `Pets/script_task.py` | `ScriptTask._feed#2` | appear_then_click | `self.I_UI_BACK_CIRCLE` | NAVIGATION | - | - | ALREADY_L2 | c0/C1 |
-| 843 | `Pets/script_task.py` | `ScriptTask._feed#3` | ui_click | `self.I_PET_FEED` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 844 | `Pets/script_task.py` | `ScriptTask._feed#4` | ui_click_until_disappear | `self.I_PET_SKIP` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 844 | `Pets/script_task.py` | `ScriptTask._feed#1` | ui_click | `self.I_PET_FEAST` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 845 | `Pets/script_task.py` | `ScriptTask._feed#2` | appear_then_click | `self.I_UI_BACK_CIRCLE` | NAVIGATION | - | - | ALREADY_L2 | c0/C1 |
+| 846 | `Pets/script_task.py` | `ScriptTask._feed#3` | ui_click | `self.I_PET_FEED` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 847 | `Pets/script_task.py` | `ScriptTask._feed#4` | ui_click_until_disappear | `self.I_PET_SKIP` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
 
 ### Quiz
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 845 | `Quiz/script_task.py` | `ScriptTask.run#1` | ui_click | `self.I_UI_BACK_YELLOW` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 846 | `Quiz/script_task.py` | `ScriptTask.enter#1` | appear_then_click | `self.I_ENTRY` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 847 | `Quiz/script_task.py` | `ScriptTask.once#1` | appear_then_click | `self.I_START` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 848 | `Quiz/script_task.py` | `ScriptTask.once#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 849 | `Quiz/script_task.py` | `ScriptTask.once#3` | ui_click | `self.I_FAIL_QUIT` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 850 | `Quiz/script_task.py` | `ScriptTask.once#4` | ui_click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 851 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#1` | appear_then_click | `self.I_ALONE_ENSURE` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | c0/C0K |
-| 852 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#2` | click | `self.click_options[index-1]` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 853 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#3` | click | `self.C_ANSWER_ENSURE_1` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 854 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#4` | click | `self.C_ANSWER_ENSURE_2` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 855 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#5` | click | `self.C_ANSWER_ENSURE_3` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 856 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#6` | click | `self.C_ANSWER_ENSURE_4` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 848 | `Quiz/script_task.py` | `ScriptTask.run#1` | ui_click | `self.I_UI_BACK_YELLOW` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 849 | `Quiz/script_task.py` | `ScriptTask.enter#1` | appear_then_click | `self.I_ENTRY` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 850 | `Quiz/script_task.py` | `ScriptTask.once#1` | appear_then_click | `self.I_START` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 851 | `Quiz/script_task.py` | `ScriptTask.once#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 852 | `Quiz/script_task.py` | `ScriptTask.once#3` | ui_click | `self.I_FAIL_QUIT` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 853 | `Quiz/script_task.py` | `ScriptTask.once#4` | ui_click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 854 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#1` | appear_then_click | `self.I_ALONE_ENSURE` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | c0/C0K |
+| 855 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#2` | click | `self.click_options[index-1]` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 856 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#3` | click | `self.C_ANSWER_ENSURE_1` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 857 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#4` | click | `self.C_ANSWER_ENSURE_2` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 858 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#5` | click | `self.C_ANSWER_ENSURE_3` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 859 | `Quiz/script_task.py` | `ScriptTask._deal_quiz#6` | click | `self.C_ANSWER_ENSURE_4` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
 
 ### RealmRaid
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 857 | `RealmRaid/script_task.py` | `ScriptTask.run#1` | appear_then_click | `self.I_FROG_RAID` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
-| 858 | `RealmRaid/script_task.py` | `ScriptTask.ensure_lock#1` | appear_then_click | `self.I_UNLOCK` | FAST | Y | - | ALREADY_L2 | human/H |
-| 859 | `RealmRaid/script_task.py` | `ScriptTask.ensure_lock#2` | appear_then_click | `self.I_UNLOCK_2` | FAST | Y | - | ALREADY_L2 | human/H |
-| 860 | `RealmRaid/script_task.py` | `ScriptTask.ensure_lock#3` | appear_then_click | `self.I_LOCK` | FAST | Y | - | ALREADY_L2 | human/H |
-| 861 | `RealmRaid/script_task.py` | `ScriptTask.ensure_lock#4` | appear_then_click | `self.I_LOCK_2` | FAST | Y | - | ALREADY_L2 | human/H |
-| 862 | `RealmRaid/script_task.py` | `ScriptTask._enter_target#1` | click | `self.partition[order - 1]` | IMMEDIATE | - | random_delay,sleep | KEEP_SPECIAL | human/H |
-| 863 | `RealmRaid/script_task.py` | `ScriptTask.reward_detect_click#1` | ui_click_until_disappear | `self.I_SOUL_RAID` | IMMEDIATE | - | wait_until | KEEP_IMMEDIATE | human/H |
-| 864 | `RealmRaid/script_task.py` | `ScriptTask.reward_detect_click#2` | appear_then_click | `self.I_SOUL_RAID` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | human/H |
-| 865 | `RealmRaid/script_task.py` | `ScriptTask.check_refresh#1` | appear_then_click | `self.I_FRESH` | NORMAL | Y | - | ALREADY_L2 | human/H |
-| 866 | `RealmRaid/script_task.py` | `ScriptTask.check_refresh#2` | appear_then_click | `self.I_FRESH_ENSURE` | CONFIRM | Y | - | ALREADY_L2 | human/H |
-| 867 | `RealmRaid/script_task.py` | `ScriptTask.fire#1` | click | `click` | IMMEDIATE | Y | Timer,random_delay,sleep,wait_until | KEEP_SPECIAL | human/H |
-| 868 | `RealmRaid/script_task.py` | `ScriptTask.fire#2` | appear_then_click | `self.I_FIRE` | IMMEDIATE | Y | Timer,random_delay,sleep,wait_until | ALREADY_L2 | human/H |
-| 869 | `RealmRaid/script_task.py` | `ScriptTask._fire_again#1` | appear_then_click | `self.I_SHOW_AGAIN` | IMMEDIATE | Y | Timer,random_delay,sleep,wait_until | KEEP_IMMEDIATE | human/H |
-| 870 | `RealmRaid/script_task.py` | `ScriptTask._fire_again#2` | appear_then_click | `self.I_FRESH_ENSURE` | confirm_delay | Y | Timer,random_delay,sleep,wait_until | ALREADY_L2 | human/H |
-| 871 | `RealmRaid/script_task.py` | `ScriptTask._fire_again#3` | appear_then_click | `self.I_FIRE_AGAIN` | IMMEDIATE | Y | Timer,random_delay,sleep,wait_until | ALREADY_L2 | human/H |
+| 860 | `RealmRaid/script_task.py` | `ScriptTask.run#1` | appear_then_click | `self.I_FROG_RAID` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
+| 861 | `RealmRaid/script_task.py` | `ScriptTask.ensure_lock#1` | appear_then_click | `self.I_UNLOCK` | FAST | Y | - | ALREADY_L2 | human/H |
+| 862 | `RealmRaid/script_task.py` | `ScriptTask.ensure_lock#2` | appear_then_click | `self.I_UNLOCK_2` | FAST | Y | - | ALREADY_L2 | human/H |
+| 863 | `RealmRaid/script_task.py` | `ScriptTask.ensure_lock#3` | appear_then_click | `self.I_LOCK` | FAST | Y | - | ALREADY_L2 | human/H |
+| 864 | `RealmRaid/script_task.py` | `ScriptTask.ensure_lock#4` | appear_then_click | `self.I_LOCK_2` | FAST | Y | - | ALREADY_L2 | human/H |
+| 865 | `RealmRaid/script_task.py` | `ScriptTask._enter_target#1` | click | `self.partition[order - 1]` | IMMEDIATE | - | random_delay,sleep | KEEP_SPECIAL | human/H |
+| 866 | `RealmRaid/script_task.py` | `ScriptTask.reward_detect_click#1` | ui_click_until_disappear | `self.I_SOUL_RAID` | IMMEDIATE | - | wait_until | KEEP_IMMEDIATE | human/H |
+| 867 | `RealmRaid/script_task.py` | `ScriptTask.reward_detect_click#2` | appear_then_click | `self.I_SOUL_RAID` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | human/H |
+| 868 | `RealmRaid/script_task.py` | `ScriptTask.check_refresh#1` | appear_then_click | `self.I_FRESH` | NORMAL | Y | - | ALREADY_L2 | human/H |
+| 869 | `RealmRaid/script_task.py` | `ScriptTask.check_refresh#2` | appear_then_click | `self.I_FRESH_ENSURE` | CONFIRM | Y | - | ALREADY_L2 | human/H |
+| 870 | `RealmRaid/script_task.py` | `ScriptTask.fire#1` | click | `click` | IMMEDIATE | Y | Timer,random_delay,sleep,wait_until | KEEP_SPECIAL | human/H |
+| 871 | `RealmRaid/script_task.py` | `ScriptTask.fire#2` | appear_then_click | `self.I_FIRE` | IMMEDIATE | Y | Timer,random_delay,sleep,wait_until | ALREADY_L2 | human/H |
+| 872 | `RealmRaid/script_task.py` | `ScriptTask._fire_again#1` | appear_then_click | `self.I_SHOW_AGAIN` | IMMEDIATE | Y | Timer,random_delay,sleep,wait_until | KEEP_IMMEDIATE | human/H |
+| 873 | `RealmRaid/script_task.py` | `ScriptTask._fire_again#2` | appear_then_click | `self.I_FRESH_ENSURE` | confirm_delay | Y | Timer,random_delay,sleep,wait_until | ALREADY_L2 | human/H |
+| 874 | `RealmRaid/script_task.py` | `ScriptTask._fire_again#3` | appear_then_click | `self.I_FIRE_AGAIN` | IMMEDIATE | Y | Timer,random_delay,sleep,wait_until | ALREADY_L2 | human/H |
 
 ### RyouToppa
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 872 | `RyouToppa/script_task.py` | `ScriptTask._wait_for_ryou_toppa_state#1` | appear_then_click | `RealmRaidAssets.I_REALM_RAID` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | human/H |
-| 873 | `RyouToppa/script_task.py` | `ScriptTask._wait_for_ryou_toppa_state#2` | appear_then_click | `self.I_RYOU_TOPPA` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | human/H |
-| 874 | `RyouToppa/script_task.py` | `ScriptTask._ensure_team_lock_state#1` | appear_then_click | `source` | FAST | Y | Timer | ALREADY_L2 | human/H |
-| 875 | `RyouToppa/script_task.py` | `ScriptTask._click_toppa_area#1` | execute_single_click | `self.device` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R3 |
-| 876 | `RyouToppa/script_task.py` | `ScriptTask._click_toppa_area#2` | click | `rule` | IMMEDIATE | - | - | KEEP_SPECIAL | human/H |
-| 877 | `RyouToppa/script_task.py` | `ScriptTask.start_ryou_toppa#1` | appear_then_click | `self.I_SELECT_RYOU_BUTTON` | FAST | Y | - | ALREADY_L2 | human/H |
-| 878 | `RyouToppa/script_task.py` | `ScriptTask.start_ryou_toppa#2` | appear_then_click | `self.I_GUILD_ORDERS_REWARDS` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
-| 879 | `RyouToppa/script_task.py` | `ScriptTask.start_ryou_toppa#3` | appear_then_click | `self.I_START_TOPPA_BUTTON` | FAST | Y | - | ALREADY_L2 | human/H |
-| 880 | `RyouToppa/script_task.py` | `ScriptTask.attack_area#1` | appear_then_click | `RealmRaidAssets.I_FIRE` | IMMEDIATE | Y | random_delay,sleep | ALREADY_L2 | human/H |
+| 875 | `RyouToppa/script_task.py` | `ScriptTask._wait_for_ryou_toppa_state#1` | appear_then_click | `RealmRaidAssets.I_REALM_RAID` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | human/H |
+| 876 | `RyouToppa/script_task.py` | `ScriptTask._wait_for_ryou_toppa_state#2` | appear_then_click | `self.I_RYOU_TOPPA` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | human/H |
+| 877 | `RyouToppa/script_task.py` | `ScriptTask._ensure_team_lock_state#1` | appear_then_click | `source` | FAST | Y | Timer | ALREADY_L2 | human/H |
+| 878 | `RyouToppa/script_task.py` | `ScriptTask._click_toppa_area#1` | execute_single_click | `self.device` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R3 |
+| 879 | `RyouToppa/script_task.py` | `ScriptTask._click_toppa_area#2` | click | `rule` | IMMEDIATE | - | - | KEEP_SPECIAL | human/H |
+| 880 | `RyouToppa/script_task.py` | `ScriptTask.start_ryou_toppa#1` | appear_then_click | `self.I_SELECT_RYOU_BUTTON` | FAST | Y | - | ALREADY_L2 | human/H |
+| 881 | `RyouToppa/script_task.py` | `ScriptTask.start_ryou_toppa#2` | appear_then_click | `self.I_GUILD_ORDERS_REWARDS` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | human/H |
+| 882 | `RyouToppa/script_task.py` | `ScriptTask.start_ryou_toppa#3` | appear_then_click | `self.I_START_TOPPA_BUTTON` | FAST | Y | - | ALREADY_L2 | human/H |
+| 883 | `RyouToppa/script_task.py` | `ScriptTask.attack_area#1` | appear_then_click | `RealmRaidAssets.I_FIRE` | IMMEDIATE | Y | random_delay,sleep | ALREADY_L2 | human/H |
 
 ### Secret
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 881 | `Secret/script_task.py` | `ScriptTask.run#1` | ui_click | `self.I_SE_ENTER` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
-| 882 | `Secret/script_task.py` | `ScriptTask.find_battle#1` | ui_click_until_disappear | `self.I_CHAT_CLOSE_BUTTON` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
-| 883 | `Secret/script_task.py` | `ScriptTask.find_battle#2` | execute_single_click | `self.device` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R10 |
-| 884 | `Secret/script_task.py` | `ScriptTask.click_battle#1` | appear_then_click | `self.I_SE_FIRE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 884 | `Secret/script_task.py` | `ScriptTask.run#1` | ui_click | `self.I_SE_ENTER` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
+| 885 | `Secret/script_task.py` | `ScriptTask.find_battle#1` | ui_click_until_disappear | `self.I_CHAT_CLOSE_BUTTON` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
+| 886 | `Secret/script_task.py` | `ScriptTask.find_battle#2` | execute_single_click | `self.device` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R10 |
+| 887 | `Secret/script_task.py` | `ScriptTask.click_battle#1` | appear_then_click | `self.I_SE_FIRE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
 
 ### SixRealms
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 885 | `SixRealms/common.py` | `SixRealmsCommon.open_shop#1` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 886 | `SixRealms/common.py` | `SixRealmsCommon.open_shop#2` | appear_then_click | `store_rule` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 887 | `SixRealms/common.py` | `SixRealmsCommon.open_shop#3` | appear_then_click | `self.I_UI_CANCEL` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | c0/C0K |
-| 888 | `SixRealms/common.py` | `SixRealmsCommon.enter_battle#1` | ui_click | `normal_unlock` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 889 | `SixRealms/common.py` | `SixRealmsCommon.enter_battle#2` | ui_click | `boss_unlock` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 890 | `SixRealms/common.py` | `SixRealmsCommon.enter_battle#3` | appear_then_click | `fire_rule` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 891 | `SixRealms/common.py` | `SixRealmsCommon.refresh_store#1` | appear_then_click | `refresh_rule` | CONFIRM | - | - | ALREADY_L2 | c0/C1 |
-| 892 | `SixRealms/common.py` | `SixRealmsCommon.buy_skill#1` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 893 | `SixRealms/common.py` | `SixRealmsCommon.buy_skill#2` | execute_single_click | `self.device` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R10 |
-| 894 | `SixRealms/common.py` | `SixRealmsCommon.choose_and_enter_island#1` | appear_then_click | `target_land` | NORMAL | - | - | ALREADY_L2 | c0/C1 |
-| 895 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_in_battle#1` | appear_then_click | `self.I_BOSS_SKIP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 896 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_result#1` | click | `self.I_BOSS_BATTLE_GIVEUP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 897 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_result#2` | click | `self.I_UI_CONFIRM_SAMLL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 898 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_result#3` | appear_then_click | `select_btn` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 899 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#1` | appear_then_click | `self.I_SR_DOUBLE_REWARD_USE` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 900 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#2` | appear_then_click | `self.I_SR_DOUBLE_REWARD_CANCEL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 901 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#3` | appear_then_click | `self.I_SR_NOT_TIP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 902 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#4` | appear_then_click | `self.I_UI_CANCEL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 903 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#5` | click | `pages.random_click()` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 904 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.ms_page_handle_dict#1` | click | `pages.random_click(ltrb=(True, False, False, False))` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 905 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.ms_page_handle_dict#2` | click | `pages.random_click()` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 906 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms#1` | appear_then_click | `self.I_MCONINUE` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 907 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms#2` | appear_then_click | `self.I_MSTART` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 908 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_prepare#1` | appear_then_click | `self.I_MSTART_CONFIRM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 909 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_prepare#2` | appear_then_click | `self.I_MSTART_CONFIRM2` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 910 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_prepare#3` | appear_then_click | `self.I_MFIRST_SKILL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 911 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_mistery#1` | appear_then_click | `self.I_MISTERY_IMITATE_SKILL_101` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 912 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_mistery#2` | click | `pages.random_click()` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
-| 913 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_mistery#3` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
-| 914 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_mistery#4` | appear_then_click | `self.I_MISTERY_IMITATE` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
-| 915 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_chaos#1` | ui_click | `self.C_NPC_FIRE_CENTER` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 916 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_star#1` | ui_click | `self.C_NPC_FIRE_LEFT` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 917 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_battle#1` | ui_click | `self.C_NPC_FIRE_RIGHT` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 918 | `SixRealms/page.py` | `handle_enter_moon_sea#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 919 | `SixRealms/page.py` | `handle_enter_moon_sea#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_MOON_SEA` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 920 | `SixRealms/page.py` | `switch_moon_sea_shikigami#1` | ui_click | `SixRealmsAssets.C_SR_SWITCH_SHIKIGAMI` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 921 | `SixRealms/page.py` | `switch_moon_sea_shikigami#2` | appear_then_click | `SixRealmsAssets.I_MSHOUZU_SELECT` | IMMEDIATE | - | - | KEEP_SPECIAL | c0/C0S |
-| 922 | `SixRealms/page.py` | `handle_enter_peacock_kingdom#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 923 | `SixRealms/page.py` | `handle_enter_peacock_kingdom#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_PEACOCK_KINGDOM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 924 | `SixRealms/page.py` | `handle_enter_incense_realm#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 925 | `SixRealms/page.py` | `handle_enter_incense_realm#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_INCENSE_REALM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 926 | `SixRealms/page.py` | `handle_enter_seasonrift_forest#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 927 | `SixRealms/page.py` | `handle_enter_seasonrift_forest#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_SEASONRIFT_FOREST` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 928 | `SixRealms/page.py` | `handle_enter_pure_buddha_realm#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 929 | `SixRealms/page.py` | `handle_enter_pure_buddha_realm#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_PURE_BUDDHA_REALM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 930 | `SixRealms/page.py` | `handle_enter_mantra_tower#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 931 | `SixRealms/page.py` | `handle_enter_mantra_tower#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_MANTRA_TOWER` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 932 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._mark_peacock_boss#1` | appear_then_click | `self.I_LOCAL` | IMMEDIATE | - | sleep | KEEP_SPECIAL | c0/C0S |
-| 933 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._mark_peacock_boss#2` | execute_single_click | `self.device` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R10 |
-| 934 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_result#1` | click | `self.I_BOSS_BATTLE_GIVEUP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 935 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_result#2` | click | `self.I_UI_CONFIRM_SAMLL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 936 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_result#3` | appear_then_click | `select_btn` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 937 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_result#4` | appear_then_click | `select_btn` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 938 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#1` | appear_then_click | `self.I_SR_DOUBLE_REWARD_USE` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 939 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#2` | appear_then_click | `self.I_SR_DOUBLE_REWARD_CANCEL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 940 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#3` | appear_then_click | `self.I_SR_NOT_TIP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 941 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#4` | appear_then_click | `self.I_UI_CANCEL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 942 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#5` | click | `pages.random_click()` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 943 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.pk_page_handle_dict#1` | click | `pages.random_click(ltrb=(True, False, False, False))` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 944 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.pk_page_handle_dict#2` | click | `pages.random_click()` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 945 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk#1` | appear_then_click | `self.I_PK_CONTINUE` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 946 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk#2` | appear_then_click | `self.I_PK_START` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 947 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_prepare#1` | appear_then_click | `self.I_PK_START_CONFIRM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 948 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_prepare#2` | appear_then_click | `self.I_PK_START_CONFIRM2` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 949 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_prepare#3` | appear_then_click | `self.I_PK_START_THIRD_SKILL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 950 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_prepare#4` | appear_then_click | `self.I_MFIRST_SKILL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 951 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom._summon_store#1` | appear_then_click | `self.I_M_STORE_ACTIVITY` | IMMEDIATE | - | wait_until | DEFERRED | c0/C0D |
-| 952 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom._summon_store#2` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | - | wait_until | DEFERRED | c0/C0D |
-| 953 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom._use_breath#1` | appear_then_click | `self.I_M_STORE_ACTIVITY` | IMMEDIATE | - | - | DEFERRED | c0/C0D |
-| 954 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom._confirm_store_entry#1` | appear_then_click | `self.I_PK_STORE_STILLIN` | IMMEDIATE | - | wait_until | DEFERRED | c0/C0D |
-| 955 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_chaos#1` | ui_click | `self.C_NPC_FIRE_CENTER` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
-| 956 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_battle#1` | ui_click | `self.C_NPC_FIRE_RIGHT` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 888 | `SixRealms/common.py` | `SixRealmsCommon.open_shop#1` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 889 | `SixRealms/common.py` | `SixRealmsCommon.open_shop#2` | appear_then_click | `store_rule` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 890 | `SixRealms/common.py` | `SixRealmsCommon.open_shop#3` | appear_then_click | `self.I_UI_CANCEL` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | c0/C0K |
+| 891 | `SixRealms/common.py` | `SixRealmsCommon.enter_battle#1` | ui_click | `normal_unlock` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 892 | `SixRealms/common.py` | `SixRealmsCommon.enter_battle#2` | ui_click | `boss_unlock` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 893 | `SixRealms/common.py` | `SixRealmsCommon.enter_battle#3` | appear_then_click | `fire_rule` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 894 | `SixRealms/common.py` | `SixRealmsCommon.refresh_store#1` | appear_then_click | `refresh_rule` | CONFIRM | - | - | ALREADY_L2 | c0/C1 |
+| 895 | `SixRealms/common.py` | `SixRealmsCommon.buy_skill#1` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 896 | `SixRealms/common.py` | `SixRealmsCommon.buy_skill#2` | execute_single_click | `self.device` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R10 |
+| 897 | `SixRealms/common.py` | `SixRealmsCommon.choose_and_enter_island#1` | appear_then_click | `target_land` | NORMAL | - | - | ALREADY_L2 | c0/C1 |
+| 898 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_in_battle#1` | appear_then_click | `self.I_BOSS_SKIP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 899 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_result#1` | click | `self.I_BOSS_BATTLE_GIVEUP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 900 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_result#2` | click | `self.I_UI_CONFIRM_SAMLL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 901 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_result#3` | appear_then_click | `select_btn` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 902 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#1` | appear_then_click | `self.I_SR_DOUBLE_REWARD_USE` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 903 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#2` | appear_then_click | `self.I_SR_DOUBLE_REWARD_CANCEL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 904 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#3` | appear_then_click | `self.I_SR_NOT_TIP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 905 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#4` | appear_then_click | `self.I_UI_CANCEL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 906 | `SixRealms/moon_sea/base_moon_sea.py` | `BaseMoonSea._handle_reward#5` | click | `pages.random_click()` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 907 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.ms_page_handle_dict#1` | click | `pages.random_click(ltrb=(True, False, False, False))` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 908 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.ms_page_handle_dict#2` | click | `pages.random_click()` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 909 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms#1` | appear_then_click | `self.I_MCONINUE` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 910 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms#2` | appear_then_click | `self.I_MSTART` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 911 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_prepare#1` | appear_then_click | `self.I_MSTART_CONFIRM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 912 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_prepare#2` | appear_then_click | `self.I_MSTART_CONFIRM2` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 913 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_prepare#3` | appear_then_click | `self.I_MFIRST_SKILL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 914 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_mistery#1` | appear_then_click | `self.I_MISTERY_IMITATE_SKILL_101` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 915 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_mistery#2` | click | `pages.random_click()` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
+| 916 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_mistery#3` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
+| 917 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_mistery#4` | appear_then_click | `self.I_MISTERY_IMITATE` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
+| 918 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_chaos#1` | ui_click | `self.C_NPC_FIRE_CENTER` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 919 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_star#1` | ui_click | `self.C_NPC_FIRE_LEFT` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 920 | `SixRealms/moon_sea/moon_sea.py` | `MoonSea.run_on_ms_battle#1` | ui_click | `self.C_NPC_FIRE_RIGHT` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 921 | `SixRealms/page.py` | `handle_enter_moon_sea#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 922 | `SixRealms/page.py` | `handle_enter_moon_sea#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_MOON_SEA` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 923 | `SixRealms/page.py` | `switch_moon_sea_shikigami#1` | ui_click | `SixRealmsAssets.C_SR_SWITCH_SHIKIGAMI` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 924 | `SixRealms/page.py` | `switch_moon_sea_shikigami#2` | appear_then_click | `SixRealmsAssets.I_MSHOUZU_SELECT` | IMMEDIATE | - | - | KEEP_SPECIAL | c0/C0S |
+| 925 | `SixRealms/page.py` | `handle_enter_peacock_kingdom#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 926 | `SixRealms/page.py` | `handle_enter_peacock_kingdom#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_PEACOCK_KINGDOM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 927 | `SixRealms/page.py` | `handle_enter_incense_realm#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 928 | `SixRealms/page.py` | `handle_enter_incense_realm#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_INCENSE_REALM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 929 | `SixRealms/page.py` | `handle_enter_seasonrift_forest#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 930 | `SixRealms/page.py` | `handle_enter_seasonrift_forest#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_SEASONRIFT_FOREST` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 931 | `SixRealms/page.py` | `handle_enter_pure_buddha_realm#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 932 | `SixRealms/page.py` | `handle_enter_pure_buddha_realm#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_PURE_BUDDHA_REALM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 933 | `SixRealms/page.py` | `handle_enter_mantra_tower#1` | ui_click | `SixRealmsAssets.I_SR_SWITCH` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 934 | `SixRealms/page.py` | `handle_enter_mantra_tower#2` | appear_then_click | `SixRealmsAssets.I_SR_TO_MANTRA_TOWER` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 935 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._mark_peacock_boss#1` | appear_then_click | `self.I_LOCAL` | IMMEDIATE | - | sleep | KEEP_SPECIAL | c0/C0S |
+| 936 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._mark_peacock_boss#2` | execute_single_click | `self.device` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R10 |
+| 937 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_result#1` | click | `self.I_BOSS_BATTLE_GIVEUP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 938 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_result#2` | click | `self.I_UI_CONFIRM_SAMLL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 939 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_result#3` | appear_then_click | `select_btn` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 940 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_result#4` | appear_then_click | `select_btn` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 941 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#1` | appear_then_click | `self.I_SR_DOUBLE_REWARD_USE` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 942 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#2` | appear_then_click | `self.I_SR_DOUBLE_REWARD_CANCEL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 943 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#3` | appear_then_click | `self.I_SR_NOT_TIP` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 944 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#4` | appear_then_click | `self.I_UI_CANCEL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 945 | `SixRealms/peacock_kingdom/base_peacock_kingdom.py` | `BasePeacockKingdom._handle_reward#5` | click | `pages.random_click()` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 946 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.pk_page_handle_dict#1` | click | `pages.random_click(ltrb=(True, False, False, False))` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 947 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.pk_page_handle_dict#2` | click | `pages.random_click()` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 948 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk#1` | appear_then_click | `self.I_PK_CONTINUE` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 949 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk#2` | appear_then_click | `self.I_PK_START` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 950 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_prepare#1` | appear_then_click | `self.I_PK_START_CONFIRM` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 951 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_prepare#2` | appear_then_click | `self.I_PK_START_CONFIRM2` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 952 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_prepare#3` | appear_then_click | `self.I_PK_START_THIRD_SKILL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 953 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_prepare#4` | appear_then_click | `self.I_MFIRST_SKILL` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 954 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom._summon_store#1` | appear_then_click | `self.I_M_STORE_ACTIVITY` | IMMEDIATE | - | wait_until | DEFERRED | c0/C0D |
+| 955 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom._summon_store#2` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | - | wait_until | DEFERRED | c0/C0D |
+| 956 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom._use_breath#1` | appear_then_click | `self.I_M_STORE_ACTIVITY` | IMMEDIATE | - | - | DEFERRED | c0/C0D |
+| 957 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom._confirm_store_entry#1` | appear_then_click | `self.I_PK_STORE_STILLIN` | IMMEDIATE | - | wait_until | DEFERRED | c0/C0D |
+| 958 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_chaos#1` | ui_click | `self.C_NPC_FIRE_CENTER` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
+| 959 | `SixRealms/peacock_kingdom/peacock_kingdom.py` | `PeacockKingdom.run_on_pk_battle#1` | ui_click | `self.C_NPC_FIRE_RIGHT` | IMMEDIATE | - | - | KEEP_SPECIAL | rule/R4 |
 
 ### Sougenbi
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 957 | `Sougenbi/script_task.py` | `ScriptTask._fire_sougenbi#1` | appear_then_click | `self.I_S_FIRE` | IMMEDIATE | Y | Timer,random_delay,sleep | KEEP_SPECIAL | rule/R3 |
-| 958 | `Sougenbi/script_task.py` | `ScriptTask.run#1` | appear_then_click | `self.I_S_SOUGENBI` | IMMEDIATE | Y | sleep | KEEP_SPECIAL | rule/R3 |
-| 959 | `Sougenbi/script_task.py` | `ScriptTask.run#2` | click | `click_target` | IMMEDIATE | Y | sleep | KEEP_SPECIAL | rule/R3 |
+| 960 | `Sougenbi/script_task.py` | `ScriptTask._fire_sougenbi#1` | appear_then_click | `self.I_S_FIRE` | IMMEDIATE | Y | Timer,random_delay,sleep | KEEP_SPECIAL | rule/R3 |
+| 961 | `Sougenbi/script_task.py` | `ScriptTask.run#1` | appear_then_click | `self.I_S_SOUGENBI` | IMMEDIATE | Y | sleep | KEEP_SPECIAL | rule/R3 |
+| 962 | `Sougenbi/script_task.py` | `ScriptTask.run#2` | click | `click_target` | IMMEDIATE | Y | sleep | KEEP_SPECIAL | rule/R3 |
 
 ### SoulsTidy
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 960 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#1` | appear_then_click | `self.I_ST_REPLACE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 961 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#2` | appear_then_click | `self.I_ST_SOULS` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 962 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#3` | appear_then_click | `self.I_ST_SOULS_CLOSE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 963 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#4` | click | `self.C_ST_DETAIL` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
-| 964 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#5` | ocr_appear_click | `self.O_ST_OVERFLOW` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 965 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#1` | ui_click | `self.I_ST_GREED` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 966 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#2` | ui_click | `self.I_ST_GREED_HABIT` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 967 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#3` | ui_click_until_disappear | `self.I_ST_UNSELECTED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
-| 968 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#4` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 969 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#5` | appear_then_click | `self.I_ST_FEED_NOW` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 970 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#6` | ui_click_until_disappear | `self.I_ST_UNSELECTED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
-| 971 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#7` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 972 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#8` | appear_then_click | `self.I_ST_GREED_CLOSE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 973 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#9` | appear_then_click | `self.I_ST_BONGNA` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 974 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#10` | click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
-| 975 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#11` | click | `self.I_ST_ABANDONED_SELECTED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
-| 976 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#12` | click | `self.L_ONE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
-| 977 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#1` | click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
-| 978 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#2` | ocr_appear_click | `self.O_ST_SORT_LEVEL_2` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
-| 979 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#3` | ocr_appear_click | `self.O_ST_SORT_TIME` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
-| 980 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#4` | ocr_appear_click | `self.O_ST_SORT_TYPE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
-| 981 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#5` | ocr_appear_click | `self.O_ST_SORT_LOCATION` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
-| 982 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#1` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
-| 983 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
-| 984 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#3` | click | `self.C_ST_GOD_PRSENT` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
-| 985 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#4` | click | `self.C_ST_SOUL_OFFERING_REWARD` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
-| 986 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#5` | click | `self.C_ST_SOUL_OFFERING_REWARD` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
-| 987 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#6` | appear_then_click | `self.I_ST_DONATE` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
+| 963 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#1` | appear_then_click | `self.I_ST_REPLACE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 964 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#2` | appear_then_click | `self.I_ST_SOULS` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 965 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#3` | appear_then_click | `self.I_ST_SOULS_CLOSE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 966 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#4` | click | `self.C_ST_DETAIL` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
+| 967 | `SoulsTidy/script_task.py` | `ScriptTask.goto_souls#5` | ocr_appear_click | `self.O_ST_OVERFLOW` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 968 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#1` | ui_click | `self.I_ST_GREED` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 969 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#2` | ui_click | `self.I_ST_GREED_HABIT` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 970 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#3` | ui_click_until_disappear | `self.I_ST_UNSELECTED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
+| 971 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#4` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 972 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#5` | appear_then_click | `self.I_ST_FEED_NOW` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 973 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#6` | ui_click_until_disappear | `self.I_ST_UNSELECTED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
+| 974 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#7` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 975 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#8` | appear_then_click | `self.I_ST_GREED_CLOSE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 976 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#9` | appear_then_click | `self.I_ST_BONGNA` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 977 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#10` | click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
+| 978 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#11` | click | `self.I_ST_ABANDONED_SELECTED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
+| 979 | `SoulsTidy/script_task.py` | `ScriptTask.greed_maneki#12` | click | `self.L_ONE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
+| 980 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#1` | click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
+| 981 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#2` | ocr_appear_click | `self.O_ST_SORT_LEVEL_2` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
+| 982 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#3` | ocr_appear_click | `self.O_ST_SORT_TIME` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
+| 983 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#4` | ocr_appear_click | `self.O_ST_SORT_TYPE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
+| 984 | `SoulsTidy/script_task.py` | `ScriptTask.pre_confirm#5` | ocr_appear_click | `self.O_ST_SORT_LOCATION` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R7 |
+| 985 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#1` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
+| 986 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
+| 987 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#3` | click | `self.C_ST_GOD_PRSENT` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
+| 988 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#4` | click | `self.C_ST_SOUL_OFFERING_REWARD` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
+| 989 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#5` | click | `self.C_ST_SOUL_OFFERING_REWARD` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
+| 990 | `SoulsTidy/script_task.py` | `ScriptTask.donate_and_collect_reward#6` | appear_then_click | `self.I_ST_DONATE` | IMMEDIATE | Y | wait_until | KEEP_SPECIAL | rule/R4 |
 
 ### TalismanPass
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 988 | `TalismanPass/script_task.py` | `ScriptTask.get_all#1` | ui_get_reward | `self.I_TP_GET_ALL` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
-| 989 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#1` | ui_click | `self.I_RED_POINT_LEVEL` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 990 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#2` | appear_then_click | `match_level[level]` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 991 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#3` | appear_then_click | `self.I_OVERFLOW_CONFIRME` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 992 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#4` | ui_reward_appear_click | `False` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 993 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#5` | appear_then_click | `self.I_TP_GET_ALL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 994 | `TalismanPass/script_task.py` | `ScriptTask.in_task#1` | click | `self.I_RED_POINT_TASK` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R6 |
-| 995 | `TalismanPass/script_task.py` | `ScriptTask.harvest_soul#1` | ui_click | `self.I_TP_SOUL_1` | IMMEDIATE | Y | Timer | KEEP_SPECIAL | rule/R4 |
-| 996 | `TalismanPass/script_task.py` | `ScriptTask.harvest_soul#2` | ui_click | `self.I_TP_SOUL_2` | IMMEDIATE | Y | Timer | KEEP_SPECIAL | rule/R4 |
-| 997 | `TalismanPass/script_task.py` | `ScriptTask.harvest_soul#3` | ui_click_until_disappear | `?` | IMMEDIATE | Y | Timer | KEEP_SPECIAL | rule/R4 |
+| 991 | `TalismanPass/script_task.py` | `ScriptTask.get_all#1` | ui_get_reward | `self.I_TP_GET_ALL` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
+| 992 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#1` | ui_click | `self.I_RED_POINT_LEVEL` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 993 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#2` | appear_then_click | `match_level[level]` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 994 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#3` | appear_then_click | `self.I_OVERFLOW_CONFIRME` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 995 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#4` | ui_reward_appear_click | `False` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 996 | `TalismanPass/script_task.py` | `ScriptTask.get_flower#5` | appear_then_click | `self.I_TP_GET_ALL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 997 | `TalismanPass/script_task.py` | `ScriptTask.in_task#1` | click | `self.I_RED_POINT_TASK` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R6 |
+| 998 | `TalismanPass/script_task.py` | `ScriptTask.harvest_soul#1` | ui_click | `self.I_TP_SOUL_1` | IMMEDIATE | Y | Timer | KEEP_SPECIAL | rule/R4 |
+| 999 | `TalismanPass/script_task.py` | `ScriptTask.harvest_soul#2` | ui_click | `self.I_TP_SOUL_2` | IMMEDIATE | Y | Timer | KEEP_SPECIAL | rule/R4 |
+| 1000 | `TalismanPass/script_task.py` | `ScriptTask.harvest_soul#3` | ui_click_until_disappear | `?` | IMMEDIATE | Y | Timer | KEEP_SPECIAL | rule/R4 |
 
 ### TrueOrochi
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 998 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#1` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 999 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#2` | appear_then_click | `self.I_ST_FIRE` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1000 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#3` | appear_then_click | `self.I_FIND_TS` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1001 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#4` | appear_then_click | `self.I_FIRE` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1002 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#5` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1003 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#6` | appear_then_click | `self.I_ST_CREATE_ROOM` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1004 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#7` | ui_click | `self.I_ST_FIRE_PREPARE` | IMMEDIATE | - | Timer,sleep | KEEP_IMMEDIATE | rule/R7 |
-| 1005 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#8` | appear_then_click | `self.I_ST_AUTO_FALSE` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1006 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#9` | appear_then_click | `self.I_GREED_GHOST` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1007 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#10` | appear_then_click | `self.I_ST_FRAME` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1008 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#11` | appear_then_click | `self.I_ST_FRAME` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1001 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#1` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1002 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#2` | appear_then_click | `self.I_ST_FIRE` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1003 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#3` | appear_then_click | `self.I_FIND_TS` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1004 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#4` | appear_then_click | `self.I_FIRE` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1005 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#5` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1006 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#6` | appear_then_click | `self.I_ST_CREATE_ROOM` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1007 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#7` | ui_click | `self.I_ST_FIRE_PREPARE` | IMMEDIATE | - | Timer,sleep | KEEP_IMMEDIATE | rule/R7 |
+| 1008 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#8` | appear_then_click | `self.I_ST_AUTO_FALSE` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1009 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#9` | appear_then_click | `self.I_GREED_GHOST` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1010 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#10` | appear_then_click | `self.I_ST_FRAME` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1011 | `TrueOrochi/script_task.py` | `ScriptTask.run_true_orochi_battle#11` | appear_then_click | `self.I_ST_FRAME` | IMMEDIATE | Y | Timer,sleep | KEEP_IMMEDIATE | rule/R8 |
 
 ### WantedQuests
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 1009 | `WantedQuests/explore.py` | `WQExplore.explore#1` | appear_then_click | `goto` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 1010 | `WantedQuests/script_task.py` | `ScriptTask.run#1` | ui_get_reward | `self.I_WQ_BOX` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R7 |
-| 1011 | `WantedQuests/script_task.py` | `ScriptTask.run#2` | ui_get_reward | `self.I_E_REWARD_BOX_BIG` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R7 |
-| 1012 | `WantedQuests/script_task.py` | `ScriptTask.open_wq_info#1` | click | `self.O_WQ_TEXT_ALL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R6 |
-| 1013 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#1` | appear_then_click | `self.I_WQ_SEAL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 1014 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#2` | appear_then_click | `self.I_WQ_DONE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 1015 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#3` | appear_then_click | `self.I_TRACE_ENABLE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 1016 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#4` | click | `self.C_SPECIAL_MAIN` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R6 |
-| 1017 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 1018 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#6` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 1019 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#1` | appear_then_click | `self.I_WQ_SEAL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 1020 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#2` | appear_then_click | `self.I_WQ_DONE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 1021 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#3` | click | `self.C_SPECIAL_MAIN` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R6 |
-| 1022 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#4` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 1023 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 1024 | `WantedQuests/script_task.py` | `ScriptTask.trace_one#1` | click | `self.I_WQ_TRACE_ONE_DISABLE` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 1025 | `WantedQuests/script_task.py` | `ScriptTask.trace_one#2` | execute_single_click | `self.device` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R10 |
-| 1026 | `WantedQuests/script_task.py` | `ScriptTask.trace_one#3` | ui_click_until_smt_disappear | `self.C_WQ_TRACE_ONE_CLOSE` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
-| 1027 | `WantedQuests/script_task.py` | `ScriptTask.execute_mission#1` | ui_click | `self.I_TRACE_TRUE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 1028 | `WantedQuests/script_task.py` | `ScriptTask.execute_mission#2` | ui_click | `self.I_TRACE_TRUE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 1029 | `WantedQuests/script_task.py` | `ScriptTask.execute_mission#3` | ui_click | `self.I_TRACE_TRUE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 1030 | `WantedQuests/script_task.py` | `ScriptTask.execute_mission#4` | ui_click | `self.I_TRACE_TRUE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 1031 | `WantedQuests/script_task.py` | `ScriptTask.challenge#1` | ui_click | `goto_btn` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 1032 | `WantedQuests/script_task.py` | `ScriptTask.challenge#2` | ui_click | `self.I_WQC_UNLOCK` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 1033 | `WantedQuests/script_task.py` | `ScriptTask.challenge#3` | ui_click_until_disappear | `self.I_WQC_FIRE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 1034 | `WantedQuests/script_task.py` | `ScriptTask.secret#1` | ui_click | `goto` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
-| 1035 | `WantedQuests/script_task.py` | `ScriptTask.secret#2` | appear_then_click | `self.I_WQSE_FIRE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
-| 1036 | `WantedQuests/script_task.py` | `ScriptTask.secret#3` | click | `self.C_SECRET_CHAT` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
-| 1037 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#1` | ui_click | `add_button` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
-| 1038 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#2` | click | `self.I_WQ_FRIEND_1` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 1039 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#3` | click | `self.I_WQ_FRIEND_2` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 1040 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#4` | click | `self.I_WQ_FRIEND_3` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 1041 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#5` | click | `self.I_WQ_FRIEND_4` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 1042 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#6` | click | `self.I_WQ_FRIEND_5` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 1043 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#7` | ui_click_until_disappear | `self.I_INVITE_ENSURE` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
-| 1044 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#1` | ui_click | `btn` | IMMEDIATE | - | wait_until | KEEP_IMMEDIATE | rule/R7 |
-| 1045 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#2` | ocr_appear_click | `self.O_WQ_INVITE_COLUMN_1` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R7 |
-| 1046 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#3` | ocr_appear_click | `self.O_WQ_INVITE_COLUMN_2` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R7 |
-| 1047 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#4` | click | `self.I_WQ_INVITE_DIFF_SVR` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R6 |
-| 1048 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#5` | ui_click_until_disappear | `self.I_WQ_INVITE_CANCEL` | IMMEDIATE | - | wait_until | KEEP_IMMEDIATE | rule/R7 |
-| 1049 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#6` | ui_click_until_disappear | `self.I_WQ_INVITE_ENSURE` | IMMEDIATE | - | wait_until | KEEP_IMMEDIATE | rule/R7 |
+| 1012 | `WantedQuests/explore.py` | `WQExplore.explore#1` | appear_then_click | `goto` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 1013 | `WantedQuests/script_task.py` | `ScriptTask.run#1` | ui_get_reward | `self.I_WQ_BOX` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R7 |
+| 1014 | `WantedQuests/script_task.py` | `ScriptTask.run#2` | ui_get_reward | `self.I_E_REWARD_BOX_BIG` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R7 |
+| 1015 | `WantedQuests/script_task.py` | `ScriptTask.open_wq_info#1` | click | `self.O_WQ_TEXT_ALL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R6 |
+| 1016 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#1` | appear_then_click | `self.I_WQ_SEAL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 1017 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#2` | appear_then_click | `self.I_WQ_DONE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 1018 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#3` | appear_then_click | `self.I_TRACE_ENABLE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 1019 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#4` | click | `self.C_SPECIAL_MAIN` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R6 |
+| 1020 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 1021 | `WantedQuests/script_task.py` | `ScriptTask.pre_work#6` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 1022 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#1` | appear_then_click | `self.I_WQ_SEAL` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 1023 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#2` | appear_then_click | `self.I_WQ_DONE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 1024 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#3` | click | `self.C_SPECIAL_MAIN` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R6 |
+| 1025 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#4` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 1026 | `WantedQuests/script_task.py` | `ScriptTask.pre_work_cooperation_only#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 1027 | `WantedQuests/script_task.py` | `ScriptTask.trace_one#1` | click | `self.I_WQ_TRACE_ONE_DISABLE` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 1028 | `WantedQuests/script_task.py` | `ScriptTask.trace_one#2` | execute_single_click | `self.device` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R10 |
+| 1029 | `WantedQuests/script_task.py` | `ScriptTask.trace_one#3` | ui_click_until_smt_disappear | `self.C_WQ_TRACE_ONE_CLOSE` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
+| 1030 | `WantedQuests/script_task.py` | `ScriptTask.execute_mission#1` | ui_click | `self.I_TRACE_TRUE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 1031 | `WantedQuests/script_task.py` | `ScriptTask.execute_mission#2` | ui_click | `self.I_TRACE_TRUE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 1032 | `WantedQuests/script_task.py` | `ScriptTask.execute_mission#3` | ui_click | `self.I_TRACE_TRUE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 1033 | `WantedQuests/script_task.py` | `ScriptTask.execute_mission#4` | ui_click | `self.I_TRACE_TRUE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 1034 | `WantedQuests/script_task.py` | `ScriptTask.challenge#1` | ui_click | `goto_btn` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 1035 | `WantedQuests/script_task.py` | `ScriptTask.challenge#2` | ui_click | `self.I_WQC_UNLOCK` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 1036 | `WantedQuests/script_task.py` | `ScriptTask.challenge#3` | ui_click_until_disappear | `self.I_WQC_FIRE` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 1037 | `WantedQuests/script_task.py` | `ScriptTask.secret#1` | ui_click | `goto` | IMMEDIATE | - | - | KEEP_IMMEDIATE | rule/R7 |
+| 1038 | `WantedQuests/script_task.py` | `ScriptTask.secret#2` | appear_then_click | `self.I_WQSE_FIRE` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R8 |
+| 1039 | `WantedQuests/script_task.py` | `ScriptTask.secret#3` | click | `self.C_SECRET_CHAT` | IMMEDIATE | Y | - | KEEP_IMMEDIATE | rule/R6 |
+| 1040 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#1` | ui_click | `add_button` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
+| 1041 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#2` | click | `self.I_WQ_FRIEND_1` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 1042 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#3` | click | `self.I_WQ_FRIEND_2` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 1043 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#4` | click | `self.I_WQ_FRIEND_3` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 1044 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#5` | click | `self.I_WQ_FRIEND_4` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 1045 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#6` | click | `self.I_WQ_FRIEND_5` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 1046 | `WantedQuests/script_task.py` | `ScriptTask.invite_random#7` | ui_click_until_disappear | `self.I_INVITE_ENSURE` | IMMEDIATE | - | sleep | KEEP_IMMEDIATE | rule/R7 |
+| 1047 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#1` | ui_click | `btn` | IMMEDIATE | - | wait_until | KEEP_IMMEDIATE | rule/R7 |
+| 1048 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#2` | ocr_appear_click | `self.O_WQ_INVITE_COLUMN_1` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R7 |
+| 1049 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#3` | ocr_appear_click | `self.O_WQ_INVITE_COLUMN_2` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R7 |
+| 1050 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#4` | click | `self.I_WQ_INVITE_DIFF_SVR` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R6 |
+| 1051 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#5` | ui_click_until_disappear | `self.I_WQ_INVITE_CANCEL` | IMMEDIATE | - | wait_until | KEEP_IMMEDIATE | rule/R7 |
+| 1052 | `WantedQuests/script_task.py` | `ScriptTask.cooperation_invite#6` | ui_click_until_disappear | `self.I_WQ_INVITE_ENSURE` | IMMEDIATE | - | wait_until | KEEP_IMMEDIATE | rule/R7 |
 
 ### WeeklyPurchase
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 1050 | `WeeklyPurchase/mall/consignment.py` | `Consignment.execute_consignment#1` | ui_click | `self.I_CON_ENTER` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1051 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar._enter_consignment#1` | ui_click | `self.I_MALL_CONSIGNMENT` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1052 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar._enter_scales#1` | ui_click | `self.I_MALL_SCCALES` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1053 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar._enter_bondlings#1` | ui_click | `self.I_MALL_BONDLINGS_SURE` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1054 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar._enter_sundry#1` | ui_click | `self.I_MALL_SUNDRY` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1055 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar.click_and_check#1` | execute_single_click | `self.device` | IMMEDIATE | Y | Timer | EXCLUDED | rule/R1 |
-| 1056 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar.back_mall#1` | ui_click | `self.I_UI_BACK_YELLOW` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1057 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_confirm#1` | appear_then_click | `start_click` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1058 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_confirm#2` | appear_then_click | `self.I_BUY_PLUS` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1059 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_confirm#3` | appear_then_click | `self.I_BUY_PLUS` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1060 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_confirm#4` | appear_then_click | `self.I_BUY_ADD` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1061 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_more#1` | click | `self.C_SCA_SOULS_GET` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1062 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_more#2` | click | `self.C_BUY_MORE` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1063 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_sea_more#1` | click | `self.C_BUY_MORE` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1064 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_sea_more#2` | click | `self.C_SCA_SOULS_GET` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1065 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_sea_more#3` | appear_then_click | `self.I_SCA_SELECT_1` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1066 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#1` | ui_click | `self.I_SCA_DEMON_SOULS` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1067 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#2` | ui_click | `target_class` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1068 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#3` | click | `target_position` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1069 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#4` | appear_then_click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1070 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#5` | click | `self.C_SCA_SOULS_BACK` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1071 | `WeeklyPurchase/shrine.py` | `Shrine.execute_shrine#1` | appear_then_click | `self.I_S_SUMMON_TO_SHRINE` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1072 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#1` | ui_click | `self.I_S_BLACK` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1073 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#2` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1074 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#3` | ui_click | `self.I_S_BUY_BLACK` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1075 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#4` | ui_get_reward | `self.I_S_CONFIRM_BLACK` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1076 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1077 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#1` | ui_click | `self.I_S_WHITE_FIVE` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1078 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#2` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1079 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#3` | ui_click | `self.I_S_BUY_WHITE_FIVE` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1080 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#4` | ui_get_reward | `self.I_S_CONFIRM_WHITE_FIVE` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1081 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1082 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#1` | ui_click | `self.I_S_WHITE_FOUR` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1083 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#2` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1084 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#3` | ui_click | `self.I_S_BUY_WHITE_FOUR` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1085 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#4` | ui_get_reward | `self.I_S_CONFIRM_WHITE_FOUR` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1086 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
-| 1087 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.execute_tt#1` | appear_then_click | `self.I_TT_ENTER` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1088 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.execute_tt#2` | appear_then_click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1089 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_buy_mystery_amulet#1` | ocr_appear_click | `self.O_TT_BLUE_TICKET` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1090 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_buy_black_daruma_scrap#1` | ocr_appear_click | `self.O_TT_BLACK` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1091 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_buy_ap#1` | appear_then_click | `self.I_TT_BUY_UP` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1092 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_buy_ap#2` | ocr_appear_click | `self.O_TT_AP` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1093 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_get_reward#1` | appear_then_click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1094 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_get_reward#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1095 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_get_reward#3` | ui_reward_appear_click | `?` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1096 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_get_reward#4` | appear_then_click | `image_button` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
-| 1097 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#1` | ui_click | `self.I_TT_BORROW` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1098 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#2` | ui_click | `self.I_TT_CONFIGURE` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1099 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#3` | ui_click | `self.I_TT_SHIKIGAMI` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1100 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#4` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | - | EXCLUDED | rule/R1 |
-| 1101 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#5` | appear_then_click | `self.I_TT_SHIKIGAMI_REPLACE` | IMMEDIATE | Y | - | EXCLUDED | rule/R1 |
-| 1102 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#6` | ui_click | `self.I_TT_CONFIRM` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1103 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#7` | ui_get_reward | `self.I_TT_BORROW_CONFIRM` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
-| 1104 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#8` | ui_click | `self.I_UI_BACK_RED` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1053 | `WeeklyPurchase/mall/consignment.py` | `Consignment.execute_consignment#1` | ui_click | `self.I_CON_ENTER` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1054 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar._enter_consignment#1` | ui_click | `self.I_MALL_CONSIGNMENT` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1055 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar._enter_scales#1` | ui_click | `self.I_MALL_SCCALES` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1056 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar._enter_bondlings#1` | ui_click | `self.I_MALL_BONDLINGS_SURE` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1057 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar._enter_sundry#1` | ui_click | `self.I_MALL_SUNDRY` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1058 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar.click_and_check#1` | execute_single_click | `self.device` | IMMEDIATE | Y | Timer | EXCLUDED | rule/R1 |
+| 1059 | `WeeklyPurchase/mall/navbar.py` | `MallNavbar.back_mall#1` | ui_click | `self.I_UI_BACK_YELLOW` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1060 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_confirm#1` | appear_then_click | `start_click` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1061 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_confirm#2` | appear_then_click | `self.I_BUY_PLUS` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1062 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_confirm#3` | appear_then_click | `self.I_BUY_PLUS` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1063 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_confirm#4` | appear_then_click | `self.I_BUY_ADD` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1064 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_more#1` | click | `self.C_SCA_SOULS_GET` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1065 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_more#2` | click | `self.C_BUY_MORE` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1066 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_sea_more#1` | click | `self.C_BUY_MORE` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1067 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_sea_more#2` | click | `self.C_SCA_SOULS_GET` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1068 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_buy_sea_more#3` | appear_then_click | `self.I_SCA_SELECT_1` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1069 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#1` | ui_click | `self.I_SCA_DEMON_SOULS` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1070 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#2` | ui_click | `target_class` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1071 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#3` | click | `target_position` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1072 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#4` | appear_then_click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1073 | `WeeklyPurchase/mall/scales.py` | `Scales._scales_demon#5` | click | `self.C_SCA_SOULS_BACK` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1074 | `WeeklyPurchase/shrine.py` | `Shrine.execute_shrine#1` | appear_then_click | `self.I_S_SUMMON_TO_SHRINE` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1075 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#1` | ui_click | `self.I_S_BLACK` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1076 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#2` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1077 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#3` | ui_click | `self.I_S_BUY_BLACK` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1078 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#4` | ui_get_reward | `self.I_S_CONFIRM_BLACK` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1079 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_black_daruma#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1080 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#1` | ui_click | `self.I_S_WHITE_FIVE` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1081 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#2` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1082 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#3` | ui_click | `self.I_S_BUY_WHITE_FIVE` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1083 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#4` | ui_get_reward | `self.I_S_CONFIRM_WHITE_FIVE` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1084 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_five#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1085 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#1` | ui_click | `self.I_S_WHITE_FOUR` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1086 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#2` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1087 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#3` | ui_click | `self.I_S_BUY_WHITE_FOUR` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1088 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#4` | ui_get_reward | `self.I_S_CONFIRM_WHITE_FOUR` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1089 | `WeeklyPurchase/shrine.py` | `Shrine.shrine_white_four#5` | ui_click_until_disappear | `self.I_UI_BACK_RED` | IMMEDIATE | - | sleep | EXCLUDED | rule/R1 |
+| 1090 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.execute_tt#1` | appear_then_click | `self.I_TT_ENTER` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1091 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.execute_tt#2` | appear_then_click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1092 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_buy_mystery_amulet#1` | ocr_appear_click | `self.O_TT_BLUE_TICKET` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1093 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_buy_black_daruma_scrap#1` | ocr_appear_click | `self.O_TT_BLACK` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1094 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_buy_ap#1` | appear_then_click | `self.I_TT_BUY_UP` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1095 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_buy_ap#2` | ocr_appear_click | `self.O_TT_AP` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1096 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_get_reward#1` | appear_then_click | `self.I_UI_BACK_RED` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1097 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_get_reward#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1098 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_get_reward#3` | ui_reward_appear_click | `?` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1099 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_get_reward#4` | appear_then_click | `image_button` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
+| 1100 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#1` | ui_click | `self.I_TT_BORROW` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1101 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#2` | ui_click | `self.I_TT_CONFIGURE` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1102 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#3` | ui_click | `self.I_TT_SHIKIGAMI` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1103 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#4` | appear_then_click | `self.I_UI_CONFIRM` | IMMEDIATE | Y | - | EXCLUDED | rule/R1 |
+| 1104 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#5` | appear_then_click | `self.I_TT_SHIKIGAMI_REPLACE` | IMMEDIATE | Y | - | EXCLUDED | rule/R1 |
+| 1105 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#6` | ui_click | `self.I_TT_CONFIRM` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1106 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#7` | ui_get_reward | `self.I_TT_BORROW_CONFIRM` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
+| 1107 | `WeeklyPurchase/thousand_things.py` | `ThousandThings.tt_earn_money#8` | ui_click | `self.I_UI_BACK_RED` | IMMEDIATE | - | - | EXCLUDED | rule/R1 |
 
 ### WeeklyTrifles
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 1105 | `WeeklyTrifles/script_task.py` | `ScriptTask.click_share#1` | appear_then_click | `wechat` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 1106 | `WeeklyTrifles/script_task.py` | `ScriptTask.click_share#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 1107 | `WeeklyTrifles/script_task.py` | `ScriptTask.click_share#3` | appear_then_click | `self.I_WT_QR_CODE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 1108 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_collect#1` | ui_click_until_appear_or_timeout | `self.I_WT_COLLECT_WECHAT` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 1109 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_collect#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
-| 1110 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_collect#3` | appear_then_click | `self.I_WT_QR_CODE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
-| 1111 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_area_boss#1` | click | `self.C_WT_AB_CLICK` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R6 |
-| 1112 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_area_boss#2` | appear_then_click | `self.I_WT_DAY_BATTLE` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1113 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_area_boss#3` | appear_then_click | `self.I_WT_SHARE_AB` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R8 |
-| 1114 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_secret#1` | appear_then_click | `self.I_WT_ENTER_SE` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R8 |
-| 1115 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_secret#2` | appear_then_click | `self.I_WT_SE_SHARE` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R8 |
-| 1116 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet.exit_amulet#1` | appear_then_click | `self.I_BM_CONFIRM` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
-| 1117 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet.exit_amulet#2` | click | `random_click(ltrb=(False, False, True, False))` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
-| 1118 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#1` | appear_then_click | `self.I_BM_ENTER` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R8 |
-| 1119 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#2` | appear_then_click | `self.I_BM_AGAIN` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R8 |
-| 1120 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#3` | click | `random_click()` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R6 |
-| 1121 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#4` | execute_single_click | `self.device` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R10 |
-| 1122 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#5` | execute_single_click | `self.device` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R10 |
+| 1108 | `WeeklyTrifles/script_task.py` | `ScriptTask.click_share#1` | appear_then_click | `wechat` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 1109 | `WeeklyTrifles/script_task.py` | `ScriptTask.click_share#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 1110 | `WeeklyTrifles/script_task.py` | `ScriptTask.click_share#3` | appear_then_click | `self.I_WT_QR_CODE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 1111 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_collect#1` | ui_click_until_appear_or_timeout | `self.I_WT_COLLECT_WECHAT` | IMMEDIATE | - | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 1112 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_collect#2` | ui_reward_appear_click | `?` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R7 |
+| 1113 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_collect#3` | appear_then_click | `self.I_WT_QR_CODE` | IMMEDIATE | Y | Timer | KEEP_IMMEDIATE | rule/R8 |
+| 1114 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_area_boss#1` | click | `self.C_WT_AB_CLICK` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R6 |
+| 1115 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_area_boss#2` | appear_then_click | `self.I_WT_DAY_BATTLE` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1116 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_area_boss#3` | appear_then_click | `self.I_WT_SHARE_AB` | IMMEDIATE | Y | sleep | KEEP_IMMEDIATE | rule/R8 |
+| 1117 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_secret#1` | appear_then_click | `self.I_WT_ENTER_SE` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R8 |
+| 1118 | `WeeklyTrifles/script_task.py` | `ScriptTask._share_secret#2` | appear_then_click | `self.I_WT_SE_SHARE` | IMMEDIATE | Y | wait_until | KEEP_IMMEDIATE | rule/R8 |
+| 1119 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet.exit_amulet#1` | appear_then_click | `self.I_BM_CONFIRM` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
+| 1120 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet.exit_amulet#2` | click | `random_click(ltrb=(False, False, True, False))` | IMMEDIATE | Y | - | KEEP_SPECIAL | rule/R4 |
+| 1121 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#1` | appear_then_click | `self.I_BM_ENTER` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R8 |
+| 1122 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#2` | appear_then_click | `self.I_BM_AGAIN` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R8 |
+| 1123 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#3` | click | `random_click()` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R6 |
+| 1124 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#4` | execute_single_click | `self.device` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R10 |
+| 1125 | `WeeklyTrifles/script_task.py` | `ScriptTask._broken_amulet#5` | execute_single_click | `self.device` | IMMEDIATE | Y | Timer,sleep,wait_until | KEEP_IMMEDIATE | rule/R10 |
 
 ### module
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 1123 | `module/click_pipeline.py` | `execute_single_click#1` | raw_device_click | `?` | IMMEDIATE | - | - | PRIMITIVE | rule/R0 |
-| 1124 | `module/click_pipeline.py` | `execute_single_click#2` | raw_backend | `?` | IMMEDIATE | - | - | PRIMITIVE | rule/R0 |
-| 1125 | `module/device/control.py` | `Control.multi_click#1` | click | `button` | IMMEDIATE | Y | Timer,sleep | PRIMITIVE | rule/R0 |
-| 1126 | `module/device/method/minitouch.py` | `<module>#1` | raw_backend | `200` | IMMEDIATE | - | - | PRIMITIVE | rule/R0 |
-| 1127 | `module/device/method/windows_impl.py` | `Window.scroll_window_message#1` | raw_backend | `x` | IMMEDIATE | - | sleep | PRIMITIVE | rule/R0 |
+| 1126 | `module/click_pipeline.py` | `execute_single_click#1` | raw_device_click | `?` | IMMEDIATE | - | - | PRIMITIVE | rule/R0 |
+| 1127 | `module/click_pipeline.py` | `execute_single_click#2` | raw_backend | `?` | IMMEDIATE | - | - | PRIMITIVE | rule/R0 |
+| 1128 | `module/device/control.py` | `Control.multi_click#1` | click | `button` | IMMEDIATE | Y | Timer,sleep | PRIMITIVE | rule/R0 |
+| 1129 | `module/device/method/minitouch.py` | `<module>#1` | raw_backend | `200` | IMMEDIATE | - | - | PRIMITIVE | rule/R0 |
+| 1130 | `module/device/method/windows_impl.py` | `Window.scroll_window_message#1` | raw_backend | `x` | IMMEDIATE | - | sleep | PRIMITIVE | rule/R0 |

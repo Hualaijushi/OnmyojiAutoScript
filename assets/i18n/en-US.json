@@ -82,5 +82,10 @@
   "strict_platform_order_help": "Require the first ios_count accounts to be iOS and the rest Android",
   "account_list": "Account List",
   "related_account": "Related Accounts",
-  "related_account_help": "Full oas3, oas4, and oas5 account mapping for the same fixed team"
+  "related_account_help": "Full oas3, oas4, and oas5 account mapping for the same fixed team",
+  "event_progress_enable": "Super Demon King Ticket Mode",
+  "event_ocr_start": "First Ticket OCR Battle",
+  "event_ocr_interval": "Ticket OCR Battle Interval",
+  "group_start": "First local account group",
+  "group_end": "Last local account group (0 means all)"
 }

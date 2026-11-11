@@ -1,15 +1,20 @@
-"""每日任务状态转换和 Markdown 汇总输出。"""
+"""每日任务状态转换、HTML 汇总和七天日志维护。"""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
 
 from module.logger import logger
 from module.multi_account.daily_state import DailyStateManager
+from module.multi_account.daily_task_archive import refresh_report_archive
+from module.multi_account.daily_task_html import read_html_checks, render_interactive_report
+from module.multi_account.event_ticket_report import EventTicketReport, render_ticket_report
+from module.multi_account.daily_task_images import CooperationGallery, CooperationImage, read_cooperation_galleries
 from module.multi_account.file_lock import atomic_replace_with_retry, interprocess_file_lock
 from module.multi_account.daily_task_schedule import (
     is_daily_task_applicable,
@@ -111,7 +116,7 @@ def _not_applicable(task_name: str, now: datetime) -> bool:
 
 
 def _format_cooperation_result(result: object) -> str:
-    """将协作结果按入口和奖励标签动态转换为 Markdown 文本。"""
+    """将协作结果按入口和奖励标签动态转换为展示文本。"""
     raw = str(result or "none").strip()
     if not raw or raw == "none":
         return "无"
@@ -164,6 +169,47 @@ def _status_text(task: dict | None, *, task_name: str = "", not_time_yet: bool =
     return "未到时间" if not_time_yet else "⏳未执行"
 
 
+def _read_cooperation_checks(path: Path) -> tuple[set[tuple[str, ...]], set[str]]:
+    """只保留人工勾选记录，不将其用于判断自动任务是否完成。"""
+    try:
+        content = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return set(), set()
+    # 只读取旧格式的标识以迁移勾选，新报告不再写入任何标识。
+    legacy_checks = set(re.findall(
+        r"^(?:- \[[xX]\] |\|[ \t]*(?:☑|☒|\[[xX]\])[ \t]*\|)"
+        r"[^\r\n]* <!-- (cooperation:[^<>\r\n]+) -->[ \t]*\|?[ \t]*$",
+        content,
+        flags=re.MULTILINE,
+    ))
+    checks: set[tuple[str, ...]] = set()
+    period_headers = {
+        "## 早间协作统计": "cooperation_morning",
+        "## 晚间协作统计": "cooperation_evening",
+    }
+    task_name = ""
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith("## "):
+            task_name = period_headers.get(line, "")
+            continue
+        if not task_name:
+            continue
+        item = re.fullmatch(r"- \[[xX]\] (.+?) — (.+?)（([^，）]+)，([^）]+)）", line)
+        if item:
+            result, account, instance, platform = item.groups()
+            checks.add((task_name, account, instance.lower(), platform, result))
+            continue
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) != 5 or cells[0] not in {"☑", "☒", "[x]", "[X]"}:
+            continue
+        result = re.sub(r"\s*<!-- cooperation:[^<>]+ -->\s*$", "", cells[4]).strip()
+        checks.add((task_name, cells[1], cells[2].lower(), cells[3], result))
+    return checks, legacy_checks
+
+
 def _account_display_maps(config_dir: Path, instances: list[str]) -> tuple[dict, dict, dict]:
     """一次读取各实例配置，建立显示账号、平台和每日任务配置映射。"""
     display_map: dict[tuple[str, str], str] = {}
@@ -187,7 +233,7 @@ def _account_display_maps(config_dir: Path, instances: list[str]) -> tuple[dict,
             raw = raw if isinstance(raw, dict) else {}
             email = str(raw.get("account", "") or "").strip()
             identity = (normalized, account_id)
-            # 邮箱只用于 Markdown 展示，空值时回退为内部账号标识。
+            # 邮箱只用于报告展示，空值时回退为内部账号标识。
             display_map[identity] = email or account_id
             platform_map[identity] = "安卓" if bool(raw.get("apple_or_android", True)) else "iOS"
     return display_map, platform_map, config_map
@@ -218,7 +264,7 @@ def sync_account_result(
     error: str = "每日任务执行失败",
     failed_task: str = "",
 ) -> None:
-    """把本次执行结果转换为各子任务状态，再刷新 Markdown 展示文件。"""
+    """把本次执行结果转换为各子任务状态，再刷新 HTML 报告。"""
     config_dir = Path(config_dir)
     data = _read_config(config_dir, instance)
     settings = _daily_settings(data)
@@ -265,23 +311,34 @@ def sync_account_result(
     write_markdown(state, config_dir)
 
 
-def write_markdown(state: DailyStateManager, config_dir: str | Path) -> Path:
-    """读取每日状态并生成当天的 Markdown 汇总，不把 Markdown 当作状态源。"""
+def write_html(
+    state: DailyStateManager,
+    config_dir: str | Path,
+    *,
+    image_updates: dict[tuple[str, str, str], tuple[CooperationImage, ...]] | None = None,
+) -> Path:
+    """仅输出 HTML；旧 Markdown 只用于读取迁移记录，不再写入。"""
     config_dir = Path(config_dir)
     project_root = Path(__file__).resolve().parents[2]
     output_dir = project_root / "log" / "dailytask"
-    path = output_dir / f"OAS每日任务结果_{datetime.now():%Y-%m-%d}.md"
+    path = output_dir / f"OAS每日任务结果_{datetime.now():%Y-%m-%d}.html"
     temp = None
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
         lock_path = output_dir / ".daily_task_report.lock"
         with interprocess_file_lock(lock_path, timeout=10.0, poll_interval=0.02):
+            now = datetime.now()
+            path = output_dir / f"OAS每日任务结果_{now:%Y-%m-%d}.html"
+            checked_cooperations, legacy_checks = _read_cooperation_checks(path.with_suffix(".md"))
+            checked_cooperations.update(read_html_checks(path))
+            previous_galleries = read_cooperation_galleries(path)
+            row_galleries: dict[tuple[str, int], CooperationGallery] = {}
+            html_checks: set[tuple[str, ...]] = set()
             # 获取锁后重新读取最新状态，避免旧快照覆盖其他实例刚写入的结果。
             current = state.load_today()
             instances = [str(instance).lower() for instance in current.get("instances", {})]
             display_map, platform_map, config_map = _account_display_maps(config_dir, instances)
             report_task_definitions = _enabled_task_definitions(config_map)
-            now = datetime.now()
             rows: list[str] = []
             cooperation_rows: dict[str, list[str]] = {
                 "cooperation_morning": [],
@@ -334,10 +391,23 @@ def write_markdown(state: DailyStateManager, config_dir: str | Path) -> Path:
                         result = _format_cooperation_result(task_node.get("result", "none"))
                         if result == "无":
                             continue
+                        # 表格仅作为内存中的渲染输入，不落地 Markdown 文件。
+                        key = (task_name, display_account, normalized_instance, platform, result)
+                        key_prefix = f"cooperation:{task_name}:{normalized_instance}:{account_id}:{platform}"
+                        completed = key in checked_cooperations or f"{key_prefix}:{result}" in legacy_checks or all(
+                            f"{key_prefix}:{label}" in legacy_checks
+                            for label in result.split("+")
+                        )
+                        if completed:
+                            html_checks.add(key)
+                        image_key = (task_name, normalized_instance, account_id, result)
+                        update = (image_updates or {}).get((task_name, normalized_instance, account_id))
+                        gallery = previous_galleries.get(image_key, CooperationGallery(image_key, ()))
+                        if update is not None:
+                            gallery = CooperationGallery(image_key, tuple(image for image in update if image.valid())[:3])
+                        row_galleries[(task_name, len(cooperation_rows[task_name]))] = gallery
                         cooperation_rows[task_name].append(
-                            "|"
-                            + "|".join([display_account, normalized_instance, platform, result])
-                            + "|"
+                            f"|{display_account}|{normalized_instance}|{platform}|{result}|"
                         )
             statistic_values = []
             for task_name, _title, _setting_key, _done_key in report_task_definitions:
@@ -376,15 +446,27 @@ def write_markdown(state: DailyStateManager, config_dir: str | Path) -> Path:
                     else "|无|-|-|无|\n"
                 )
             )
+            report_content = render_interactive_report(
+                content, title=path.stem, report_date=now.strftime("%Y-%m-%d"), checked_keys=html_checks,
+                row_galleries=row_galleries,
+            )
             temp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
             with temp.open("w", encoding="utf-8", newline="\n") as stream:
-                stream.write(content)
+                stream.write(report_content)
                 stream.flush()
                 os.fsync(stream.fileno())
             atomic_replace_with_retry(temp, path)
             temp = None
+            ticket_path = output_dir / f'OAS超鬼王门票刷取情况_{now:%Y-%m-%d}.html'
+            if not ticket_path.exists():
+                EventTicketReport._write(ticket_path, render_ticket_report({
+                    'date': now.date().isoformat(),
+                    'group_count': max((int(data.get('multi_account_evo', {}).get('multi_account_evo_config', {}).get('group_count', 0))
+                                        for data in config_map.values()), default=20) or 20,
+                }))
+            refresh_report_archive(output_dir, now.date())
     except Exception:
-        logger.exception("每日任务 Markdown 更新失败，已忽略展示层异常: %s", path)
+        logger.exception("每日任务报告更新失败，已忽略展示层异常: %s", path)
     finally:
         if temp is not None:
             try:
@@ -392,3 +474,8 @@ def write_markdown(state: DailyStateManager, config_dir: str | Path) -> Path:
             except OSError:
                 pass
     return path
+
+
+def write_markdown(state: DailyStateManager, config_dir: str | Path) -> Path:
+    """兼容旧调用名称，实际仅生成并返回 HTML 报告。"""
+    return write_html(state, config_dir)

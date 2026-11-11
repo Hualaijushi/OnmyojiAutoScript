@@ -1493,7 +1493,14 @@
       "ios_count": 9,
       "battle_count": 20,
       "sync_timeout": "00:10:00",
-      "strict_platform_order": true
+      "strict_platform_order": true,
+      "failure_notify_enable": false,
+      "failure_pushplus_token": "",
+      "event_progress_enable": false,
+      "event_ocr_start": 200,
+      "event_ocr_interval": 10,
+      "group_start": 1,
+      "group_end": 0
     },
     "account_list_1": {
       "character": "",

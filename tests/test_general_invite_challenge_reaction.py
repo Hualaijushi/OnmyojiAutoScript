@@ -321,6 +321,19 @@ class ClickFireFsmBehaviorTest(TestCase):
         self.assertEqual(h.run(), 'room_failed')
         h.task.appear_then_click.assert_not_called()
 
+    def test_last_attempt_transition_waits_for_battle_without_another_click(self):
+        # 前三次点击后仍见房间；末次 reaction 时房间消失，随后才出现战斗标识。
+        h = _CF(battle=[False] * 12 + [True],
+                in_room=[True] * 10 + [False], fire=[True])
+        self.assertEqual(h.run(), 'battle')
+        self.assertEqual(len(h.clicks), 3)
+
+    def test_final_confirmation_without_battle_remains_bounded(self):
+        # 战斗始终未出现时，不因房间消失就宣告成功，也不继续点击旧按钮。
+        h = _CF(battle=[False], in_room=[True] * 10 + [False], fire=[True])
+        self.assertEqual(h.run(), 'timeout')
+        self.assertEqual(len(h.clicks), 3)
+
     # ---- bounded ----
     def test_bounded_by_max_tries_returns_timeout(self):
         h = _CF(battle=[False], in_room=[True], fire=[True])

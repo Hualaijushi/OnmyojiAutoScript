@@ -42,6 +42,15 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         if callback is not None:
             callback()
 
+    def _evo_count_limit_reached(self) -> bool:
+        return self.current_count >= self.limit_count
+
+    def _evo_time_limit_reached(self) -> bool:
+        return datetime.now() - self.start_time >= self.limit_time
+
+    def _embedded_count_complete(self, limit_count: int) -> bool:
+        return self.current_count >= limit_count
+
     def _return_to_main_after_run(self) -> None:
         if getattr(self, '_embedded_evo_zone', None) is None:
             self.goto_page(page_main)
@@ -99,7 +108,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         self._embedded_abort_check = abort_check
         try:
             success = self._run_core()
-            return success and self.current_count >= limit_count
+            return success and self._embedded_count_complete(limit_count)
         finally:
             self._embedded_evo_zone = None
             self._redact_invite_friends = False
@@ -222,16 +231,18 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         while 1:
             self._check_embedded_abort()
             self.screenshot()
-            if self.current_count >= self.limit_count:
-                if self.is_in_room():
+            # 仅显式启用的任务共用本轮房间识别；普通觉醒仍走原截图检查。
+            room_snapshot = self._room_snapshot_after_screenshot()
+            if self._evo_count_limit_reached():
+                if (room_snapshot if room_snapshot is not None else self.is_in_room()):
                     logger.info('EvoZone count limit out')
                     break
-            if datetime.now() - self.start_time >= self.limit_time:
-                if self.is_in_room():
+            if self._evo_time_limit_reached():
+                if (room_snapshot if room_snapshot is not None else self.is_in_room()):
                     logger.info('EvoZone time limit out')
                     break
             # 如果没有进入房间那就不需要后面的邀请
-            if not self.is_in_room():
+            if not (room_snapshot if room_snapshot is not None else self.is_in_room()):
                 # 如果在探索界面或者是出现在组队界面， 那就是可能房间死了
                 # 要结束任务
                 sleep(0.5)
@@ -289,10 +300,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         while 1:
             self._check_embedded_abort()
             self.screenshot()
-            if self.current_count >= self.limit_count:
+            if self._evo_count_limit_reached():
                 logger.info('EvoZone count limit out')
                 break
-            if datetime.now() - self.start_time >= self.limit_time:
+            if self._evo_time_limit_reached():
                 logger.info('EvoZone time limit out')
                 break
             if self.check_then_accept():

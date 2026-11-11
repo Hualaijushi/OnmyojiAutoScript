@@ -142,18 +142,18 @@ class C0RegistryTest(TestCase):
         self.assertEqual(sum(d.values()), self.summary['total'])
         # 本分支（synevo）的真实全仓数字，不沿用 master 的 1092：synevo 多出 AccountRotation /
         # MultiAccountEvo / SwitchAccount 等轮换业务调用点（大部分落进 EXCLUDED），并多 1 个 EvoZone 收尾点。
-        self.assertEqual(self.summary['total'], 1127)
+        self.assertEqual(self.summary['total'], 1130)
         self.assertEqual({k: d[k] for k in ('MIGRATE', 'ALREADY_L2', 'KEEP_IMMEDIATE', 'KEEP_SPECIAL', 'NEEDS_C', 'DEFERRED', 'PRIMITIVE', 'EXCLUDED')},
                          {'MIGRATE': 7, 'ALREADY_L2': 37, 'KEEP_IMMEDIATE': 631, 'KEEP_SPECIAL': 232, 'NEEDS_C': 7,
-                          'DEFERRED': 6, 'PRIMITIVE': 35, 'EXCLUDED': 172})
+                          'DEFERRED': 6, 'PRIMITIVE': 35, 'EXCLUDED': 175})
 
     def test_basis_counts_are_reconciled_and_c0_reviewed_is_a_separate_dimension(self):
         basis = self.summary['by_basis']
-        self.assertEqual(sum(basis.values()), 1127)
+        self.assertEqual(sum(basis.values()), 1130)
         # basis = 决定来源（互斥）：GeneralInvite / GeneralBattle 的 7 点沿用 L2-2 人工结论，所以 c0 basis = 4 + 6 + 3 + 4 = 17，
         # human 仍是 179；c0_reviewed = 24 是另一个维度（不与 basis 相加）
         # human 180 = master 的 179 + synevo 独有的 EvoZone `_return_to_main_after_run`（按既有 R7/R4 规则归 KEEP_IMMEDIATE）
-        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (180, 17, 930))
+        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (180, 17, 933))
         self.assertEqual(self.summary['c0_reviewed'], 24)
         self.assertEqual(sum(1 for s in self.c0 if s['basis'] == 'human'), 7)
 
