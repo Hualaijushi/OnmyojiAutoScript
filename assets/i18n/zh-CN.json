@@ -290,6 +290,8 @@
   "boss_battle_preset": "首领战斗配置",
   "AccountRotation": "账号轮换",
   "MetaDemonRotation": "多账号超鬼王",
+  "GhostCount": "鬼王数量手动采集",
+  "ghost_count": "鬼王数量手动采集",
   "meta_demon_rotation": "多账号超鬼王",
   "rotation_settings": "超鬼王轮换设置",
   "rotation_play": "超鬼王玩法设置",

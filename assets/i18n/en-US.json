@@ -17,6 +17,8 @@
   "quick_loadout_custom_preset_help": "Format: boss_name:(\"group number or name\",\"preset number or name\"); separate entries with semicolons; ALL matches every monster not explicitly configured; OCR mode treats both values as names",
   "AccountRotation": "Account Rotation",
   "MetaDemonRotation": "Multi-account Demon Encounter",
+  "GhostCount": "Manual Ghost Count",
+  "ghost_count": "Manual Ghost Count",
   "meta_demon_rotation": "Multi-account Demon Encounter",
   "rotation_settings": "Rotation settings",
   "rotation_play": "Demon encounter settings",

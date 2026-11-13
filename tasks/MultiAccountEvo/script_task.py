@@ -1094,22 +1094,6 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                         raise TeamStallError(f"embedded EvoZone failed for group {group}")
                     sync.update_role(run_id, group, role, "done", character=account.character, epoch=epoch)
                     # 已提前完成的成员也留在此处响应恢复，不能独自退出下一轮协作。
-                    if ready.get("event_mode"):
-                        sync.wait_all_done(run_id, group, epoch=epoch)
-                        try:
-                            from tasks.MultiAccountEvo.ghost_count import collect_ghost_counts
-                            counts = collect_ghost_counts(self.config, self.device)
-                        except Exception as exc:
-                            logger.warning("五星/六星采集失败，标记未采集：%s", type(exc).__name__)
-                            counts = {'5': None, '6': None}
-                        sync.record_ghost_counts(run_id, group, role, epoch, counts)
-                        logger.info("鬼王队列采集：组=%s 角色=%s 5x=%s 6x=%s",
-                                    group, role, counts['5'], counts['6'])
-                        if role == "leader":
-                            sync.wait_ghost_counts(run_id, group, epoch=epoch)
-                            self._refresh_event_report()
-                            return sync.wait_all_done(run_id, group, epoch=epoch)
-                        return sync.wait_for_advance(run_id, group)
                     if role == "leader":
                         return sync.wait_all_done(run_id, group, epoch=epoch)
                     return sync.wait_for_advance(run_id, group)

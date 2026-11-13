@@ -60,6 +60,7 @@ from tasks.ActivityShikigami.args_layout import build_args_layout as activity_sh
 from tasks.MartialArts.config import MartialArts
 from tasks.MetaDemon.config import MetaDemon
 from tasks.MetaDemonRotation.config import MetaDemonRotation
+from tasks.GhostCount.config import GhostCount
 from tasks.FrogBoss.config import FrogBoss
 from tasks.FloatParade.config import FloatParade
 from tasks.Quiz.config import Quiz
@@ -130,6 +131,7 @@ class ConfigModel(ConfigBase):
     martial_arts: MartialArts = Field(default_factory=MartialArts)
     meta_demon: MetaDemon = Field(default_factory=MetaDemon)
     meta_demon_rotation: MetaDemonRotation = Field(default_factory=MetaDemonRotation)
+    ghost_count: GhostCount = Field(default_factory=GhostCount)
     frog_boss: FrogBoss = Field(default_factory=FrogBoss)
     float_parade: FloatParade = Field(default_factory=FloatParade)
     quiz: Quiz = Field(default_factory=Quiz)
