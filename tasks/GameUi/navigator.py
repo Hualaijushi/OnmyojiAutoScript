@@ -31,6 +31,7 @@ from tasks.GameUi.matcher import collect_rule_images
 from tasks.GameUi.page_definition import Page, Transition, sort_pages_by_priority
 from tasks.GameUi.registry import PageRegistry
 from tasks.GameUi.session import NavigatorSession
+from tasks.Restart.assets import RestartAssets
 from tasks.SixRealms.assets import SixRealmsAssets
 from tasks.base_task import BaseTask
 
@@ -718,6 +719,18 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
 
         self.maybe_screenshot(skip_first_screenshot)
         logger.warning("Try switch to a supported page")
+        # 绑定提示需要先进入再取消，不能当作普通关闭按钮只点一次。
+        if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_GOTO_BIND_PHONE, interval=1):
+            logger.info("未知页面发现绑定提示，等待取消按钮")
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                self.screenshot()
+                if self.appear_then_click(RestartAssets.I_LOGIN_LOGIN_CANCEL_BIND_PHONE, interval=1):
+                    logger.info("已点击取消绑定，重新识别页面")
+                    self._record_unknown_close_event("cancel_bind_phone")
+                    return True
+                time.sleep(0.3)
+            raise GamePageUnknownError("绑定提示的取消按钮未出现，停止未知页面恢复")
         for action in [*self.navigator.local_unknown_closers, *self.DEFAULT_UNKNOWN_CLOSERS]:
             action_name = self._action_name(action)
             # 若最后3次执行的都是该动作，则跳过该动作尝试其他动作

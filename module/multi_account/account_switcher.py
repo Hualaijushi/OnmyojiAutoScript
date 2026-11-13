@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
+from module.exception import OcrUnavailableError, ImageFrameExpiredError
 from module.logger import logger
 from module.multi_account.account import Account
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
@@ -122,6 +123,8 @@ class AccountSwitcher:
                     elapsed_seconds=time.monotonic() - started,
                     detected_account_id=account.account_id,
                 )
+        except (OcrUnavailableError, ImageFrameExpiredError):
+            raise
         except Exception as exc:
             logger.warning("[Account] instance=%s account_id=%s current detection failed: %s", account.instance, account.account_id, self._classify(exc).value)
 
@@ -131,10 +134,10 @@ class AccountSwitcher:
             if time.monotonic() - started >= self.timeout:
                 last_code, last_message = SwitchErrorCode.TIMEOUT, "account switch deadline exceeded"
                 break
-            # 快速切换连续失败时，最后一次复用完整登录流程兜底。
-            use_fast = self.fast and (
-                self.max_attempts == 1 or attempt < self.max_attempts
-            )
+            # 快速切换的 OCR 兜底只用于已保存账号列表，仍必须跳过服务器
+            # 和角色选择。降级到完整登录流程会进入 switch_character()，在
+            # 页面加载缓慢时反复点击服务器按钮并触发连点保护。
+            use_fast = self.fast
             logger.info(
                 "[Account] instance=%s account_id=%s switch attempt=%s/%s mode=%s",
                 account.instance,
@@ -154,7 +157,7 @@ class AccountSwitcher:
                     fast=use_fast,
                 )
                 if not bool(switch.switchAccount()):
-                    last_code, last_message = SwitchErrorCode.ROLE_MISMATCH, "legacy switch verification failed"
+                    last_code, last_message = SwitchErrorCode.ROLE_MISMATCH, "account switch verification failed"
                 elif not self.wait_until_home(account):
                     last_code, last_message = SwitchErrorCode.ROLE_MISMATCH, "post-switch verification mismatch"
                 else:
@@ -164,6 +167,8 @@ class AccountSwitcher:
                         elapsed_seconds=time.monotonic() - started,
                         detected_account_id=account.account_id,
                     )
+            except (OcrUnavailableError, ImageFrameExpiredError):
+                raise
             except Exception as exc:
                 last_code = self._classify(exc)
                 last_message = str(exc) or exc.__class__.__name__

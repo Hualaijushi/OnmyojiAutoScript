@@ -18,7 +18,7 @@ from module.exception import (
 )
 from module.logger import logger
 from module.multi_account.account import Account
-from module.multi_account.account_switcher import AccountSwitcher
+from module.multi_account.account_switcher import AccountSwitcher, SwitchErrorCode
 from module.multi_account.courtyard_verifier import CourtyardCharacterVerifierMixin
 from module.multi_account.daily_state import DailyStateManager
 from module.multi_account.status_report import MultiAccountEvoStatusReport
@@ -55,8 +55,8 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
     # 结算后的等待上限是工程初值，仍需三实例真机校准。
     post_battle_timeout: float = 15.0
     post_battle_poll_interval: float = 0.3
-    # 同日每组只自动重跑一次，预算保存到共享状态，任务重启也不清零。
-    auto_recovery_attempts: int = 1
+    # 同日每组最多协调重启三次，预算保存到共享状态，任务重启也不清零。
+    auto_recovery_attempts: int = 3
 
     def _read_only_image_retry(self, operation):
         """只重试当前识别，使用新截图，不重放调用方已经执行的点击。"""
@@ -128,7 +128,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             started = self._event_reward_wait_started = now
         if now - started >= 30:
             self._save_event_ocr_evidence("奖励画面等待稳定超时", [])
-            raise EventGoalError("奖励画面等待稳定超时，停止门票识别；已保存截图")
+            raise TeamStallError("奖励画面等待稳定超时，已保存截图，尝试整组恢复")
         if not self._event_reward_visible():
             self._event_reward_visible_since = None
             return False
@@ -152,7 +152,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                     self.screenshot()
                     if not self._event_reward_visible():
                         self._save_event_ocr_evidence("复核时奖励袋消失", readings)
-                        raise EventGoalError("门票复核时奖励页已离开，未确认达标")
+                        raise TeamStallError("门票复核时奖励页已离开，尝试整组恢复")
                 raw = str(self.O_EVENT_PROGRESS_50.ocr(self.device.image))
                 readings.append(raw)
                 value = parse_ticket_value(raw)
@@ -167,7 +167,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                     consecutive = 0
             if value is None or value == 50 and not confirmed:
                 self._save_event_ocr_evidence("门票读值无效或50未经复核", readings)
-                raise EventGoalError(f"门票OCR未能可靠确认，最后读值：{raw[:80]}")
+                raise TeamStallError(f"门票OCR未能可靠确认，尝试整组恢复，最后读值：{raw[:80]}")
         self._event_sample_token = context["sync"].record_event_sample(
             context["run_id"], context["group"], context["epoch"], context["role"],
             context["completed"] + 1, value, raw, confirmed, time.monotonic() - started,
@@ -361,7 +361,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
         context = getattr(self, "_event_segment", None)
         if context is not None and sample_due:
             if self._event_sample_token is None:
-                raise EventGoalError("采样场已结束但没有取得奖励页门票读值")
+                raise TeamStallError("采样场已结束但没有取得奖励页门票读值，尝试整组恢复")
             state = context["sync"].finish_event_sample(
                 context["run_id"], context["group"], context["epoch"], context["role"], self._event_sample_token,
             )
@@ -967,7 +967,21 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                         timeout=max(.01, deadline-time.monotonic()),
                         home_verifier=self._verify_courtyard_character, fast=True,
                     ).ensure_account(account)
+                    # 队友可能在本端切号期间发起恢复，先响应整组暂停。
+                    sync.assert_active(run_id, group)
                     if not result.success:
+                        if result.error_code == SwitchErrorCode.UNKNOWN:
+                            state = sync.request_recovery(
+                                run_id, group, role,
+                                f"PREBATTLE: SWITCH_UNKNOWN: group {group} account switch failed",
+                                max_attempts=self.auto_recovery_attempts,
+                            )
+                            self._recover_current_group(
+                                sync, run_id, group, role, account, sync.recovery_epoch(state),
+                            )
+                            verified = False
+                            deadline = time.monotonic() + config.sync_timeout_seconds
+                            continue
                         raise RuntimeError(f"account switch failed for group {group}: {result.error_code.value}")
                     verified = True
                 sync.update_role(run_id, group, role, "ocr_done", character=account.character)
@@ -975,6 +989,21 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                 sync.wait_all_ready(run_id, group, deadline=deadline)
                 state = self._run_group_with_recovery(config, sync, run_id, group, role, account)
                 return run_id, state
+            except RecoveryRequested as exc:
+                self._recover_current_group(sync, run_id, group, role, account, exc.epoch)
+                verified = False
+                deadline = time.monotonic() + config.sync_timeout_seconds
+            except (OcrUnavailableError, ImageFrameExpiredError, ImageServiceUnavailable) as exc:
+                if self._team_group_entered:
+                    raise
+                kind = 'OCR_UNAVAILABLE' if isinstance(exc, OcrUnavailableError) else 'IMAGE_UNAVAILABLE'
+                state = sync.request_recovery(
+                    run_id, group, role, f"PREBATTLE: {kind}: {exc}",
+                    max_attempts=self.auto_recovery_attempts,
+                )
+                self._recover_current_group(sync, run_id, group, role, account, sync.recovery_epoch(state))
+                verified = False
+                deadline = time.monotonic() + config.sync_timeout_seconds
             except SessionReplacedError:
                 if role == "leader" or self._team_group_entered or rejoined >= 2:
                     raise
@@ -1106,10 +1135,12 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             sync.acknowledge_recovery(run_id, group, epoch, role, "paused")
             sync.wait_recovery_stage(run_id, group, epoch, "paused", deadline=deadline)
             recovery = sync.assert_recovering(run_id, group, epoch, deadline=deadline)
-            if recovery['recovery'].get('reason', '').startswith('OCR_UNAVAILABLE:'):
+            reason = recovery['recovery'].get('reason', '')
+            prebattle_switch = reason.startswith('PREBATTLE:')
+            if reason.startswith('OCR_UNAVAILABLE:') or reason.startswith('PREBATTLE: OCR_UNAVAILABLE:'):
                 # 先等共享 OCR 就绪，再允许原有整组游戏恢复；服务不恢复则不重启游戏。
                 wait_for_ocr_recovery(deadline=deadline, check=check)
-            if recovery['recovery'].get('reason', '').startswith('IMAGE_UNAVAILABLE:'):
+            if reason.startswith('IMAGE_UNAVAILABLE:') or reason.startswith('PREBATTLE: IMAGE_UNAVAILABLE:'):
                 # 图像服务仍不可用时重启游戏无法解决问题，先等待健康响应。
                 wait_for_image_recovery(deadline=deadline, check=check)
             # 按队长、队员一、队员二顺序重启，避免同时登录占用识别服务。
@@ -1120,7 +1151,7 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             logger.warning("MultiAccountEvo recovery: group=%s epoch=%s role=%s restart game", group, epoch, role)
             GroupGameRestart(self.config, self.device, check).app_restart()
             check()
-            if not self._verify_courtyard_character(account):
+            if not prebattle_switch and not self._verify_courtyard_character(account):
                 raise ScriptError("character verification failed after automatic game restart")
             check()
             sync.acknowledge_recovery(run_id, group, epoch, role, "restarted")

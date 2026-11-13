@@ -685,8 +685,12 @@ class MultiAccountEvoSync:
             if recovery.get("phase") != "recovering" or set(recovery["restarted"]) != set(ROLES):
                 raise SyncStateError("cannot finish before all games restarted")
             recovery["phase"] = "running"
+            prebattle_switch = recovery.get("reason", "").startswith("PREBATTLE:")
             for info in state["roles"].values():
-                info.update(status="ready", error="", updated_at=self._now())
+                if prebattle_switch:
+                    info.update(status="pending", character="", error="", updated_at=self._now())
+                else:
+                    info.update(status="ready", error="", updated_at=self._now())
             self._write_unlocked(state)
             return state
 

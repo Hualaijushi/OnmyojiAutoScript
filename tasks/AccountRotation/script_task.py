@@ -7,17 +7,33 @@ from module.exception import RequestHumanTakeover, TaskEnd
 from module.base.utils import load_module
 from module.logger import logger
 from module.multi_account.account_manager import AccountManager
-from module.multi_account.account_switcher import AccountSwitcher
+from module.multi_account.account_switcher import AccountSwitcher, SwitchErrorCode
 from module.multi_account.courtyard_verifier import CourtyardCharacterVerifierMixin
 from module.multi_account.daily_state import DailyStateManager
 from module.multi_account.daily_task_schedule import is_daily_task_due
 from module.multi_account.rotation_runner import AccountRotationRunner, DailyTaskOutcome
 from tasks.AccountRotation.config import RotationFailurePolicy
 from tasks.DailyTrifles.config import DailyGuildDonate, DailyTriflesConfig, DoneRecord
+from tasks.Restart.script_task import ScriptTask as RestartTask
 from tasks.base_task import BaseTask
 
 
 _DAILY_TASK_MAX_RETRY = 3
+
+
+class RotationAccountSwitcher(AccountSwitcher):
+    """切号结果未知时，先有限重启本实例再重试同一账号。"""
+
+    def ensure_account(self, account, **kwargs):
+        result = super().ensure_account(account, **kwargs)
+        for attempt in range(1, 4):
+            if result.success or result.error_code != SwitchErrorCode.UNKNOWN:
+                break
+            logger.warning("[AccountRotation] instance=%s account_id=%s 切号未知，重启游戏 %s/3",
+                           account.instance, account.account_id, attempt)
+            RestartTask(self.config, self.device).app_restart()
+            result = super().ensure_account(account, **kwargs)
+        return result
 
 
 class ScriptTask(BaseTask, CourtyardCharacterVerifierMixin):
@@ -405,7 +421,7 @@ class ScriptTask(BaseTask, CourtyardCharacterVerifierMixin):
         快速路径使用固定坐标选择登录平台并跳过服务器/角色 OCR。
         账号轮换按实例和账号 ID 记录每日完成状态，角色名校验仅由多账号组队觉醒启用。
         """
-        return AccountSwitcher(
+        return RotationAccountSwitcher(
             self.config,
             self.device,
             max_attempts=settings.max_switch_attempts,
