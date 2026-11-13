@@ -92,11 +92,15 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
         self.set_next_run(task="MetaDemon", success=True)
         self.finish_task()
 
-    def start_battle(self):
+    def start_battle(self, *, on_entered=None, popup_handler=None, rotation_mode=False, deadline=None):
         logger.hr('Click fire, start battle')
         while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                return 'unknown'
             self.screenshot()
             if self._meta_battle_started() or self.is_in_battle(False):
+                if on_entered is not None:
+                    on_entered()
                 self.total_count += 1
                 self.run_general_battle(
                     self.conf.switch_soul.get_general_battle_conf(self.cur_boss_type),
@@ -110,10 +114,21 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
                 # 不喝茶则结束任务安排下一次运行
                 self.ui_click_until_disappear(self.I_MD_CLOSE_POPUP, interval=0.6)
                 self.screenshot()
+                if rotation_mode:
+                    return 'fatigue' if self.appear(self.I_CHECK_BOSS_PAGE) else 'unknown'
                 self._schedule_fatigue_recovery()
                 self.finish_task()
+            if popup_handler is not None:
+                popup = popup_handler()
+                if popup == 'unknown':
+                    return 'popup_unknown'
+                if popup in ('handled', 'waiting'):
+                    time.sleep(0.4)
+                    continue
             if self.appear_then_click(self.I_MD_FIRE, interval=0.8):
                 continue
+        if rotation_mode:
+            return 'finished'
 
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -252,13 +267,15 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
             logger.warning(f'疲劳读数不可信或与喝茶提示不符：{current}/{total}，沿用设置的等待间隔 {wait}')
         self.set_next_run('MetaDemon', target=datetime.now() + wait)
 
-    def check_and_switch_ticket(self):
+    def check_and_switch_ticket(self, *, deadline=None):
         """切换鬼王门票并更新当前鬼王级别"""
         logger.hr('Summon boss')
         if self.conf.meta_demon_config.use_current_queue:
             return self.summon_current_queue()
         # 打开切换门票弹窗
         while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise GamePageUnknownError('等待鬼王队列超时')
             self.screenshot()
             if self.appear(self.I_MD_FIRE, interval=1.2):  # 可以直接挑战鬼王则退出
                 return True
@@ -304,6 +321,8 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
         selected = False
         logger.info(f'Summon {self.cur_boss_type.name.lower()} boss')
         while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise GamePageUnknownError('等待鬼王召唤超时')
             self.screenshot()
             if self.appear(self.I_MD_FIRE):  # 可以挑战鬼王则退出
                 return True

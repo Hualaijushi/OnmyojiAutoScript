@@ -16,11 +16,38 @@ from tasks.EvoZone.script_task import ScriptTask as EvoTask
 from tasks.GameUi.default_pages import page_reward
 from tasks.MultiAccountEvo.config import MultiAccountEvo
 from tasks.MultiAccountEvo.event import EventGoalError, event_complete, parse_ticket_value
+from tasks.MultiAccountEvo.ghost_count import collect_ghost_counts, count_roi, parse_count
 from tasks.MultiAccountEvo.script_task import ScriptTask
 from tasks.MultiAccountEvo.sync import MultiAccountEvoSync, ROLES, RunChangedError, SyncStateError
 
 
 class EventPureTest(unittest.TestCase):
+    def test_ghost_count_requires_explicit_digits_and_uses_icon_offset(self):
+        self.assertEqual(0, parse_count('0'))
+        self.assertEqual(12, parse_count(' 12 '))
+        for value in ('', 'O', '1?', '持有:', '-1', '1/2'):
+            self.assertIsNone(parse_count(value))
+        self.assertEqual((758, 385, 30, 30), count_roi(SimpleNamespace(roi_front=(718, 323, 50, 47))))
+        self.assertIsNone(count_roi(SimpleNamespace(roi_front=(1260, 700, 20, 20))))
+
+    def test_queue_collects_stable_values_without_clicking_summon(self):
+        task = Mock()
+        task.I_MD_GET_BOSS = object()
+        task.I_MD_SWITCH_TICKET = object()
+        task.I_MD_CLOSE_POPUP = object()
+        task.I_MD_FIVE_STARS = SimpleNamespace(roi_front=(718, 323, 50, 47))
+        task.I_MD_SIX_STARS = SimpleNamespace(roi_front=(819, 326, 44, 44))
+        task.appear.return_value = True
+        task.device.image = object()
+        ocr = Mock()
+        ocr.ocr_single.side_effect = ['12', '12', '', '1']
+        with patch('tasks.MultiAccountEvo.ghost_count.MetaDemonTask', return_value=task), patch(
+            'tasks.MultiAccountEvo.ghost_count.RuleOcr', return_value=ocr,
+        ), patch('tasks.MultiAccountEvo.ghost_count.time.sleep'):
+            result = collect_ghost_counts(Mock(), task.device)
+        self.assertEqual({'5': 12, '6': None}, result)
+        task.appear_then_click.assert_called_once_with(task.I_MD_CLOSE_POPUP, interval=0)
+
     def test_manual_completion_is_explicit_dated_and_does_not_fabricate_ocr(self):
         state = {'date': '2026-11-11', 'group_count': 1, 'event_groups': {'1': {
             'roles': {}, 'status': 'completed', 'completion_source': 'user_confirmed',
@@ -109,6 +136,21 @@ class EventSyncTest(unittest.TestCase):
         self.assertEqual('.multi_account_evo_event_50_sync.json', self.sync.state_path.name)
         self.assertFalse((Path(self.temp.name) / '.multi_account_evo_sync.json').exists())
 
+    def test_ghost_results_preserve_ticket_goal_and_require_current_session(self):
+        with self.assertRaises(SyncStateError):
+            self.sync.record_ghost_counts(self.run_id, 1, 'leader', 0, {'5': 3, '6': None})
+        self.seed(200, reached=True)
+        self.sync.record_ghost_counts(self.run_id, 1, 'leader', 0, {'5': 0, '6': None})
+        self.sync.record_ghost_counts(self.run_id, 1, 'member_1', 0, {'5': 2, '6': 4})
+        with self.assertRaises(Exception):
+            self.sync.wait_ghost_counts(self.run_id, 1, epoch=0)
+        self.sync.record_ghost_counts(self.run_id, 1, 'member_2', 0, {'5': None, '6': 1})
+        result = self.sync.wait_ghost_counts(self.run_id, 1, epoch=0)
+        self.assertTrue(event_complete(result, 1))
+        self.assertEqual({'5': 0, '6': None}, result['event_groups']['1']['roles']['leader']['ghost_counts'])
+        with self.assertRaises(SyncStateError):
+            self.sync.record_ghost_counts(self.run_id, 1, 'leader', 0, {'5': False, '6': 0})
+
     def test_250_without_three_tickets_cannot_be_done(self):
         self.seed(250)
         self.sync.begin_battle_segment(self.run_id, 1, 0)
@@ -152,7 +194,8 @@ class EventSyncTest(unittest.TestCase):
 
 
 class EventTaskIntegrationTest(unittest.TestCase):
-    def run_roles(self, *, initial=199, partial=False, never_reached=False, bad_ocr=False, late_role=False):
+    def run_roles(self, *, initial=199, partial=False, never_reached=False, bad_ocr=False, late_role=False,
+                  scan_failure=False):
         with tempfile.TemporaryDirectory() as directory:
             sync = MultiAccountEvoSync(directory, timeout=3, poll_interval=0.002, event_mode=True)
             state = sync.start_or_resume(1, 250, checkpoint_key='event')
@@ -195,9 +238,16 @@ class EventTaskIntegrationTest(unittest.TestCase):
                     return '49/50'
                 return '50/50'
             def battle(task, **kwargs):
+                import time
                 task.current_count += 1
+                # 模拟奖励袋已经稳定显示超过一秒。
+                task._event_reward_visible_since = time.monotonic() - 2
                 task._handle_reward(SimpleNamespace(last_page=None), None)
                 return True
+            def collect(config, device):
+                if scan_failure and device.image == 'member_1':
+                    raise RuntimeError('模拟采集失败')
+                return {'5': 3, '6': None}
             def run(role):
                 try:
                     if late_role and role == 'member_2':
@@ -216,7 +266,9 @@ class EventTaskIntegrationTest(unittest.TestCase):
                     sync.fail(run_id, 1, role, str(exc))
             with patch.object(EvoTask, 'run_general_battle', new=battle), patch.object(
                 ScriptTask.O_EVENT_PROGRESS_50, 'ocr', side_effect=ocr,
-            ), patch('tasks.MultiAccountEvo.script_task.GameUi.detect_page_in', return_value=page_reward):
+            ), patch('tasks.MultiAccountEvo.script_task.GameUi.detect_page_in', return_value=page_reward), patch(
+                'tasks.MultiAccountEvo.ghost_count.collect_ghost_counts', side_effect=collect,
+            ):
                 threads = [threading.Thread(target=run, args=(r,), daemon=True) for r in ROLES]
                 for thread in threads:thread.start()
                 for thread in threads:thread.join(timeout=8)
@@ -230,6 +282,15 @@ class EventTaskIntegrationTest(unittest.TestCase):
         self.assertTrue(state['complete'])
         self.assertEqual(dict.fromkeys(ROLES, 200), state['battle_progress']['1'])
         self.assertEqual(dict.fromkeys(ROLES, 2), reads)
+        self.assertTrue(all(state['event_groups']['1']['roles'][role]['ghost_counts'] == {'5': 3, '6': None}
+                            for role in ROLES))
+
+    def test_collection_failure_keeps_event_goal_and_advances(self):
+        state, errors, _ = self.run_roles(initial=198, scan_failure=True)
+        self.assertEqual({}, errors)
+        self.assertTrue(state['complete'])
+        self.assertTrue(event_complete(state, 1))
+        self.assertEqual({'5': None, '6': None}, state['event_groups']['1']['roles']['member_1']['ghost_counts'])
 
     def test_reached_leader_and_member_keep_playing_until_last_role_at_210(self):
         state, errors, reads = self.run_roles(partial=True)
@@ -260,6 +321,31 @@ class EventTaskIntegrationTest(unittest.TestCase):
 
 
 class EventReportTest(unittest.TestCase):
+    def test_card_report_keeps_existing_checkbox_key_and_group_controls(self):
+        state = {'date': '2026-11-13', 'group_count': 1, 'event_groups': {'1': {
+            'roles': {'leader': {'value': 50, 'reached': True}}, 'samples': {},
+        }}}
+        html = render_ticket_report(state, {'A01': 'a@example.com'})
+        self.assertIn('oas-ghost-done-2026-11-13', html)
+        self.assertIn('class="ghost-group" data-group="1"', html)
+        self.assertEqual(3, html.count('class="ghost-account"'))
+        self.assertIn('a@example.com', html)
+        self.assertIn('已达标', html)
+        self.assertIn('采样记录与异常', html)
+
+    def test_ghost_counts_totals_do_not_treat_missing_as_zero(self):
+        state = {'date': date.today().isoformat(), 'group_count': 1, 'event_groups': {'1': {
+            'roles': {'leader': {'ghost_counts': {'5': 0, '6': 2}},
+                      'member_1': {'ghost_counts': {'5': None, '6': 3}},
+                      'member_2': {'ghost_counts': {'5': 4, '6': None}}}, 'samples': {},
+        }}}
+        html = render_ticket_report(state)
+        self.assertIn('5x：4（2/3 账号已采集）', html)
+        self.assertIn('6x：5（2/3 账号已采集）', html)
+        self.assertIn('队长 5x', html)
+        self.assertIn('队员二 6x', html)
+        self.assertIn('未采集', html)
+
     def test_unknown_and_unsafe_raw_text_are_displayed_safely(self):
         html = render_ticket_report({'date': date.today().isoformat(), 'group_count': 1})
         self.assertIn('未采集', html)

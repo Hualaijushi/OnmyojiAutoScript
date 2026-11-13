@@ -36,13 +36,13 @@ class MetaDemonAssets:
 	# 二星鬼王召唤票 
 	I_MD_TWO_STARS = RuleImage(roi_front=(417,322,55,48), roi_back=(266,303,751,134), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_two_stars.png")
 	# 三星鬼王召唤票 
-	I_MD_THREE_STARS = RuleImage(roi_front=(524,321,41,49), roi_back=(274,300,749,129), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_three_stars.png")
+	I_MD_THREE_STARS = RuleImage(roi_front=(608,322,66,62), roi_back=(274,300,749,129), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_three_stars.png")
 	# 四星鬼王召唤票 
-	I_MD_FOUR_STARS = RuleImage(roi_front=(621,324,42,45), roi_back=(261,299,754,132), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_four_stars.png")
+	I_MD_FOUR_STARS = RuleImage(roi_front=(507,325,69,58), roi_back=(261,299,754,132), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_four_stars.png")
 	# 五星鬼王召唤票 
-	I_MD_FIVE_STARS = RuleImage(roi_front=(718,323,50,47), roi_back=(267,303,749,129), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_five_stars.png")
+	I_MD_FIVE_STARS = RuleImage(roi_front=(457,320,70,64), roi_back=(267,303,749,129), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_five_stars.png")
 	# 六星鬼王召唤票 
-	I_MD_SIX_STARS = RuleImage(roi_front=(819,326,44,44), roi_back=(265,299,754,133), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_six_stars.png")
+	I_MD_SIX_STARS = RuleImage(roi_front=(410,319,66,64), roi_back=(265,299,754,133), threshold=0.85, method="Template matching", file="./tasks/MetaDemon/md/md_md_six_stars.png")
 	# 立即召唤鬼王 
 	I_MD_GET_BOSS = RuleImage(roi_front=(559,446,161,49), roi_back=(514,421,242,101), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_get_boss.png")
 	# 检查是否选中对应鬼王票 
@@ -87,12 +87,22 @@ class MetaDemonAssets:
 	I_MD_FRIEND_SELECTED = RuleImage(roi_front=(600,178,32,38), roi_back=(351,174,578,357), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_friend_selected.png")
 	# 无鬼王门票标志 
 	I_MD_TICKET_EMPTY = RuleImage(roi_front=(1073,503,29,29), roi_back=(1039,473,104,82), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_ticket_empty.png")
-	# 庭院直接进入超鬼王活动页面
+	# 庭院直接进入超鬼王活动页面 
 	I_MAIN_GOTO_ACT_2 = RuleImage(roi_front=(733,307,21,26), roi_back=(684,242,134,214), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_main_goto_act_2.png")
-	# 庭院进入超鬼王活动备用入口
+	# 庭院进入超鬼王活动备用入口 
 	I_MAIN_GOTO_ACT = RuleImage(roi_front=(1190,226,35,28), roi_back=(1164,134,83,393), threshold=0.7, method="Template matching", file="./tasks/MetaDemon/md/md_main_goto_act.png")
-	# 活动主页进入鬼王玩法
+	# 活动主页进入鬼王玩法 
 	I_MD_GOTO_BOSS = RuleImage(roi_front=(922,45,34,118), roi_back=(896,1,144,374), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_goto_boss.png")
+	# 超鬼王队伍预设 
+	I_MD_PRESET = RuleImage(roi_front=(1225,430,29,31), roi_back=(1193,392,87,105), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_preset.png")
+	# 超鬼王队伍预设出战按钮 
+	I_MD_PRE_FIGHT = RuleImage(roi_front=(763,560,105,36), roi_back=(745,543,148,68), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_pre_fight.png")
+	# 租借队伍挑战不再提示按钮未勾选 
+	I_MD_IFNOTION_NOT = RuleImage(roi_front=(561,366,44,45), roi_back=(546,364,182,53), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_ifnotion_not.png")
+	# 超鬼王租借队伍勾选不再提示 
+	I_MD_IFNOTION_YES = RuleImage(roi_front=(561,366,44,45), roi_back=(546,364,182,53), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_ifnotion_yes.png")
+	# 超鬼王租借队伍不再提示确认 
+	I_MD_SURE_PORMPT = RuleImage(roi_front=(665,439,173,55), roi_back=(665,439,173,55), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_sure_pormpt.png")
 
 
 	# Ocr Rule Assets
@@ -100,7 +110,7 @@ class MetaDemonAssets:
 	O_MD_FATIGUE = RuleOcr(roi=(1109,22,114,34), area=(1106,17,124,41), mode="DigitCounter", method="Default", keyword="", name="md_fatigue")
 	# 好友列表 
 	O_MD_FRIENDS = RuleOcr(roi=(435,179,486,351), area=(435,178,489,352), mode="Full", method="Default", keyword="", name="md_friends")
-	# 当前鬼王星级，仅为已启用的御魂/预设/强力配置读取，不选择鬼王
+	# 当前鬼王星级，仅为已启用的御魂/预设/强力配置读取，不选择鬼王 
 	O_MD_BOSS_STAR = RuleOcr(roi=(509,428,49,26), area=(506,425,58,35), mode="Digit", method="Default", keyword="", name="md_boss_star")
 
 

@@ -636,6 +636,33 @@ class MultiAccountEvoSync:
             epoch=epoch,
         )
 
+    def record_ghost_counts(self, run_id: str, group: int, role: str, epoch: int,
+                            counts: dict) -> dict:
+        """仅在本组已达门票目标时记录本端采集结果。"""
+        if role not in ROLES or set(counts) != {'5', '6'} or any(
+                value is not None and (type(value) is not int or value < 0)
+                for value in counts.values()):
+            raise SyncStateError('invalid ghost count result')
+        with self._lock():
+            state = self._read_unlocked()
+            self._check_control(state, run_id, group, epoch=epoch)
+            if not state.get('event_mode') or not event_complete(state, group):
+                raise SyncStateError('ghost count requires completed event goal')
+            node = state['event_groups'][str(group)]
+            node['roles'][role]['ghost_counts'] = dict(counts)
+            node['roles'][role]['ghost_counts_at'] = self._now()
+            node['roles'][role]['ghost_counts_token'] = f'{run_id}:{epoch}'
+            self._write_unlocked(state)
+            return state
+
+    def wait_ghost_counts(self, run_id: str, group: int, *, epoch: int) -> dict:
+        return self._wait(
+            lambda state: state['current_group'] == group and all(
+                state['event_groups'][str(group)]['roles'].get(role, {}).get('ghost_counts_token') == f'{run_id}:{epoch}'
+                for role in ROLES),
+            f'all ghost counts for group {group}', run_id, epoch=epoch,
+        )
+
     def request_recovery(self, run_id: str, group: int, role: str, error: str,
                          *, max_attempts: int = 1) -> dict:
         """在同一把锁内合并并发请求，并消耗本组的持久恢复预算。"""

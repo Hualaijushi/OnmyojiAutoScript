@@ -83,7 +83,7 @@
   {
     "itemName": "md_three_stars",
     "imageName": "md_md_three_stars.png",
-    "roiFront": "524,321,41,49",
+    "roiFront": "608,322,66,62",
     "roiBack": "274,300,749,129",
     "method": "Template matching",
     "threshold": 0.85,
@@ -92,7 +92,7 @@
   {
     "itemName": "md_four_stars",
     "imageName": "md_md_four_stars.png",
-    "roiFront": "621,324,42,45",
+    "roiFront": "507,325,69,58",
     "roiBack": "261,299,754,132",
     "method": "Template matching",
     "threshold": 0.85,
@@ -101,7 +101,7 @@
   {
     "itemName": "md_five_stars",
     "imageName": "md_md_five_stars.png",
-    "roiFront": "718,323,50,47",
+    "roiFront": "457,320,70,64",
     "roiBack": "267,303,749,129",
     "method": "Template matching",
     "threshold": 0.85,
@@ -110,7 +110,7 @@
   {
     "itemName": "md_six_stars",
     "imageName": "md_md_six_stars.png",
-    "roiFront": "819,326,44,44",
+    "roiFront": "410,319,66,64",
     "roiBack": "265,299,754,133",
     "method": "Template matching",
     "threshold": 0.85,
@@ -340,5 +340,50 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动主页进入鬼王玩法"
+  },
+  {
+    "itemName": "md_preset",
+    "imageName": "md_md_preset.png",
+    "roiFront": "1225,430,29,31",
+    "roiBack": "1193,392,87,105",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "超鬼王队伍预设"
+  },
+  {
+    "itemName": "md_pre_fight",
+    "imageName": "md_md_pre_fight.png",
+    "roiFront": "763,560,105,36",
+    "roiBack": "745,543,148,68",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "超鬼王队伍预设出战按钮"
+  },
+  {
+    "itemName": "md_ifnotion_not",
+    "imageName": "md_md_ifnotion_not.png",
+    "roiFront": "561,366,44,45",
+    "roiBack": "546,364,182,53",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "租借队伍挑战不再提示按钮未勾选"
+  },
+  {
+    "itemName": "md_ifnotion_yes",
+    "imageName": "md_md_ifnotion_yes.png",
+    "roiFront": "561,366,44,45",
+    "roiBack": "546,364,182,53",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "超鬼王租借队伍勾选不再提示"
+  },
+  {
+    "itemName": "md_sure_pormpt",
+    "imageName": "md_md_sure_pormpt.png",
+    "roiFront": "665,439,173,55",
+    "roiBack": "665,439,173,55",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "超鬼王租借队伍不再提示确认"
   }
 ]

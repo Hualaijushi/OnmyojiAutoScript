@@ -32,90 +32,9 @@ def ticket_entry(day: str) -> str:
 
 
 def render_ticket_report(state: dict, account_emails: dict | None = None) -> str:
-    day = str(state['date'])
-    account_emails = account_emails or {}
-    rows = []
-    groups = state.get('event_groups', {})
-    start, end = state.get('group_start', 1), state.get('group_end', state.get('group_count', 20))
-    for number in range(start, end + 1):
-        node = groups.get(str(number), {})
-        cells = []
-        for role, prefix in zip(ROLES, ('A', 'B', 'C')):
-            info = node.get('roles', {}).get(role, {})
-            value = info.get('value')
-            display = '未采集' if value is None else f'{value}/50'
-            suffix = ' · 已达标，继续跟队' if info.get('reached') else ''
-            account = f'{prefix}{number:02d}'
-            email = escape(str(account_emails.get(account) or '邮箱未配置'))
-            cells.append(f'<td><label><input type="checkbox" class="ghost-account" '
-                         f'data-account="{account}" data-group="{number}" '
-                         f'aria-label="{account}超鬼王已打"> '
-                         f'<strong>{account} {email}</strong></label><br>{escape(display + suffix)}</td>')
-        counts = state.get('battle_progress', {}).get(str(number), {})
-        progress = escape(' / '.join(str(counts.get(role, '—')) for role in ROLES))
-        status = ('人工确认完成' if node.get('completion_source') == 'user_confirmed'
-                  else STATUS.get(node.get('status'), '尚无记录'))
-        rows.append(f'<tr><td><label><input type="checkbox" class="ghost-group" '
-                    f'data-group="{number}" aria-label="第{number:02d}组三个账号超鬼王已打"> '
-                    f'第{number:02d}组</label></td>' + ''.join(cells)
-                    + f'<td>{progress}</td><td>{status}</td>'
-                    + f'<td>{escape(str(node.get("updated_at") or "—"))}</td></tr>')
-        history = []
-        for sample in node.get('samples', {}).values():
-            values = []
-            for role in ROLES:
-                result = sample.get('reports', {}).get(role, {})
-                values.append(escape(str(result.get('raw', '未返回')))
-                              + f'（{escape(str(result.get("elapsed", "—")))}秒）')
-            history.append(f'<li>第{escape(str(sample["point"]))}把：' + '；'.join(values) + '</li>')
-        error = escape(str(node.get('error') or ''))
-        rows.append('<tr><td colspan="7"><details><summary>采样记录与异常</summary>'
-                    + (f'<p class="error">{error}</p>' if error else '')
-                    + ('<ul>' + ''.join(history) + '</ul>' if history else '<p>尚无采样记录。</p>')
-                    + '</details></td></tr>')
-    completed = sum(groups.get(str(number), {}).get('status') == 'completed' for number in range(start, end + 1))
-    daily = quote(f'OAS每日任务结果_{day}.html')
-    return (
-        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>每日超鬼王门票刷取情况</title><style>'
-        'body{margin:0;background:#f5f6f8;color:#202735;font:15px/1.6 "Segoe UI","Microsoft YaHei",sans-serif}'
-        'main{max-width:1380px;margin:32px auto;padding:0 24px}a{color:#245ba8;text-decoration:none}'
-        'header{display:flex;justify-content:space-between;gap:20px;align-items:center}h1{font-size:27px}'
-        '.card{background:white;border:1px solid #e0e5ed;border-radius:9px;overflow:auto;margin:20px 0}'
-        'table{border-collapse:collapse;width:100%;text-align:left;min-width:980px}th,td{padding:12px 18px;border-bottom:1px solid #e8ecf2}'
-        'th{background:#f7f9fc}p{color:#687486}.error{color:#b42318}summary{cursor:pointer;color:#245ba8}'
-        '</style></head><body><main><header><div><p>' + escape(day) + '</p><h1>每日超鬼王门票刷取情况</h1></div>'
-        f'<nav><a href="{daily}">返回每日任务日志</a>　<a href="index.html">近7天日志</a></nav></header>'
-        f'<p>三端均确认50/50才完成。本机第{start}～{end}组；已完成组：{completed}/{end-start+1}。'
-        f'最后更新：{escape(str(state.get("updated_at") or "尚无采集记录"))}</p>'
-        f'<p>第{int(state.get("event_ocr_start", 200))}把开始，每{int(state.get("event_ocr_interval", 10))}把检查一次，'
-        f'{int(state.get("battle_count", 250))}把为保护上限。未采集不代表0/50；刷新页面查看最新记录。</p>'
-        '<p>勾选表示超鬼王已打；可单独勾选账号，勾选组号会同时勾选或取消该组三个账号。'
-        '<span id="ghost-save-status">勾选保存在当前浏览器。</span></p>'
-        '<div class="card"><table><thead><tr><th>账号组</th><th>oas3 · 队长</th><th>oas4 · 队员一</th>'
-        '<th>oas5 · 队员二</th><th>已确认场数（A/B/C）</th><th>组状态</th><th>更新时间</th></tr></thead><tbody>'
-        + ''.join(rows) + '</tbody></table></div></main>'
-        '<script>'
-        "const ghostKey='oas-ghost-done-'+" + repr(date.fromisoformat(day).isoformat()) + ';'
-        "const accounts=[...document.querySelectorAll('.ghost-account')];"
-        "const groups=[...document.querySelectorAll('.ghost-group')];"
-        "const status=document.getElementById('ghost-save-status');let saved={};let available=true;"
-        "try{const data=JSON.parse(localStorage.getItem(ghostKey)||'{}');"
-        "if(data&&typeof data==='object'&&!Array.isArray(data))saved=data;}catch(e){available=false;}"
-        "accounts.forEach(a=>a.checked=saved[a.dataset.account]===true);"
-        "function updateGroups(){groups.forEach(g=>{const items=accounts.filter(a=>a.dataset.group===g.dataset.group);"
-        "const checked=items.filter(a=>a.checked).length;g.checked=checked===items.length;"
-        "g.indeterminate=checked>0&&checked<items.length;});}"
-        "function save(){accounts.forEach(a=>{if(a.checked)saved[a.dataset.account]=true;else delete saved[a.dataset.account];});"
-        "try{localStorage.setItem(ghostKey,JSON.stringify(saved));available=true;}catch(e){available=false;}"
-        "status.textContent=available?'勾选保存在当前浏览器。':'浏览器无法保存勾选，刷新后可能丢失。';updateGroups();}"
-        "accounts.forEach(a=>a.addEventListener('change',save));"
-        "groups.forEach(g=>g.addEventListener('change',()=>{accounts.filter(a=>a.dataset.group===g.dataset.group)"
-        ".forEach(a=>a.checked=g.checked);save();}));updateGroups();"
-        "if(!available)status.textContent='浏览器无法保存勾选，刷新后可能丢失。';"
-        '</script></body></html>\n'
-    )
+    """渲染门票与鬼王数量，不更改底层状态。"""
+    from module.multi_account.event_ticket_layout import render_ticket_layout
+    return render_ticket_layout(state, account_emails)
 
 
 class EventTicketReport:
