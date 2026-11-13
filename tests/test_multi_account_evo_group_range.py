@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from tasks.MultiAccountEvo.config import MultiAccountEvo, MultiAccountEvoConfig
 from tasks.MultiAccountEvo.script_task import ScriptTask
 from tasks.MultiAccountEvo.sync import MultiAccountEvoSync, ROLES, SyncStateError
-from module.multi_account.event_ticket_report import render_ticket_report
+from module.multi_account.event_ticket_report import EventTicketReport, render_ticket_report
 from tasks.MultiAccountEvo.recovery import wait_for_ocr_recovery
 
 
@@ -44,6 +44,64 @@ class GroupRangeTest(unittest.TestCase):
             with self.assertRaises(SyncStateError):
                 sync.start_or_resume(20, 250, group_end=10, checkpoint_key='accounts')
             self.assertEqual(before, sync.read())
+
+    def test_completed_range_migrates_with_backup_and_preserves_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sync = MultiAccountEvoSync(directory, timeout=.1, event_mode=True)
+            before = sync.start_or_resume(20, 300, group_start=11, group_end=20,
+                                          checkpoint_key='accounts')
+            before['complete'] = True
+            before['current_group'] = 21
+            before['battle_progress']['20'] = dict.fromkeys(ROLES, 200)
+            before['event_groups']['20'] = {
+                'roles': {role: {'value': 50, 'reached': True} for role in ROLES},
+                'samples': {}, 'status': 'completed',
+            }
+            with sync._lock():
+                sync._write_unlocked(before)
+            old_bytes = sync.state_path.read_bytes()
+            after = sync.start_or_resume(20, 300, group_start=9, group_end=10,
+                                         checkpoint_key='accounts')
+            self.assertEqual((9, 10, 9, False), (after['group_start'], after['group_end'],
+                                                   after['current_group'], after['complete']))
+            self.assertNotEqual(before['run_id'], after['run_id'])
+            self.assertEqual(before['battle_progress'], after['battle_progress'])
+            self.assertEqual(before['event_groups'], after['event_groups'])
+            backups = list(sync.directory.glob(sync.state_path.name + '.before-range-*.bak'))
+            self.assertEqual(1, len(backups))
+            self.assertEqual(old_bytes, backups[0].read_bytes())
+
+    def test_completed_range_with_changed_account_identity_still_stops(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sync = MultiAccountEvoSync(directory, timeout=.1)
+            before = sync.start_or_resume(20, 250, group_start=11, group_end=20,
+                                          checkpoint_key='original')
+            before['complete'], before['current_group'] = True, 21
+            with sync._lock():
+                sync._write_unlocked(before)
+            old_bytes = sync.state_path.read_bytes()
+            with self.assertRaises(SyncStateError):
+                sync.start_or_resume(20, 250, group_start=9, group_end=10,
+                                     checkpoint_key='different')
+            self.assertEqual(old_bytes, sync.state_path.read_bytes())
+            self.assertEqual([], list(sync.directory.glob('*.bak')))
+
+    def test_range_change_archives_prior_ticket_report_before_replacement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sync = MultiAccountEvoSync(directory, timeout=.1, event_mode=True)
+            state = sync.start_or_resume(20, 300, group_start=9, group_end=10,
+                                         checkpoint_key='accounts')
+            report = EventTicketReport(sync, group_count=20, output_dir=sync.directory)
+            path = sync.directory / f'OAS超鬼王门票刷取情况_{state["date"]}.html'
+            old_bytes = render_ticket_report({**state, 'group_start': 11, 'group_end': 20}).encode('utf-8')
+            path.write_bytes(old_bytes)
+            with patch('module.multi_account.event_ticket_report.refresh_report_archive'):
+                report.refresh()
+                report.refresh()
+            backups = list(sync.directory.glob(path.name + '.before-range-*.bak'))
+            self.assertEqual(1, len(backups))
+            self.assertEqual(old_bytes, backups[0].read_bytes())
+            self.assertIn('本机第9～10组', path.read_text(encoding='utf-8'))
 
     def test_report_uses_local_scope_and_actual_policy(self):
         page = render_ticket_report(dict(date=date.today().isoformat(), group_count=20,

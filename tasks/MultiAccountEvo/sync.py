@@ -309,8 +309,25 @@ class MultiAccountEvoSync:
         with self._lock():
             previous = self._read_unlocked(allow_missing=True)
             same_day = previous is not None and previous["date"] == run_date
-            if same_day and (previous.get("group_start", 1), previous.get("group_end", group_count)) != (group_start, group_end):
-                raise SyncStateError("local group range changed; explicit progress migration is required")
+            range_changed = same_day and (
+                previous.get("group_start", 1), previous.get("group_end", group_count)
+            ) != (group_start, group_end)
+            if range_changed:
+                if not previous["complete"]:
+                    raise SyncStateError("local group range changed; explicit progress migration is required")
+                # 旧范围已完成仍需绑定相同账号与目标，避免把旧组记录套到不同配置。
+                if (not checkpoint_key or previous.get("checkpoint_key") != checkpoint_key
+                        or previous["group_count"] != group_count
+                        or previous["battle_count"] != battle_count
+                        or bool(previous.get("event_mode")) != self.event_mode):
+                    raise SyncStateError("completed range configuration changed; cannot reuse today's progress")
+                backup = self.state_path.with_name(
+                    f"{self.state_path.name}.before-range-{uuid.uuid4().hex}.bak"
+                )
+                with backup.open("xb") as stream:
+                    stream.write(self.state_path.read_bytes())
+                    stream.flush()
+                    os.fsync(stream.fileno())
             if same_day and previous.get("checkpoint_key"):
                 increase_limit = (self.event_mode and not previous["complete"]
                                   and battle_count > previous["battle_count"]
@@ -330,10 +347,10 @@ class MultiAccountEvoSync:
                         stream.write(self.state_path.read_bytes())
                         stream.flush()
                         os.fsync(stream.fileno())
-            if previous and previous["date"] == run_date and previous["complete"]:
+            if same_day and previous["complete"] and not range_changed:
                 return previous
             current_group = group_start
-            if previous and previous["date"] == run_date:
+            if same_day and not range_changed:
                 current_group = int(previous["current_group"])
             state = {
                 "date": run_date,

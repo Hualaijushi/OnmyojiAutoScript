@@ -5,7 +5,9 @@ from html import escape
 import json
 import os
 from pathlib import Path
+import re
 import threading
+import uuid
 from urllib.parse import quote
 
 from module.multi_account.daily_task_archive import refresh_report_archive
@@ -162,6 +164,20 @@ class EventTicketReport:
             }
             day = date.fromisoformat(state['date']).isoformat()
             path = self.output_dir / f'OAS超鬼王门票刷取情况_{day}.html'
+            if path.exists():
+                old_bytes = path.read_bytes()
+                old_text = old_bytes.decode('utf-8-sig')
+                match = re.search(r'本机第(\d+)～(\d+)组', old_text)
+                old_scope = tuple(map(int, match.groups())) if match else None
+                new_scope = (state.get('group_start', 1),
+                             state.get('group_end', state.get('group_count', 20)))
+                if old_scope != new_scope:
+                    # 范围切换时保留原日报；无法辨认旧范围也先备份。
+                    backup = path.with_name(f'{path.name}.before-range-{uuid.uuid4().hex}.bak')
+                    with backup.open('xb') as stream:
+                        stream.write(old_bytes)
+                        stream.flush()
+                        os.fsync(stream.fileno())
             self._write(path, render_ticket_report(state, self._account_emails()))
             daily = self.output_dir / f'OAS每日任务结果_{day}.html'
             if daily.exists():
