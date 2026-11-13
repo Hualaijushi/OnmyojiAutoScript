@@ -65,6 +65,9 @@ class GeneralBattleAssets:
 	C_RANDOM_SAVE_BOTTOM = RuleClick(roi_front=(819,639,425,69), roi_back=(819,639,425,69), name="random_save_bottom")
 	# 结算安全点击
 	C_RANDOM_SAVE_RIGHT = RuleClick(roi_front=(1185,209,87,441), roi_back=(1185,209,87,441), name="random_save_right")
+	# 活动结算点击区域
+	C_RANDOM_ACTIVITY_1 = RuleClick(roi_front=(937,431,296,248), roi_back=(937,431,296,248), name="random_activity_1")
+	C_RANDOM_ACTIVITY_2 = RuleClick(roi_front=(659,522,406,171), roi_back=(659,522,406,171), name="random_activity_2")
 
 
 	# Image Rule Assets

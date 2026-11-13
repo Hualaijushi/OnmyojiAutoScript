@@ -969,6 +969,7 @@
       "task_sequence": "大富翁,爬塔,伪神降临",
       "throw_limit": 0,
       "ap_limit": 0,
+      "ap_limit_max": 0,
       "pass_limit": 0,
       "boss_limit": 0,
       "ap100_limit": 0,

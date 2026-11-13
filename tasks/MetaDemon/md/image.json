@@ -38,7 +38,7 @@
   {
     "itemName": "check_boss_page",
     "imageName": "md_check_boss_page.png",
-    "roiFront": "1064,19,43,40",
+    "roiFront": "1065,24,35,33",
     "roiBack": "1054,7,62,63",
     "method": "Template matching",
     "threshold": 0.8,
@@ -47,8 +47,8 @@
   {
     "itemName": "md_check_main_page",
     "imageName": "md_md_check_main_page.png",
-    "roiFront": "464,231,39,213",
-    "roiBack": "449,220,72,244",
+    "roiFront": "144,7,140,52",
+    "roiBack": "144,7,140,52",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "超鬼王主界面"
@@ -74,7 +74,7 @@
   {
     "itemName": "md_two_stars",
     "imageName": "md_md_two_stars.png",
-    "roiFront": "460,314,66,67",
+    "roiFront": "417,322,55,48",
     "roiBack": "266,303,751,134",
     "method": "Template matching",
     "threshold": 0.85,
@@ -83,8 +83,8 @@
   {
     "itemName": "md_three_stars",
     "imageName": "md_md_three_stars.png",
-    "roiFront": "557,315,67,67",
-    "roiBack": "266,302,749,129",
+    "roiFront": "524,321,41,49",
+    "roiBack": "274,300,749,129",
     "method": "Template matching",
     "threshold": 0.85,
     "description": "三星鬼王召唤票"
@@ -92,7 +92,7 @@
   {
     "itemName": "md_four_stars",
     "imageName": "md_md_four_stars.png",
-    "roiFront": "656,314,71,68",
+    "roiFront": "621,324,42,45",
     "roiBack": "261,299,754,132",
     "method": "Template matching",
     "threshold": 0.85,
@@ -101,7 +101,7 @@
   {
     "itemName": "md_five_stars",
     "imageName": "md_md_five_stars.png",
-    "roiFront": "754,313,71,69",
+    "roiFront": "718,323,50,47",
     "roiBack": "267,303,749,129",
     "method": "Template matching",
     "threshold": 0.85,
@@ -110,7 +110,7 @@
   {
     "itemName": "md_six_stars",
     "imageName": "md_md_six_stars.png",
-    "roiFront": "854,314,66,69",
+    "roiFront": "819,326,44,44",
     "roiBack": "265,299,754,133",
     "method": "Template matching",
     "threshold": 0.85,
@@ -128,7 +128,7 @@
   {
     "itemName": "md_check_selected",
     "imageName": "md_md_check_selected.png",
-    "roiFront": "666,285,50,22",
+    "roiFront": "608,286,71,22",
     "roiBack": "264,275,751,39",
     "method": "Template matching",
     "threshold": 0.8,
@@ -155,8 +155,8 @@
   {
     "itemName": "check_act_list_metademon_act",
     "imageName": "md_check_act_list_metademon_act.png",
-    "roiFront": "718,293,448,127",
-    "roiBack": "675,249,566,240",
+    "roiFront": "922,45,34,118",
+    "roiBack": "896,1,144,374",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动列表页超鬼王活动标志"
@@ -281,7 +281,7 @@
   {
     "itemName": "md_synthesis",
     "imageName": "md_md_synthesis.png",
-    "roiFront": "1200,224,40,41",
+    "roiFront": "1205,211,34,36",
     "roiBack": "1172,199,100,100",
     "method": "Template matching",
     "threshold": 0.8,
@@ -308,10 +308,37 @@
   {
     "itemName": "md_ticket_empty",
     "imageName": "md_md_ticket_empty.png",
-    "roiFront": "591,305,100,100",
-    "roiBack": "447,295,368,154",
+    "roiFront": "1073,503,29,29",
+    "roiBack": "1039,473,104,82",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "无鬼王门票标志"
+  },
+  {
+    "itemName": "main_goto_act_2",
+    "imageName": "md_main_goto_act_2.png",
+    "roiFront": "733,307,21,26",
+    "roiBack": "684,242,134,214",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "庭院直接进入超鬼王活动页面"
+  },
+  {
+    "itemName": "main_goto_act",
+    "imageName": "md_main_goto_act.png",
+    "roiFront": "1190,226,35,28",
+    "roiBack": "1164,134,83,393",
+    "method": "Template matching",
+    "threshold": 0.7,
+    "description": "庭院进入超鬼王活动备用入口"
+  },
+  {
+    "itemName": "md_goto_boss",
+    "imageName": "md_md_goto_boss.png",
+    "roiFront": "922,45,34,118",
+    "roiBack": "896,1,144,374",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "活动主页进入鬼王玩法"
   }
 ]

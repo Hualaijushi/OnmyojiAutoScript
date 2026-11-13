@@ -457,5 +457,20 @@
   "event_ocr_start": "首次门票识别场数",
   "event_ocr_interval": "门票识别间隔场数",
   "group_start": "本机起始账号组",
-  "group_end": "本机结束账号组（0为全部）"
+  "group_end": "本机结束账号组（0为全部）",
+  "ap_limit_help": "体力爬塔每次执行的最少战斗场数（区间下限）。与「最多」相同表示固定次数；都为 0 表示不执行体力爬塔。开五倍券时一场仍按 1 次计。",
+  "ap_limit_max": "体力战斗次数上限",
+  "ap_limit_max_help": "体力爬塔每次执行的最多战斗场数（区间上限）。每次新执行在 [最少, 最多] 内随机取一次整数作为目标；要求 1 ≤ 最少 ≤ 最多，或两者都为 0。不合法时任务启动前会被拒绝。",
+  "activity_ap_range_min": "最少战斗次数",
+  "activity_ap_range_max": "最多战斗次数",
+  "activity_play_rich_man": "大富翁",
+  "activity_play_climb": "爬塔",
+  "activity_play_fakegod": "伪神降临",
+  "activity_battle_rich_man": "大富翁",
+  "activity_battle_ap": "体力",
+  "activity_battle_pass": "门票",
+  "activity_battle_boss": "首领",
+  "activity_battle_ap100": "百体",
+  "activity_battle_fakegod": "伪神降临",
+  "activity_advanced_settings": "调度与操作反应"
 }

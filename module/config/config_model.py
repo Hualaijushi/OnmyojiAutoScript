@@ -56,6 +56,7 @@ from tasks.GuildActivityMonitor.config import GuildActivityMonitor
 
 # 这一部分是活动的配置-----------------------------------------------------------------------------------------------------
 from tasks.ActivityShikigami.config import ActivityShikigami
+from tasks.ActivityShikigami.args_layout import build_args_layout as activity_shikigami_args_layout
 from tasks.MartialArts.config import MartialArts
 from tasks.MetaDemon.config import MetaDemon
 from tasks.FrogBoss.config import FrogBoss
@@ -455,6 +456,13 @@ class ConfigModel(ConfigBase):
             result[key] = merge_value(groups_value[key], value, schema["$defs"], model=getattr(task, key, None))
 
         return result
+
+    def script_task_layout(self, task: str) -> dict:
+        """提供式神活动配置页的可选展示信息。"""
+        task = convert_to_underscore(task)
+        if task != 'activity_shikigami':
+            return {}
+        return activity_shikigami_args_layout(self.activity_shikigami)
 
     def script_set_arg(self, task: str, group: str, argument: str, value) -> bool:
         # 验证参数

@@ -6,7 +6,8 @@ from cached_property import cached_property
 
 from module.atom.image import RuleImage
 from module.base.protect import random_sleep
-from module.exception import TaskEnd
+from module.base.utils.random import random_int
+from module.exception import GameStuckError, TaskEnd
 from module.logger import logger
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.ActivityShikigami.config import ActivityShikigami, BATTLE_TYPES
@@ -16,6 +17,11 @@ from tasks.Component.GeneralBattle.general_battle import BattleAction, BattleCon
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 import tasks.ActivityShikigami.page as pages
+
+
+# 点式神录入口直到式神录出现的墙钟上限（秒，PROVISIONAL）。原 `ui_click` 无上限，入口认不出时只能等
+# 60 秒卡死判定；点击间隔 1 秒，8 秒内最多 7 次点击，低于 Device 单按钮 10 次连点兜底。
+SWITCH_SOUL_RECORDS_TIMEOUT = 8
 
 
 class ActivityResourceNotEnough(Exception):
@@ -28,6 +34,8 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
     def __init__(self, config, device):
         super().__init__(config, device)
         self.action_count = {name: 0 for name in BATTLE_TYPES}
+        # 体力爬塔本次执行的目标场数：任务对象创建时为空，首次需要时在区间内抽一次，之后只读
+        self.ap_target: int | None = None
         climb_consumables = ('pass', 'ap', 'boss', 'ap100', 'penta_pass')
         self.climb_consumable_count = {
             name: -1 for name in climb_consumables
@@ -48,6 +56,11 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
         # （否则「爬塔 → 伪神降临」会让伪神线既没有 Fatigue 安全节点、也跳过 random_sleep，
         # 出现零 macro-idle owner）。这里的值只是实例初始默认，不承担线间切换职责。
         self._fatigue_owns_macro_idle = False
+        # 同一契约用于「结算单击策略」owner：爬塔线专用的单击结算（2026-09-23）只应在
+        # `NormalClimbAct.run_climb()` 运行期间生效，绝不能沿用上一条线的残留值——
+        # `current_action_type` 在跨线切换后可能仍是上一条climb 线的旧值（'ap'/'pass'/...），
+        # 不能拿它当判据，必须靠每条线自己在 `run_*` 入口显式声明。
+        self._climb_owns_settlement_single_click = False
 
     @cached_property
     def conf(self) -> ActivityShikigami:
@@ -99,7 +112,25 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
         return getattr(self.conf, f'{action_type}_battle_conf')
 
     def action_limit(self, action_type: str) -> int:
+        if action_type == 'ap':
+            return self.climb_ap_target()
         return self.conf.general_config.limit_for(action_type)
+
+    def climb_ap_target(self) -> int:
+        """体力爬塔本次目标场数（单位与旧 ap_limit 相同：进入战斗的场数，开五倍券也按 1 场计）。
+
+        同一个任务对象只抽一次：`ScriptTask.run` 开头先确定，之后每次进场 / 退出检查 / 日志都读缓存。
+        异常恢复会重建任务对象，计数也随之归零，因此属于新的一次执行，重新抽取。
+        结果只存在任务对象里，不写回配置。
+        """
+        if self.ap_target is None:
+            general = self.conf.general_config
+            low, high = general.ap_limit, general.ap_limit_max
+            if high <= 0:
+                return 0
+            self.ap_target = low if low == high else random_int(low, high)
+            logger.info(f'体力爬塔本次目标：{self.ap_target} 次，配置区间：{low}～{high} 次')
+        return self.ap_target
 
     def time_limit_reached(self) -> bool:
         reached = datetime.now() - self.start_time >= self.conf.general_config.limit_time_v
@@ -161,7 +192,11 @@ class BaseAct(GameUi, GeneralBattle, SwitchSoul, BaseActivity, ActivityShikigami
 
         conf.validate_switch_soul()
         logger.hr(f'Start switch soul: {action_type}', 2)
-        self.ui_click(enter_button, stop=self.I_CHECK_RECORDS, interval=1)
+        if not self.ui_click_until_appear_or_timeout(enter_button, stop=self.I_CHECK_RECORDS, interval=1,
+                                                     timeout=SWITCH_SOUL_RECORDS_TIMEOUT):
+            logger.warning(f'Switch soul {action_type}: {enter_button.name} did not open shikigami records '
+                           f'in {SWITCH_SOUL_RECORDS_TIMEOUT}s')
+            raise GameStuckError(f'ActivityShikigami switch soul {action_type}: cannot enter shikigami records')
         if enable_name:
             group, team = getattr(conf, f'{action_type}_group_team_name').split(',', 1)
             self.run_switch_soul_by_name(group.strip(), team.strip())

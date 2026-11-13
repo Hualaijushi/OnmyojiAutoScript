@@ -24,11 +24,17 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from module.atom.image import RuleImage
+from module.click_pipeline import FinalPoint
+from module.exception import GamePageUnknownError, GameStuckError
 from tasks.Component.config_fire_reaction import FireReactionConfig
+from tasks.Component.GeneralBattle.general_battle import BattleAction, GeneralBattle
 from module.reaction_profile import REACTION_FIRE, REACTION_NAVIGATION
+from tasks.ActivityShikigami import base_act as base_act_mod
 from tasks.ActivityShikigami import page as as_page
 from tasks.ActivityShikigami.activities import normal as normal_mod
 from tasks.ActivityShikigami.activities.normal import (
+    ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT,
+    ACTIVITY_SETTLEMENT_REACTION,
     ACTIVITY_FIRE_MAX_TRIES,
     ACTIVITY_FIRE_POST_CLICK_TIMEOUT,
     ACTIVITY_FIRE_TIMEOUT,
@@ -303,6 +309,156 @@ class EntryBehaviorTest(TestCase):
             self.assertTrue(as_page._activity_entry_visible(t))
         t = SimpleNamespace(appear=Mock(return_value=False))
         self.assertFalse(as_page._activity_entry_visible(t))
+
+
+# --------------------------------------------------------------------------------------
+# 1.1 find_activity_entry 旧栏目切换回退：真实驱动（2026-09-22 导航停滞事故收尾）
+# --------------------------------------------------------------------------------------
+
+
+class _EntryFallbackTask:
+    """驱动 `find_activity_entry` 的最小假体：只有调用 `screenshot()` 才会前进到脚本里的
+    下一帧，`appear()` / `appear_then_click()` 都读「当前帧」——不使用真实设备，帧序列由测试
+    显式给出，用来精确验证「点击后复用同一帧、不额外截图」这条语义。"""
+
+    def __init__(self, frames, screenshot_side_effect=None):
+        # frames: 每帧一个 dict，键 'main' / 'toggle' / 'entry' 分别对应
+        # I_CHECK_MAIN / I_TOGGLE_BUTTON / 新旧入口图标任一，缺省为 False（main 缺省 True）。
+        self.frames = frames
+        self.frame_index = -1  # 尚未截过图；第一次 screenshot() 才推进到 frames[0]
+        self.screenshot_calls = 0
+        self.click_calls = 0
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
+        self.I_CHECK_MAIN = _img('I_CHECK_MAIN')
+        self._entry_names = {ActivityShikigamiAssets.I_MAIN_GOTO_ACT_2.name,
+                             ActivityShikigamiAssets.I_MAIN_GOTO_ACT.name}
+        from tasks.Component.RightActivity.assets import RightActivityAssets
+        self._toggle_name = RightActivityAssets.I_TOGGLE_BUTTON.name
+        self._screenshot_side_effect = screenshot_side_effect
+
+    def _frame(self):
+        idx = max(0, min(self.frame_index, len(self.frames) - 1))
+        return self.frames[idx]
+
+    def screenshot(self):
+        self.screenshot_calls += 1
+        if self._screenshot_side_effect is not None:
+            self._screenshot_side_effect(self.screenshot_calls)
+        if self.frame_index < len(self.frames) - 1:
+            self.frame_index += 1
+
+    def appear(self, target, **kw):
+        frame = self._frame()
+        if target is self.I_CHECK_MAIN:
+            return frame.get('main', True)
+        if target.name == self._toggle_name:
+            return frame.get('toggle', False)
+        if target.name in self._entry_names:
+            return frame.get('entry', False)
+        return False
+
+    def appear_then_click(self, target, **kw):
+        if self.appear(target, **kw):
+            self.click_calls += 1
+            return True
+        return False
+
+
+def _drive_find_activity_entry(frames, screenshot_side_effect=None, timeout_budget=None):
+    """在打了 `time.sleep` / `Timer` 补丁的环境下驱动一次 `find_activity_entry`，
+    返回 (结果或异常, task 假体)。`_FakeTimer.budget` 是跨测试共享的类属性（其它测试类，
+    如 `SettlementDrainTest`，也复用同一个假体并依赖默认值 6），这里必须显式保存 / 还原，
+    不能只改不还，否则会污染同一进程里其它测试的结果。"""
+    task = _EntryFallbackTask(frames, screenshot_side_effect)
+    original_budget = _FakeTimer.budget
+    _FakeTimer.budget = timeout_budget if timeout_budget is not None else 10_000  # 默认不触发墙钟
+    try:
+        with patch.object(as_page, 'time') as fake_time, patch.object(as_page, 'Timer', _FakeTimer):
+            fake_time.sleep = Mock()
+            try:
+                result = as_page.find_activity_entry(task)
+            except Exception as exc:  # noqa: BLE001 —— 测试需要拿到异常本身
+                return exc, task
+            return result, task
+    finally:
+        _FakeTimer.budget = original_budget
+
+
+class FindActivityEntryFallbackDriverTest(TestCase):
+    """真实驱动 `find_activity_entry`（不是只读源码字符串），覆盖切换成功 / 始终找不到 /
+    墙钟超时 / 截图异常 / 二次确认失败 / 截图次数这几类场景。"""
+
+    def test_toggle_appears_and_entry_shows_up_immediately_after_click(self):
+        # 第 1 帧：main 可见、entry 不可见、toggle 可见；点击后取的新帧（第 2 帧）entry 已出现。
+        frames = [
+            {'main': True, 'toggle': True, 'entry': False},
+            {'main': True, 'toggle': True, 'entry': True},
+        ]
+        result, task = _drive_find_activity_entry(frames)
+        self.assertIs(result, True)
+        self.assertEqual(task.click_calls, 1)
+        # 截图次数：循环顶 1 次 + settle 前置确认 1 次 + 点击后新帧 1 次 = 3 次，
+        # 不会再等下一轮循环顶部又截一次图。
+        self.assertEqual(task.screenshot_calls, 3)
+
+    def test_entry_never_appears_raises_after_max_tries(self):
+        frames = [{'main': True, 'toggle': True, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        # 8 次循环上限，每次都点一次（toggle 一直可见、点击一直成功）
+        self.assertEqual(task.click_calls, as_page.ACTIVITY_COLUMN_SWITCH_MAX_TRIES)
+
+    def test_toggle_never_visible_still_bounded_and_raises(self):
+        frames = [{'main': True, 'toggle': False, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        self.assertEqual(task.click_calls, 0)
+
+    def test_wall_clock_budget_exhausted_exits_without_reaching_max_tries(self):
+        # 墙钟只给 2 次「reached() 检查」的预算（第 3 次调用即到期），
+        # 循环上限是 8 次——必须是墙钟先生效，而不是等到数第 8 次。
+        frames = [{'main': True, 'toggle': True, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames, timeout_budget=2)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        self.assertIn('fallback timeout', str(result))
+        self.assertLess(task.click_calls, as_page.ACTIVITY_COLUMN_SWITCH_MAX_TRIES)
+
+    def test_screenshot_exception_propagates_not_swallowed(self):
+        # 截图本身抛异常：不得被吞掉伪装成「未找到」，也不能在这里被重试成死循环。
+        def boom(n):
+            if n == 1:
+                raise RuntimeError('device screenshot failed')
+
+        frames = [{'main': True, 'toggle': True, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames, screenshot_side_effect=boom)
+        self.assertIsInstance(result, RuntimeError)
+        self.assertEqual(task.screenshot_calls, 1)
+
+    def test_toggle_disappears_during_settle_no_click_no_false_success(self):
+        # 第 1 帧 toggle 可见触发 settle；settle 内部会再截一次图，那张帧（第 2 帧）toggle 已消失，
+        # `appear_then_click` 因此返回 False——不能点旧坐标，也不能把这一轮算成切换成功。
+        frames = [
+            {'main': True, 'toggle': True, 'entry': False},
+            {'main': True, 'toggle': False, 'entry': False},
+        ]
+        result, task = _drive_find_activity_entry(frames, timeout_budget=3)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        self.assertEqual(task.click_calls, 0)
+
+    def test_no_click_path_does_not_take_the_post_click_screenshot(self):
+        # toggle 全程不可见：每轮只在循环顶截一次图，没有 settle、也没有点击后的额外截图。
+        # `_FakeTimer(budget=3)` 前 3 次 reached() 为 False、第 4 次才 True，
+        # 对应恰好跑满 3 轮循环顶截图后墙钟生效。
+        frames = [{'main': True, 'toggle': False, 'entry': False}]
+        result, task = _drive_find_activity_entry(frames, timeout_budget=3)
+        self.assertIsInstance(result, as_page.GamePageUnknownError)
+        self.assertEqual(task.screenshot_calls, 3)
+        self.assertEqual(task.click_calls, 0)
+
+    def test_click_still_goes_through_appear_then_click_not_bare_device_click(self):
+        body = _body(as_page.find_activity_entry)
+        self.assertIn('appear_then_click(RightActivityAssets.I_TOGGLE_BUTTON', body)
+        self.assertNotIn('device.click(', body)
 
 
 # --------------------------------------------------------------------------------------
@@ -739,6 +895,399 @@ class SettlementDrainTest(TestCase):
         self.assertNotIn('RuleClick(', src)
         self.assertEqual((ACTIVITY_SETTLEMENT_MAX_CLICKS, ACTIVITY_SETTLEMENT_TIMEOUT), (6, 15))
 
+    # ------------------------------------------------------------------------------------
+    # 2026-09-22 真机事故复现：page_climb_pass（真实挑战页）持续被识别到，但挑战键还没渲染
+    # 出来——旧代码把这当成「还有残留弹窗」连点 6 次 random_default；新代码必须改为有界等待，
+    # 不盲点。
+    # ------------------------------------------------------------------------------------
+
+    def test_incident_destination_recognized_but_fire_never_ready_zero_blind_clicks(self):
+        """复现真机日志：`[UI] page_climb_pass` 连续出现、`I_ACT_FIRE` 全程不可见。
+        修复前会产生 6 次 `random_default` 点击；修复后必须是 0 次——因为一旦确认已经在
+        `destination` 结构页面上，就不再进入盲点分支，只反复有界等待挑战键。"""
+        t, events = self._t(page_seq=['DEST'], fire_seq=[False])  # 全程即 destination，fire 恒 False
+        result = t._drain_activity_settlement('ap', 'DEST')
+        samples = [e for e in events if e[0] == 'sample']
+        self.assertEqual(samples, [])  # 事故复现的核心断言：零次盲点
+        self.assertIs(result, False)   # 有界超时后仍未 ready，如实返回 False（不伪造成功）
+
+    def test_destination_recognized_fire_not_ready_waits_not_clicks_immediately(self):
+        """`page_climb_pass` 已经命中但挑战键第一帧还没出来：必须先等（`_wait_climb_fire_state`），
+        不能立即当成弹窗点 random_default。"""
+        t, events = self._t(page_seq=['DEST'], fire_seq=[False, False, True])
+        result = t._drain_activity_settlement('ap', 'DEST')
+        self.assertIs(result, True)
+        self.assertEqual([e for e in events if e[0] == 'sample'], [])
+
+    def test_battle_re_entered_while_waiting_for_fire_defers_without_click(self):
+        """在「已到 destination、等挑战键」期间又被判定成重新进入战斗：按既有约定交回外层，
+        不在这里点 random_default。"""
+        t, events = self._t(page_seq=['DEST'], fire_seq=[False],
+                            active_seq=[False, False, True])
+        result = t._drain_activity_settlement('ap', 'DEST')
+        self.assertIs(result, False)
+        self.assertEqual([e for e in events if e[0] == 'sample'], [])
+
+    def test_genuine_lingering_popup_still_uses_bounded_blind_click(self):
+        """真正的残留弹窗场景（未到 destination）行为不变：仍然有界盲点，不因本轮修复被误伤。"""
+        t, events = self._t(page_seq=[None, None, 'DEST'], fire_seq=[False, False, True])
+        result = t._drain_activity_settlement('ap', 'DEST')
+        self.assertIs(result, True)
+        samples = [e for e in events if e[0] == 'sample']
+        self.assertGreaterEqual(len(samples), 1)
+        self.assertLessEqual(len(samples), ACTIVITY_SETTLEMENT_MAX_CLICKS)
+
+    def test_screenshot_exception_during_drain_propagates(self):
+        """截图异常不能被吞掉、也不能触发无限重试。"""
+        t, events = self._t(page_seq=['DEST'], fire_seq=[False])
+        t.screenshot = Mock(side_effect=RuntimeError('device screenshot failed'))
+        with self.assertRaises(RuntimeError):
+            t._drain_activity_settlement('ap', 'DEST')
+
+    def test_wait_branch_reuses_existing_fire_state_helper_not_new_click_path(self):
+        """源码级护栏：等待分支必须复用既有的 `_wait_climb_fire_state`，不引入新的点击方式、
+        不新增裸 `device.click`。"""
+        src = _src(NormalClimbAct._drain_activity_settlement)
+        self.assertIn('self._wait_climb_fire_state(fire_rule)', src)
+        self.assertNotIn('device.click(', src)
+        # 盲点分支只有一处 _sample_settlement_click 调用，等待分支不额外叠加点击
+        self.assertEqual(src.count('self._sample_settlement_click('), 1)
+
+
+# --------------------------------------------------------------------------------------
+# 6.1 `_run_climb_type` 主循环：持续无法识别页面时的有界退出（2026-09-22 真机事故）
+#
+# 事故复现里 `_drain_activity_settlement` 的兜底点击耗尽后返回 False，外层 `_run_climb_type`
+# 忽略返回值、回到循环顶部重新截图判页；若页面此后持续无法归类（`get_current_page()` 一直
+# None），旧代码在这里只有 `sleep(0.5); continue`，没有任何上限——真机日志显示这之后进程
+# 静默运行了数十分钟没有一行输出，直至被外部重启。
+# --------------------------------------------------------------------------------------
+
+
+class ClimbTypeUnknownPageTest(TestCase):
+    def _t(self, *, page_seq, timeout_budget=None):
+        original_budget = _FakeTimer.budget
+        _FakeTimer.budget = timeout_budget if timeout_budget is not None else 10_000
+        self.addCleanup(lambda: setattr(_FakeTimer, 'budget', original_budget))
+        patch.object(normal_mod, 'Timer', _FakeTimer).start()
+        self.addCleanup(patch.stopall)
+        patch.object(normal_mod.time, 'sleep', Mock()).start()
+
+        t = ScriptTask.__new__(ScriptTask)
+        page_it = _tail(page_seq)
+        t.get_current_page = Mock(side_effect=lambda: next(page_it))
+        t.screenshot = Mock()
+        t.current_action_type = ''
+        t.goto_page = Mock()
+        t._sync_climb_team_lock = Mock()
+        t.click = Mock()
+        return t
+
+    def test_persistent_unknown_page_raises_after_bounded_wait(self):
+        """事故复现：页面持续无法识别，必须有界抛出 `GamePageUnknownError`，
+        不能静默空转。"""
+        t = self._t(page_seq=[None], timeout_budget=3)
+        with self.assertRaises(GamePageUnknownError):
+            t._run_climb_type('pass')
+        # 有界：截图次数不会无限增长
+        self.assertLess(t.screenshot.call_count, 20)
+
+    def test_recovery_resets_the_unknown_page_budget(self):
+        """每次 None 后紧跟着识别到已知页面（这里用 page_reward 作最轻量的已知页分支），
+        未知页计时必须被清空——不能把多次分散的短暂 None 累加成一次超时。"""
+        t = self._t(page_seq=[None, as_page.page_reward] * 20, timeout_budget=1)
+        calls = {'n': 0}
+
+        def _click(*a, **kw):
+            calls['n'] += 1
+            if calls['n'] >= 5:
+                raise StopIteration('probe stop: reached here without GamePageUnknownError')
+
+        t.click = Mock(side_effect=_click)
+        with self.assertRaises(StopIteration):
+            t._run_climb_type('pass')
+
+    def test_brief_single_unknown_frame_does_not_raise_immediately(self):
+        """只出现一次 None 就立即恢复：不能因为一帧过渡就误判超时。"""
+        t = self._t(page_seq=[None, as_page.page_reward], timeout_budget=1)
+        calls = {'n': 0}
+
+        def _click(*a, **kw):
+            calls['n'] += 1
+            raise StopIteration('probe stop: single None frame did not raise')
+
+        t.click = Mock(side_effect=_click)
+        with self.assertRaises(StopIteration):
+            t._run_climb_type('pass')
+
+    def test_screenshot_exception_in_climb_type_propagates(self):
+        t = self._t(page_seq=[None])
+        t.screenshot = Mock(side_effect=RuntimeError('device screenshot failed'))
+        with self.assertRaises(RuntimeError):
+            t._run_climb_type('pass')
+
+    def test_source_uses_bounded_timer_not_bare_sleep_loop(self):
+        src = _src(NormalClimbAct._run_climb_type)
+        self.assertIn('Timer(ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT)', src)
+        self.assertIn('raise GamePageUnknownError', src)
+        self.assertEqual(ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT, 20)
+
+
+# --------------------------------------------------------------------------------------
+# 6.2 爬塔线专用结算单击（2026-09-23）：取消 Micro-Burst 连击，70/30 activity region，
+# reaction + fresh confirm + 单击，不预授权第二击、不复用上一击 anchor。
+# --------------------------------------------------------------------------------------
+
+
+class ActivitySettlementSingleClickTest(TestCase):
+    def _t(self, *, owns=True, action_type='pass', generic_result=True,
+           classify_seq=None, current_page_seq=None, fire_seq=None,
+           over_ghost=False, skin_confirm=False, is_false=False):
+        patch.object(normal_mod.time, 'sleep', Mock()).start()
+        self.addCleanup(patch.stopall)
+
+        t = ScriptTask.__new__(ScriptTask)
+        events = []
+        t._climb_owns_settlement_single_click = owns
+        t.current_action_type = action_type
+        t.device = SimpleNamespace(image='F', click_record_clear=Mock(side_effect=lambda: events.append('clear')))
+        t.I_FALSE = _img('I_FALSE')
+        t.I_OVER_GHOST = _img('I_OVER_GHOST')
+        t.I_GB_SKIN_CONFIRM = _img('I_GB_SKIN_CONFIRM')
+        t.I_ACT_FIRE = _img('I_ACT_FIRE')
+        t.I_AS_BOSS_FIRE = _img('I_AS_BOSS_FIRE')
+        t.I_UI_BACK_RED = _img('I_UI_BACK_RED')
+        t.screenshot = Mock(side_effect=lambda: events.append('screenshot'))
+        t.appear = Mock(side_effect=lambda tg, **kw: {
+            'I_FALSE': is_false,
+        }.get(tg.name, next(_tail(fire_seq or [False]))
+              if tg.name in ('I_ACT_FIRE', 'I_AS_BOSS_FIRE') else False))
+        t.appear_then_click = Mock(side_effect=lambda tg, **kw: {
+            'I_OVER_GHOST': over_ghost, 'I_GB_SKIN_CONFIRM': skin_confirm,
+        }.get(tg.name, False))
+        t._is_generic_result_context = Mock(return_value=generic_result)
+        classify_it = _tail(classify_seq if classify_seq is not None else [as_page.page_reward])
+        t._classify_general_battle_page = Mock(side_effect=lambda: next(classify_it))
+        page_it = _tail(current_page_seq if current_page_seq is not None else [None])
+        t.get_current_page = Mock(side_effect=lambda: next(page_it))
+        t._sample_settlement_point = Mock(
+            side_effect=lambda region: (events.append(('sample', region.name)), (321, 654))[1])
+        t.events = events
+        return t
+
+    # ---- 70/30 region 选择 ----
+
+    def test_seventy_percent_branch_picks_activity_1(self):
+        from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
+        t = self._t()
+        with patch.object(normal_mod, 'random_int', return_value=70):  # <=70 命中
+            region = t._select_activity_settlement_region()
+        self.assertIs(region, GeneralBattleAssets.C_RANDOM_ACTIVITY_1)
+
+    def test_thirty_percent_branch_picks_activity_2(self):
+        from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
+        t = self._t()
+        with patch.object(normal_mod, 'random_int', return_value=71):  # >70 命中
+            region = t._select_activity_settlement_region()
+        self.assertIs(region, GeneralBattleAssets.C_RANDOM_ACTIVITY_2)
+
+    def test_never_falls_back_to_default_or_save_regions(self):
+        from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
+        t = self._t()
+        seen = set()
+        for roll in (1, 50, 70, 71, 99, 100):
+            with patch.object(normal_mod, 'random_int', return_value=roll):
+                seen.add(t._select_activity_settlement_region().name)
+        self.assertEqual(seen, {'random_activity_1', 'random_activity_2'})
+        forbidden = {GeneralBattleAssets.C_RANDOM_DEFAULT.name,
+                    GeneralBattleAssets.C_RANDOM_SAVE_RIGHT.name,
+                    GeneralBattleAssets.C_RANDOM_SAVE_BOTTOM.name}
+        self.assertFalse(seen & forbidden)
+
+    def test_region_selection_uses_project_system_random_not_new_rng(self):
+        src = _src(NormalClimbAct._select_activity_settlement_region)
+        self.assertIn('random_int(1, 100)', src)
+        self.assertNotIn('random.Random(', src)
+        self.assertNotIn('import random', src)
+
+    # ---- reaction owner：本线独立常量，不借用 Micro-Burst 的 observe 间隔 ----
+
+    def test_reaction_range_is_task_local_and_exactly_0_45_to_0_85(self):
+        self.assertEqual(ACTIVITY_SETTLEMENT_REACTION, (0.45, 0.85))
+
+    def test_transaction_reads_task_local_reaction_not_general_battle_burst_interval(self):
+        body = _body(NormalClimbAct._activity_settlement_single_click)
+        self.assertIn('random_delay(*ACTIVITY_SETTLEMENT_REACTION)', body)
+        # 代码体（不含解释用的 docstring）里不得再引用 Micro-Burst 的 observe 间隔
+        self.assertNotIn('SETTLEMENT_BURST_CLICK_INTERVAL_RANGE', body)
+
+    def test_reaction_is_sampled_from_the_task_local_range_at_runtime(self):
+        t = self._t(classify_seq=[as_page.page_reward])
+        with patch.object(normal_mod, 'execute_single_click'), \
+                patch.object(normal_mod, 'random_delay', return_value=0.5) as delay:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        delay.assert_called_once_with(*ACTIVITY_SETTLEMENT_REACTION)
+
+    def test_call_order_is_reaction_sleep_screenshot_confirm_then_sample_then_click(self):
+        """顺序必须是 reaction → sleep → fresh screenshot → 确认 → 选区采样 → 单击；
+        绝不能先采样坐标再跨等待复用（那样等于回到 anchor 预授权的老毛病）。"""
+        t = self._t(classify_seq=[as_page.page_reward])
+        ev = t.events
+        with patch.object(normal_mod, 'random_delay',
+                          side_effect=lambda *a: ev.append(('random_delay', a)) or 0.5), \
+                patch.object(normal_mod.time, 'sleep',
+                             side_effect=lambda s: ev.append(('sleep', s))), \
+                patch.object(normal_mod, 'execute_single_click',
+                             side_effect=lambda *a, **kw: ev.append('click')):
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        kinds = [e[0] if isinstance(e, tuple) else e for e in ev]
+        self.assertEqual(kinds, ['random_delay', 'sleep', 'screenshot', 'sample', 'click'])
+        # sleep 睡的就是本层 reaction 采样出来的值，不是另一个来源
+        self.assertEqual([e for e in ev if e[0] == 'sleep'], [('sleep', 0.5)])
+        self.assertEqual([e[1] for e in ev if e[0] == 'random_delay'],
+                         [ACTIVITY_SETTLEMENT_REACTION])
+
+    def test_single_reaction_layer_no_policy_no_confirm_delay(self):
+        t = self._t(classify_seq=[as_page.page_reward])
+        with patch.object(normal_mod, 'execute_single_click'), \
+                patch.object(normal_mod, 'random_delay', return_value=0.5) as delay, \
+                patch.object(normal_mod.time, 'sleep') as slept:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        self.assertEqual(delay.call_count, 1)   # 整条链路只有一层 reaction
+        self.assertEqual(slept.call_count, 1)
+        body = _body(NormalClimbAct._activity_settlement_single_click)
+        for forbidden in ('policy=', 'InteractionPolicy', 'confirm_delay', 'appear_then_click'):
+            self.assertNotIn(forbidden, body)
+
+    def test_general_battle_micro_burst_interval_is_independent_of_this_line(self):
+        """两套 timing 完全独立：GeneralBattle 的 burst observe 间隔（2026-09-23 起
+        `(0.10, 0.30)`）与本线专用 reaction `(0.45, 0.85)` 各调各的，互不牵连。"""
+        self.assertEqual(GeneralBattle.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE, (0.10, 0.30))
+        self.assertNotEqual(GeneralBattle.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE,
+                            ACTIVITY_SETTLEMENT_REACTION)
+        self.assertIn('self._sample_interval(self.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE)',
+                      _src(GeneralBattle._fire_settlement_burst))
+
+    # ---- 单次事务：至多 1 次 execute_single_click ----
+
+    def test_transaction_executes_at_most_one_click(self):
+        t = self._t(classify_seq=[as_page.page_reward])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        self.assertEqual(click.call_count, 1)
+        self.assertEqual(len([e for e in t.events if e == 'screenshot']), 1)
+
+    def test_click_uses_final_point_from_fresh_sample_not_bare_coords(self):
+        t = self._t(classify_seq=[as_page.page_reward])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        args, kwargs = click.call_args
+        self.assertEqual(args[0], t.device)
+        self.assertIsInstance(args[1], FinalPoint)
+        self.assertEqual((args[1].x, args[1].y), (321, 654))
+
+    def test_second_click_requires_a_brand_new_transaction_not_reused_anchor(self):
+        """两次独立调用（模拟仍需处理结算的下一帧）必须各自重新 reaction + fresh confirm +
+        70/30 选择 + 重新采样，不得复用上一次的 anchor / region 选择。"""
+        t = self._t(classify_seq=[as_page.page_reward, as_page.page_reward])
+        rolls = iter([10, 90])  # 第一次 <=70 命中 activity_1，第二次 >70 命中 activity_2
+        with patch.object(normal_mod, 'execute_single_click') as click, \
+                patch.object(normal_mod, 'random_int', side_effect=lambda *a: next(rolls)):
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        self.assertEqual(click.call_count, 2)
+        samples = [e for e in t.events if e[0] == 'sample']
+        self.assertEqual([n for _, n in samples], ['random_activity_1', 'random_activity_2'])
+        # 两次各自独立截图确认，不是一次截图服务两次点击
+        self.assertEqual(len([e for e in t.events if e == 'screenshot']), 2)
+
+    # ---- 状态门控：page_climb_pass / I_ACT_FIRE 出现即停止 ----
+
+    def test_climb_destination_page_appeared_zero_clicks(self):
+        t = self._t(action_type='pass', current_page_seq=[as_page.page_climb_pass])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        click.assert_not_called()
+        self.assertEqual([e for e in t.events if e[0] == 'sample'], [])
+
+    def test_fire_button_appeared_zero_clicks(self):
+        t = self._t(action_type='pass', current_page_seq=[None], fire_seq=[True])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        click.assert_not_called()
+
+    def test_state_unclear_waits_no_click(self):
+        """既未到挑战页/挑战键，结算页分类又已经变化（既非原来的 current_page 也非明确的
+        新结算态）：视为状态不明确，不点。"""
+        t = self._t(current_page_seq=[None], fire_seq=[False],
+                    classify_seq=[None])  # 分类不再等于 current_page=page_reward
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        click.assert_not_called()
+
+    def test_climb_settlement_should_stop_ignored_for_non_climb_action_type(self):
+        """防御性判断：非爬塔 action_type 不应该被 `_climb_settlement_should_stop` 拦下
+        （正常情况下大富翁/伪神降临不会走到这个函数，由 owns 门控保证）。"""
+        t = self._t(action_type='rich_man')
+        self.assertFalse(t._climb_settlement_should_stop())
+
+    # ---- _handle_result / _handle_reward 门控 + 事故复现 ----
+
+    def test_owns_false_falls_back_to_generalbattle_micro_burst(self):
+        """大富翁/伪神降临（owns=False）：必须原样回落到 GeneralBattle 的 Micro-Burst，
+        不受本轮改造影响。"""
+        t = self._t(owns=False)
+        with patch.object(GeneralBattle, '_handle_result', return_value='super_result') as sup:
+            result = NormalClimbAct._handle_result(t, SimpleNamespace(), SimpleNamespace())
+        self.assertEqual(result, 'super_result')
+        sup.assert_called_once()
+
+    def test_owns_true_reward_page_uses_single_click_not_burst(self):
+        t = self._t(owns=True, classify_seq=[as_page.page_reward])
+        context = SimpleNamespace(last_page=None, is_win=None, reward_no_battle_ts=1.0)
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            action = t._handle_reward(context, SimpleNamespace())
+        self.assertEqual(action, BattleAction.CONTINUE)
+        self.assertTrue(context.is_win)
+        self.assertIsNone(context.reward_no_battle_ts)
+        self.assertEqual(click.call_count, 1)
+
+    def test_owns_true_boss_result_still_clicks_back_red_popup(self):
+        """回归防护：迁移到单击结算后，boss 结算前的专属附属弹窗点击不能丢。"""
+        t = self._t(owns=True, action_type='boss', classify_seq=[as_page.page_battle_result])
+        context = SimpleNamespace(last_page=None, is_win=None, reward_no_battle_ts=1.0)
+        with patch.object(normal_mod, 'execute_single_click'):
+            t._handle_result(context, SimpleNamespace())
+        clicks = [c for c in t.appear_then_click.call_args_list if c.args[0].name == 'I_UI_BACK_RED']
+        self.assertEqual(len(clicks), 1)
+
+    def test_over_ghost_popup_still_short_circuits_before_settlement_click(self):
+        t = self._t(owns=True, over_ghost=True)
+        context = SimpleNamespace(last_page=None, is_win=None, reward_no_battle_ts=1.0)
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            action = t._handle_reward(context, SimpleNamespace())
+        self.assertEqual(action, BattleAction.CONTINUE)
+        click.assert_not_called()
+
+    def test_incident_reward_click_dismisses_immediately_then_second_click_gets_fresh_transaction(self):
+        """复现用户描述的「Reward → 点击 → 弹窗瞬间消失 → 第二击穿透到底层活动页面」：
+        第一次调用点击后，若结算已经消失（分类不再是 page_reward），第二次独立调用
+        必须先重新 reaction + fresh confirm，发现真实挑战页已出现就直接放弃，不再点。"""
+        t = self._t(action_type='pass', classify_seq=[as_page.page_reward],
+                    current_page_seq=[None, as_page.page_climb_pass])
+        with patch.object(normal_mod, 'execute_single_click') as click:
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+            t._activity_settlement_single_click(SimpleNamespace(), current_page=as_page.page_reward)
+        self.assertEqual(click.call_count, 1)  # 只有第一次真正点了
+
+    def test_source_no_bare_device_click_no_micro_burst_call(self):
+        for func in (NormalClimbAct._handle_result, NormalClimbAct._handle_reward,
+                    NormalClimbAct._activity_settlement_single_click):
+            src = _src(func)
+            self.assertNotIn('device.click(', src)
+            self.assertNotIn('_settlement_burst_step(', src)
+            self.assertNotIn('_fire_settlement_burst(', src)
+
 
 # --------------------------------------------------------------------------------------
 # 7. Cycle complete 边界 + repeat_completed 传递
@@ -762,6 +1311,455 @@ class CycleCompleteTest(TestCase):
         i_gb = src.index('run_general_battle(')
         i_drain = src.index('_drain_activity_settlement(')
         self.assertLess(i_gb, i_drain)
+
+
+# --------------------------------------------------------------------------------------
+# 7.1 首领爬塔适配（2026-10-20）：首领页自己的锁 / 式神录入口资产，锁定同步与式神录入口有界。
+# 事故：oas1 两次进入首领页后卡在 `_sync_climb_team_lock('boss')`——旧 I_LOCK / I_UNLOCK 在首领页
+# 两种状态都认不出，原 `ui_click` 无上限空等，挑战键一直轮不到。
+#
+# 沙盒：`ScriptTask.__new__` 出真实实例，真实 `_sync_climb_team_lock` / `switch_soul_for` /
+# `BaseTask.ui_click_until_appear_or_timeout` / `appear`（含 interval 门控）/ `appear_then_click` /
+# L1 点击管线照跑，只替换截图、`RuleImage.match`（按虚拟世界判定）与最底层 `device.click`。
+# 虚拟时钟替换 `module.base.timer.time`，所以超时与 interval 用的都是真实 `Timer`。
+# --------------------------------------------------------------------------------------
+
+
+class _LoopNotBounded(Exception):
+    """截图次数超过硬上限：被测循环没有收口。"""
+
+
+class _ClimbPageWorld:
+    """按虚拟时间演化的爬塔页，只模拟队伍锁图标和式神录入口。
+
+    - ``icons``：锁图标按哪一对资产显示（'boss' = 首领页那对，'ap' = 体力页那对），用来证明两种模式各认各的资产；
+    - ``lock_state``：'locked' / 'unlocked' / None（锁图标认不出来）；
+    - 点中当前显示的锁图标后 ``toggle_delay`` 秒切到相反状态；``click_effective`` 按点击次序给出这一下是否生效；
+    - ``records_entry``：当前页显示的式神录入口资产名（None = 认不出），点中后 ``records_delay`` 秒进入式神录。
+    """
+
+    LOCK_NAMES = {
+        'boss': {'locked': 'CLIMB_BOSS_LOCK', 'unlocked': 'CLIMB_BOSS_UNLOCK'},
+        'ap': {'locked': 'AS_AP_LOCK', 'unlocked': 'AS_AP_UNLOCK'},
+    }
+    SHOT_STEP = 0.3        # 与 screenshot_interval 一致
+    SHOT_LIMIT = 400       # 硬上限：远大于任何有界循环需要的截图数
+
+    def __init__(self, *, icons='boss', lock_state='locked', toggle_delay=0.5, click_effective=(True,),
+                 records_entry=None, records_delay=0.6, records_click_effective=True):
+        self.now = 1_000_000.0
+        self.icons = icons
+        self.lock_state = lock_state
+        self.toggle_delay = toggle_delay
+        self.click_effective = list(click_effective)
+        self.records_entry = records_entry
+        self.records_delay = records_delay
+        self.records_click_effective = records_click_effective
+        self.in_records = False
+        self.pending = []           # (生效时间, 动作)
+        self.clicks = []            # (虚拟时间, control_name)
+        self.shots = 0
+
+    # ---- 虚拟时钟（替换 module.base.timer.time）----
+    def time(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+    def _settle(self):
+        due = [p for p in self.pending if p[0] <= self.now]
+        self.pending = [p for p in self.pending if p[0] > self.now]
+        for _, action in due:
+            if action == 'toggle':
+                self.lock_state = {'locked': 'unlocked', 'unlocked': 'locked'}[self.lock_state]
+            elif action == 'records':
+                self.in_records = True
+
+    def screenshot(self):
+        self.shots += 1
+        if self.shots > self.SHOT_LIMIT:
+            raise _LoopNotBounded(f'screenshot > {self.SHOT_LIMIT}')
+        self.now += self.SHOT_STEP
+        self._settle()
+
+    def visible(self, name):
+        if self.in_records:
+            return name == 'PAGE_CHECK_RECORDS'
+        if name == self.records_entry:
+            return True
+        if self.lock_state is None:
+            return False
+        return name == self.LOCK_NAMES[self.icons][self.lock_state]
+
+    def on_click(self, x=None, y=None, control_name=None):
+        self.clicks.append((self.now, control_name))
+        if not self.in_records and control_name == self.records_entry:
+            if self.records_click_effective:
+                self.pending.append((self.now + self.records_delay, 'records'))
+            return
+        if self.lock_state is not None and control_name == self.LOCK_NAMES[self.icons][self.lock_state]:
+            effective = self.click_effective.pop(0) if self.click_effective else False
+            if effective:
+                self.pending.append((self.now + self.toggle_delay, 'toggle'))
+
+    def click_names(self):
+        return [name for _, name in self.clicks]
+
+
+def _climb_world_task(test, world, *, lock_enable=True):
+    """真实 ScriptTask 实例 + 虚拟世界；只替换外部边界。"""
+    from module.base import timer as timer_mod
+    patch.object(timer_mod, 'time', world).start()
+    patch.object(RuleImage, 'match',
+                 lambda rule, image, threshold=None, frame_id=None: world.visible(rule.name)).start()
+    test.addCleanup(patch.stopall)
+    t = ScriptTask.__new__(ScriptTask)
+    t.interval_timer = {}
+    t.device = SimpleNamespace(image='F', image_frame_id=None,
+                               get_image_batch_cache=lambda *a, **kw: None,
+                               click=world.on_click, click_record_clear=Mock())
+    t.screenshot = world.screenshot
+    t.battle_config = lambda action_type: SimpleNamespace(lock_team_enable=lock_enable)
+    return t
+
+
+class BossClimbAssetMappingTest(TestCase):
+    """首领模式用 annotator 新截的首领资产；体力 / 门票仍用原资产；资产定义与 annotator JSON 一致。"""
+
+    def _json_item(self, json_name, item_name):
+        import json
+        path = f'tasks/ActivityShikigami/as/climb/{json_name}'
+        with open(path, encoding='utf-8') as f:
+            items = {item['itemName']: item for item in json.load(f)}
+        return items[item_name]
+
+    def _assert_rule_matches_json(self, rule, json_name, item_name):
+        import cv2
+        import numpy as np
+        item = self._json_item(json_name, item_name)
+        self.assertTrue(rule.file.endswith(f"as/climb/{item['imageName']}"), rule.file)
+        self.assertEqual(list(rule.roi_front), [int(v) for v in item['roiFront'].split(',')])
+        self.assertEqual(list(rule.roi_back), [int(v) for v in item['roiBack'].split(',')])
+        self.assertEqual(rule.threshold, item['threshold'])
+        # 模板图片真实存在，尺寸与 roi_front 一致（只读，不落盘）
+        img = cv2.imdecode(np.fromfile(rule.file, np.uint8), cv2.IMREAD_COLOR)
+        self.assertIsNotNone(img, rule.file)
+        self.assertEqual((img.shape[1], img.shape[0]), tuple(rule.roi_front[2:]))
+
+    def test_boss_assets_match_annotator_json(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        self._assert_rule_matches_json(A.I_BOSS_LOCK, 'image.json', 'boss_lock')
+        self._assert_rule_matches_json(A.I_BOSS_UNLOCK, 'image.json', 'boss_unlock')
+        self._assert_rule_matches_json(A.I_BOSS_MAIN_TO_RECORD, 'pages.json', 'boss_main_to_record')
+
+    def test_task_resolves_boss_assets_without_shadowing(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        # 20 层继承里没有别的类遮蔽这些名字，任务实例取到的就是 annotator 生成的那几个对象
+        for name in ('I_BOSS_LOCK', 'I_BOSS_UNLOCK', 'I_BOSS_MAIN_TO_RECORD',
+                     'I_AP_LOCK', 'I_AP_UNLOCK', 'I_BATTLE_MAIN_TO_RECORDS', 'I_AS_BOSS_FIRE', 'I_ACT_FIRE'):
+            self.assertIs(getattr(ScriptTask, name), getattr(A, name), name)
+        self.assertTrue(A.I_AP_LOCK.file.endswith('as/climb/as_ap_lock.png'))
+        self.assertTrue(A.I_AP_UNLOCK.file.endswith('as/climb/as_ap_unlock.png'))
+        self.assertTrue(A.I_BATTLE_MAIN_TO_RECORDS.file.endswith('as/climb/as_battle_main_to_records.png'))
+
+    def test_records_entry_and_fire_key_per_climb_type(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        t = ScriptTask.__new__(ScriptTask)
+        self.assertIs(t._climb_records_entry('boss'), A.I_BOSS_MAIN_TO_RECORD)
+        self.assertIs(t._climb_fire_rule('boss'), A.I_AS_BOSS_FIRE)
+        for action_type in ('ap', 'pass', 'ap100'):
+            self.assertIs(t._climb_records_entry(action_type), A.I_BATTLE_MAIN_TO_RECORDS, action_type)
+            self.assertIs(t._climb_fire_rule(action_type), A.I_ACT_FIRE, action_type)
+        t.current_action_type = 'boss'
+        self.assertIs(t._exit_matcher(), A.I_AS_BOSS_FIRE)
+        t.current_action_type = 'ap'
+        self.assertIs(t._exit_matcher(), A.I_ACT_FIRE)
+
+    def test_boss_page_entry_and_recognizer(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        from tasks.GameUi.matcher import collect_rule_images
+        edges = [tr for tr in as_page.page_act.transitions if tr.destination is as_page.page_climb_boss]
+        self.assertEqual(len(edges), 1)
+        self.assertIs(edges[0].action, A.I_TO_BATTLE_BOSS)
+        self.assertEqual({r.name for r in collect_rule_images(as_page.page_climb_boss.recognizer)},
+                         {'AS_AS_BOSS_FIRE'})
+
+
+class ClimbTeamLockSyncTest(TestCase):
+    """真实驱动 `_sync_climb_team_lock`：目标已满足不点；相反状态只点必要的一下并确认结果；
+    认不出 / 点了不生效都在本地上限内抛 `GameStuckError`。"""
+
+    def _run(self, world, action_type='boss', *, lock_enable=True):
+        t = _climb_world_task(self, world, lock_enable=lock_enable)
+        start = world.now
+        t._sync_climb_team_lock(action_type)
+        return world.now - start
+
+    def test_boss_already_locked_no_click(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='locked')
+        self._run(world, lock_enable=True)
+        self.assertEqual(world.clicks, [])
+        self.assertEqual(world.shots, 1)
+
+    def test_boss_already_unlocked_no_click(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked')
+        self._run(world, lock_enable=False)
+        self.assertEqual(world.clicks, [])
+        self.assertEqual(world.shots, 1)
+
+    def test_boss_unlocked_to_locked_one_click_then_confirmed(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked', toggle_delay=0.5)
+        self._run(world, lock_enable=True)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_UNLOCK'])
+        self.assertEqual(world.lock_state, 'locked')
+
+    def test_boss_locked_to_unlocked_one_click_then_confirmed(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='locked', toggle_delay=0.5)
+        self._run(world, lock_enable=False)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_LOCK'])
+        self.assertEqual(world.lock_state, 'unlocked')
+
+    def test_lost_first_click_is_retried_after_interval(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked', click_effective=(False, True))
+        self._run(world, lock_enable=True)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_UNLOCK', 'CLIMB_BOSS_UNLOCK'])
+        # 第二下等满原来的 1.5 秒点击间隔才点
+        self.assertGreaterEqual(world.clicks[1][0] - world.clicks[0][0], 1.5)
+        self.assertEqual(world.lock_state, 'locked')
+
+    def test_unrecognized_lock_state_raises_bounded_without_click(self):
+        """事故复现：两种锁图标都认不出。原实现会无限等；现在有界抛错、一次都不点。"""
+        world = _ClimbPageWorld(icons='boss', lock_state=None)
+        t = _climb_world_task(self, world, lock_enable=False)
+        start = world.now
+        with self.assertRaises(GameStuckError):
+            t._sync_climb_team_lock('boss')
+        self.assertEqual(world.clicks, [])
+        elapsed = world.now - start
+        self.assertGreaterEqual(elapsed, normal_mod.ACTIVITY_TEAM_LOCK_TIMEOUT)
+        self.assertLess(elapsed, normal_mod.ACTIVITY_TEAM_LOCK_TIMEOUT + 1)
+
+    def test_ineffective_clicks_raise_before_device_guards(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked', click_effective=())
+        t = _climb_world_task(self, world, lock_enable=True)
+        start = world.now
+        with self.assertRaises(GameStuckError):
+            t._sync_climb_team_lock('boss')
+        names = world.click_names()
+        self.assertTrue(names and set(names) == {'CLIMB_BOSS_UNLOCK'}, names)
+        # 本地上限先于 Device 兜底：单按钮连点 < 10 次，耗时远小于 60 秒卡死判定
+        self.assertLess(len(names), 10)
+        self.assertLess(world.now - start, 60)
+
+    def test_boss_mode_does_not_use_ap_assets(self):
+        # 页面上只有体力那对锁图标：首领模式必须认不出（证明首领用的是自己的资产）
+        world = _ClimbPageWorld(icons='ap', lock_state='locked')
+        t = _climb_world_task(self, world, lock_enable=True)
+        with self.assertRaises(GameStuckError):
+            t._sync_climb_team_lock('boss')
+        self.assertEqual(world.clicks, [])
+
+    def test_ap_mode_keeps_ap_assets_and_behavior(self):
+        world = _ClimbPageWorld(icons='ap', lock_state='locked')
+        self._run(world, 'ap', lock_enable=True)
+        self.assertEqual(world.clicks, [])
+        world = _ClimbPageWorld(icons='ap', lock_state='unlocked', toggle_delay=0.5)
+        self._run(world, 'ap', lock_enable=True)
+        self.assertEqual(world.click_names(), ['AS_AP_UNLOCK'])
+        self.assertEqual(world.lock_state, 'locked')
+
+    def test_ap_mode_does_not_use_boss_assets(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='locked')
+        t = _climb_world_task(self, world, lock_enable=True)
+        with self.assertRaises(GameStuckError):
+            t._sync_climb_team_lock('ap')
+        self.assertEqual(world.clicks, [])
+
+    def test_bound_constant(self):
+        # 改这个值要连带更新 normal.py 的推导注释与 AI_CONTEXT §4.110
+        self.assertEqual(normal_mod.ACTIVITY_TEAM_LOCK_TIMEOUT, 10)
+
+
+class ClimbSwitchSoulRecordsEntryTest(TestCase):
+    """首领模式把首领页的式神录入口交给 `switch_soul_for`；入口认不出 / 点了不进式神录都有界失败。"""
+
+    def _switch_task(self, world):
+        t = _climb_world_task(self, world)
+        t.switched_soul = {'boss': False, 'ap': False}
+        t.conf = SimpleNamespace(switch_soul_config=SimpleNamespace(
+            enable_switch_boss=True, enable_switch_boss_by_name=False, boss_group_team='5,1',
+            enable_switch_ap=False, enable_switch_ap_by_name=False,
+            validate_switch_soul=Mock()))
+        t.run_switch_soul = Mock()
+        t.run_switch_soul_by_name = Mock()
+        t.goto_page = Mock()
+        t.exit_shikigami_records = Mock()
+        return t
+
+    def test_run_climb_action_passes_boss_records_entry_before_fire(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        t = ScriptTask.__new__(ScriptTask)
+        order = Mock()
+        t._climb_resource_available = Mock(return_value=True)
+        t.switch_soul_for = order.switch_soul_for
+        t._enter_climb_battle = Mock(side_effect=lambda action_type: order.enter(action_type) or True)
+        t._record_climb_consumption = Mock()
+        t.record_action = Mock()
+        t.battle_config = Mock(return_value='BOSS_CONF')
+        t.run_general_battle = Mock()
+        t._drain_activity_settlement = Mock()
+        t._run_climb_action('boss', as_page.page_climb_boss)
+        self.assertEqual(order.mock_calls[0].args, ('boss', A.I_BOSS_MAIN_TO_RECORD))
+        self.assertEqual(order.mock_calls[0].kwargs, {'return_page': as_page.page_climb_boss})
+        self.assertEqual(order.mock_calls[1].args, ('boss',))   # 切完御魂才点挑战
+        t.run_general_battle.assert_called_once_with('BOSS_CONF', battle_key='activity_boss')
+
+    def test_entry_recognized_opens_records_then_switches_and_returns(self):
+        world = _ClimbPageWorld(records_entry='CLIMB_BOSS_MAIN_TO_RECORD', records_delay=0.6)
+        t = self._switch_task(world)
+        t.switch_soul_for('boss', t._climb_records_entry('boss'), return_page=as_page.page_climb_boss)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_MAIN_TO_RECORD'])
+        t.run_switch_soul.assert_called_once_with('5,1')
+        t.goto_page.assert_called_once_with(as_page.page_climb_boss)
+
+    def test_entry_unrecognized_raises_bounded_without_switch(self):
+        world = _ClimbPageWorld(records_entry=None)
+        t = self._switch_task(world)
+        start = world.now
+        with self.assertRaises(GameStuckError):
+            t.switch_soul_for('boss', t._climb_records_entry('boss'), return_page=as_page.page_climb_boss)
+        self.assertEqual(world.clicks, [])
+        t.run_switch_soul.assert_not_called()
+        t.goto_page.assert_not_called()
+        elapsed = world.now - start
+        self.assertGreaterEqual(elapsed, base_act_mod.SWITCH_SOUL_RECORDS_TIMEOUT)
+        self.assertLess(elapsed, base_act_mod.SWITCH_SOUL_RECORDS_TIMEOUT + 1)
+
+    def test_entry_clicks_ineffective_raise_before_device_guards(self):
+        world = _ClimbPageWorld(records_entry='CLIMB_BOSS_MAIN_TO_RECORD', records_click_effective=False)
+        t = self._switch_task(world)
+        with self.assertRaises(GameStuckError):
+            t.switch_soul_for('boss', t._climb_records_entry('boss'), return_page=as_page.page_climb_boss)
+        names = world.click_names()
+        self.assertTrue(names and set(names) == {'CLIMB_BOSS_MAIN_TO_RECORD'}, names)
+        self.assertLess(len(names), 10)
+        t.run_switch_soul.assert_not_called()
+
+    def test_switch_disabled_does_nothing(self):
+        world = _ClimbPageWorld(records_entry='AS_BATTLE_MAIN_TO_RECORDS')
+        t = self._switch_task(world)
+        t.switch_soul_for('ap', t._climb_records_entry('ap'), return_page=as_page.page_climb_ap)
+        self.assertEqual((world.shots, world.clicks), (0, []))
+        t.run_switch_soul.assert_not_called()
+
+    def test_bound_constant(self):
+        self.assertEqual(base_act_mod.SWITCH_SOUL_RECORDS_TIMEOUT, 8)
+
+
+class BossRemainCountTest(TestCase):
+    """首领次数 = 「额外奖励 a/b」的 b − a，额外奖励打满就停（2026-10-20 用户决定）。
+
+    10-20 16:56 事故：`O_REMAIN_BOSS` 是 Digit 模式，`ocr_single` 返回整数 110，`ocr_digit_counter`
+    对整数做正则 → TypeError；识别框 (1169,668,70,30) 也只框到「1/10」。用户随后在 annotator 里把框改成
+    整行 (1063,669,208,31)、模式改成 DigitCounter。这里只替换最底层识别模型，模式分发 / 「a/b」解析 /
+    次数归一化都走真实代码。
+    """
+
+    def _rule(self):
+        from tasks.ActivityShikigami.assets import ActivityShikigamiAssets as A
+        return A.O_REMAIN_BOSS
+
+    def _task(self, text, *, previous=-1, pending=0):
+        import numpy as np
+        rule = self._rule()
+        model = SimpleNamespace(ocr_single_line=Mock(return_value=(text, 0.99 if text else 0.0)),
+                                detect_and_ocr=Mock(return_value=[]))
+        # `model` 是 cached_property，按实例字典替换，结束后恢复，不影响其它用例
+        patch.dict(rule.__dict__, {'model': model}).start()
+        self.addCleanup(patch.stopall)
+        t = ScriptTask.__new__(ScriptTask)
+        t.device = SimpleNamespace(image=np.zeros((720, 1280, 3), np.uint8))
+        t.screenshot = Mock()
+        t.climb_consumable_count = {'boss': previous, 'penta_pass': -1}
+        t.climb_pending_consumption = {'boss': pending, 'penta_pass': 0}
+        return t, model
+
+    def test_asset_is_digit_counter_over_the_whole_line(self):
+        import json
+        from module.ocr.base_ocr import OcrMode
+        rule = self._rule()
+        self.assertIs(rule.mode, OcrMode.DIGITCOUNTER)
+        self.assertEqual(list(rule.roi), [1063, 669, 208, 31])
+        with open('tasks/ActivityShikigami/as/climb/ocr.json', encoding='utf-8') as f:
+            item = {i['itemName']: i for i in json.load(f)}['remain_boss']
+        self.assertEqual(item['mode'], 'DigitCounter')
+        self.assertEqual([int(v) for v in item['roiFront'].split(',')], list(rule.roi))
+
+    def test_first_entry_reads_remaining_extra_rewards(self):
+        t, model = self._task('额外奖励1/100')
+        self.assertIs(t._climb_resource_available('boss'), True)
+        self.assertEqual(t.climb_consumable_count['boss'], 99)
+        model.ocr_single_line.assert_called_once()
+
+    def test_extra_rewards_full_stops_boss(self):
+        t, _ = self._task('额外奖励100/100')
+        self.assertIs(t._climb_resource_available('boss'), False)
+        self.assertEqual(t.climb_consumable_count['boss'], 0)
+
+    def test_count_follows_one_battle_consumption(self):
+        t, _ = self._task('额外奖励2/100', previous=99, pending=1)
+        self.assertIs(t._climb_resource_available('boss'), True)
+        self.assertEqual(t.climb_consumable_count['boss'], 98)
+        self.assertEqual(t.climb_pending_consumption['boss'], 0)
+
+    def test_unreadable_count_does_not_crash(self):
+        # 读不出时 DigitCounter 回落 (0,0,0)：首次进入按「次数为 0」优雅停止，不抛异常
+        t, _ = self._task('')
+        self.assertIs(t._climb_resource_available('boss'), False)
+
+    def test_digit_mode_reproduces_the_crash(self):
+        """特征化：同样的读数换回 Digit 模式就是 16:56 的 TypeError，所以资产模式必须是 DigitCounter。"""
+        from module.ocr.base_ocr import OcrMode
+        t, _ = self._task('额外奖励1/100')
+        with patch.object(self._rule(), 'mode', OcrMode.DIGIT):
+            with self.assertRaises(TypeError):
+                t._climb_resource_available('boss')
+
+
+class BossClimbFlowTest(TestCase):
+    """首领走公共爬塔主循环：锁定同步成功后进入挑战；同步失败不进入挑战。"""
+
+    def _flow_task(self, world):
+        t = _climb_world_task(self, world, lock_enable=True)
+        t.goto_page = Mock()
+        t.get_current_page = Mock(return_value=as_page.page_climb_boss)
+        t._sync_climb_penta_pass = Mock()
+        t.prepare_next_action = Mock(return_value=True)
+        t._activity_challenge_safe_break = Mock(return_value=True)
+        t._run_climb_action = Mock(side_effect=StopIteration('probe: reached challenge'))
+        return t
+
+    def test_lock_synced_then_challenge_entered(self):
+        world = _ClimbPageWorld(icons='boss', lock_state='unlocked', toggle_delay=0.5)
+        t = self._flow_task(world)
+        with self.assertRaises(StopIteration):
+            t._run_climb_type('boss')
+        t.goto_page.assert_called_once_with(as_page.page_climb_boss)
+        self.assertEqual(world.click_names(), ['CLIMB_BOSS_UNLOCK'])
+        self.assertEqual(world.lock_state, 'locked')
+        t._activity_challenge_safe_break.assert_called_once_with(
+            'boss', as_page.page_climb_boss, repeat_completed=False)
+        t._run_climb_action.assert_called_once_with('boss', as_page.page_climb_boss)
+
+    def test_lock_unknown_never_reaches_challenge(self):
+        world = _ClimbPageWorld(icons='boss', lock_state=None)
+        t = self._flow_task(world)
+        with self.assertRaises(GameStuckError):
+            t._run_climb_type('boss')
+        t._activity_challenge_safe_break.assert_not_called()
+        t._run_climb_action.assert_not_called()
+        self.assertEqual(world.clicks, [])
 
 
 # --------------------------------------------------------------------------------------

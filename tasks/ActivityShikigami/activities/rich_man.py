@@ -34,6 +34,9 @@ class RichManAct:
         # `ScriptTask` 实例会按 `task_sequence_v` 顺序连跑多条线）。大富翁线没有 Fatigue
         # 安全节点，宏观空闲仍由 `prepare_next_action` 里的 `random_sleep` 负责。
         self._fatigue_owns_macro_idle = False
+        # 爬塔线专用的单击结算（2026-09-23）不接大富翁：本线的结算沿用 GeneralBattle 原有
+        # Settlement V3 / Micro-Burst，不做改动。
+        self._climb_owns_settlement_single_click = False
         self.setup_rich_man_pages()
         self.switch_soul_for_from_courtyard('rich_man')
         self.goto_page(pages.page_rich_man)

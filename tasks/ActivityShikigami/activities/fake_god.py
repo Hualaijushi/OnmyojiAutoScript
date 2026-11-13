@@ -41,6 +41,9 @@ class FakeGodAct:
         # `ScriptTask` 实例会按 `task_sequence_v` 顺序连跑多条线）。伪神降临线没有 Fatigue
         # 安全节点，宏观空闲仍由 `prepare_next_action` 里的 `random_sleep` 负责。
         self._fatigue_owns_macro_idle = False
+        # 爬塔线专用的单击结算（2026-09-23）不接伪神降临：本线的结算沿用 GeneralBattle 原有
+        # Settlement V3 / Micro-Burst，不做改动。
+        self._climb_owns_settlement_single_click = False
         self.setup_fakegod_pages()
         destination = pages.page_fakegod_action
         self.goto_page(destination)

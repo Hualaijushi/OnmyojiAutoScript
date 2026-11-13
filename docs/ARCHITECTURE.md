@@ -1,5 +1,9 @@
 # 项目架构地图
 
+### 式神活动配置展示（2026-11-13）
+
+`ActivityShikigami/args_layout.py` 提供只读展示布局，由 `ConfigModel.script_task_layout` 和 `GET /{script_name}/{task}/args/layout` 暴露；布局引用既有配置字段，不改变原 `/args` 与写入路径，其他任务返回空布局。活动普通爬塔的专用单击结算使用独立区域，通用战斗结算节奏保持目标分支原值。
+
 ### 门票采样的奖励袋门槛（2026-11-11）
 
 通用page_reward分发到MultiAccountEvo._handle_reward → 原皮肤确认关闭时本轮立即返回 → 采样点核验I_GET_BATTLE_REWARD/I_GET_BATTLE_REWARD_2 → 奖励袋连续可见至少1秒后读取固定右上ROI并在新帧复核50 → 原奖励空白点击。未出现奖励袋只等待新帧，30秒期限不反复刷新，超时或无效读值保存当时全帧/裁图/元数据后未完成停止。胜负结果_handle_result不读票；非采样场次不增加奖励袋识别。

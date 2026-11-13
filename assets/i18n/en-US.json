@@ -87,5 +87,20 @@
   "event_ocr_start": "First Ticket OCR Battle",
   "event_ocr_interval": "Ticket OCR Battle Interval",
   "group_start": "First local account group",
-  "group_end": "Last local account group (0 means all)"
+  "group_end": "Last local account group (0 means all)",
+  "ap_limit_help": "Minimum Stamina climb battles per run (range lower bound). Equal to the maximum means a fixed count; both 0 skips Stamina climb. A battle with a Penta Pass still counts as 1.",
+  "ap_limit_max": "Stamina battles max",
+  "ap_limit_max_help": "Maximum Stamina climb battles per run (range upper bound). Each new run draws one integer in [min, max] as the target. Requires 1 <= min <= max, or both 0; invalid ranges are rejected before the task starts.",
+  "activity_ap_range_min": "Min battles",
+  "activity_ap_range_max": "Max battles",
+  "activity_play_rich_man": "Rich Man",
+  "activity_play_climb": "Climb",
+  "activity_play_fakegod": "Fake God",
+  "activity_battle_rich_man": "Rich Man",
+  "activity_battle_ap": "Stamina",
+  "activity_battle_pass": "Ticket",
+  "activity_battle_boss": "Boss",
+  "activity_battle_ap100": "100 Stamina",
+  "activity_battle_fakegod": "Fake God",
+  "activity_advanced_settings": "Scheduling and reaction"
 }

@@ -160,5 +160,17 @@
     "roiFront": "1185,209,87,441",
     "roiBack": "1185,209,87,441",
     "description": "结算安全点击"
+  },
+  {
+    "itemName": "random_activity_1",
+    "roiFront": "937,431,296,248",
+    "roiBack": "937,431,296,248",
+    "description": "周年庆结算点击1"
+  },
+  {
+    "itemName": "random_activity_2",
+    "roiFront": "659,522,406,171",
+    "roiBack": "659,522,406,171",
+    "description": "周年庆活动结算2"
   }
 ]

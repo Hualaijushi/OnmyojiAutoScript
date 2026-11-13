@@ -3,7 +3,8 @@
 
 from datetime import time, timedelta
 
-from pydantic import BaseModel, Field, model_validator, validator
+from pydantic import BaseModel, Field, TypeAdapter, model_validator, validator
+from typing_extensions import Annotated
 
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -31,6 +32,10 @@ ACTIVITY_NAME_ALIASES = {
 }
 CLIMB_TYPES = ('ap', 'pass', 'boss', 'ap100')
 BATTLE_TYPES = ('rich_man', *CLIMB_TYPES, 'fakegod')
+# 体力爬塔的次数区间：ap_limit 是下限（单位与旧固定次数相同：进入战斗的场数），ap_limit_max 是上限
+AP_RANGE_FIELDS = ('ap_limit', 'ap_limit_max')
+# 严格整数：拒绝 1.5、'5'、True 这类会被宽松转换悄悄接受的值
+_AP_RANGE_VALUE = TypeAdapter(Annotated[int, Field(ge=0, strict=True)])
 
 
 class GeneralConfig(ConfigBase):
@@ -40,7 +45,8 @@ class GeneralConfig(ConfigBase):
         description='activity_task_sequence_help',
     )
     throw_limit: int = Field(default=0, title='Throw Limit', ge=0)
-    ap_limit: int = Field(default=0, title='Ap Limit', ge=0)
+    ap_limit: int = Field(default=0, title='Ap Limit', description='ap_limit_help', ge=0)
+    ap_limit_max: int = Field(default=0, title='Ap Limit Max', description='ap_limit_max_help', ge=0)
     pass_limit: int = Field(default=0, title='Pass Limit', ge=0)
     boss_limit: int = Field(default=0, title='Boss Limit', ge=0)
     ap100_limit: int = Field(default=0, title='Ap100 Limit', ge=0)
@@ -65,6 +71,37 @@ class GeneralConfig(ConfigBase):
         title='Use Penta Pass',
         description='use_penta_pass_help',
     )
+
+    @model_validator(mode='before')
+    @classmethod
+    def fill_missing_ap_limit_max(cls, data):
+        """旧配置没有上限字段时按固定次数 N～N 读入；只补内存值，不写文件。
+
+        只看「键是否缺失」：用户明确写了 ap_limit_max=0 就是 0，不会被当成旧配置。
+        """
+        if isinstance(data, dict) and 'ap_limit_max' not in data:
+            data = {**data, 'ap_limit_max': data.get('ap_limit', 0)}
+        return data
+
+    def __setattr__(self, name, value):
+        # GeneralConfig 没开 validate_assignment（不想改变其他字段的保存行为），
+        # 这里只让区间两个字段在保存时校验：失败抛 ValidationError，原值保持不变
+        if name in AP_RANGE_FIELDS:
+            value = _AP_RANGE_VALUE.validate_python(value)
+        super().__setattr__(name, value)
+
+    def ap_range_error(self) -> str | None:
+        """区间关系的最终校验；不合法返回中文说明，合法返回 None。"""
+        low, high = self.ap_limit, self.ap_limit_max
+        if low == 0 and high == 0:
+            return None
+        if low >= 1 and high >= low:
+            return None
+        return (
+            f'体力爬塔次数区间 {low}～{high} 不合法。不执行请把最少和最多都设为 0；'
+            f'执行请满足 1 ≤ 最少 ≤ 最多（固定次数请两项填同一个数，例如 100～140）。'
+            f'请在「式神活动 → 爬塔 → 体力」中修改后再启动。'
+        )
 
     @property
     def limit_time_v(self) -> timedelta:
@@ -92,7 +129,7 @@ class GeneralConfig(ConfigBase):
     @property
     def climb_sequence_v(self) -> list[str]:
         """爬塔四种战斗按 UI 约定顺序执行，并跳过次数为零的项。"""
-        return [name for name in CLIMB_TYPES if getattr(self, f'{name}_limit') > 0]
+        return [name for name in CLIMB_TYPES if self.limit_for(name) > 0]
 
     def activity_enabled(self, activity_name: str) -> bool:
         field = ACTIVITY_NAME_TO_FIELD[activity_name]
@@ -103,6 +140,12 @@ class GeneralConfig(ConfigBase):
         return self.fakegod_limit > 0
 
     def limit_for(self, action_type: str) -> int:
+        """配置层面的次数上限；体力返回区间上限（旧固定次数 N 即 N），用于判断是否启用。
+
+        本次实际目标（区间内随机一次）由 BaseAct.action_limit 给出。
+        """
+        if action_type == 'ap':
+            return self.ap_limit_max
         field = 'throw_limit' if action_type == 'rich_man' else f'{action_type}_limit'
         return getattr(self, field, 0)
 

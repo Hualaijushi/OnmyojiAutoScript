@@ -2,12 +2,19 @@
 
 import time
 
+from module.atom.click import RuleClick
 from module.base.timer import Timer
-from module.base.utils.random import random_delay
+from module.base.utils.random import random_delay, random_int
+from module.click_pipeline import FinalPoint, execute_single_click
+from module.exception import GamePageUnknownError, GameStuckError
 from module.logger import logger
 from module.interaction_policy import fire_reaction_range
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.ActivityShikigami.base_act import ActivityResourceNotEnough
+from tasks.ActivityShikigami.config import CLIMB_TYPES
+from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+from tasks.Component.GeneralBattle.general_battle import BattleAction, BattleContext
+from tasks.GameUi.page import Page, page_battle_result, page_reward
 import tasks.ActivityShikigami.page as pages
 
 
@@ -21,6 +28,25 @@ ACTIVITY_FIRE_POST_CLICK_TIMEOUT = 4
 # 战斗结束后 drain 本期「活动专用结算弹窗」并正向确认回到稳定挑战页的上限（PROVISIONAL）。
 ACTIVITY_SETTLEMENT_MAX_CLICKS = 6
 ACTIVITY_SETTLEMENT_TIMEOUT = 15
+# `_run_climb_type` 主循环连续识别不到任何已知页面（`get_current_page()` 持续为 None）的
+# 墙钟上限（PROVISIONAL）。2026-09-22 真机事故：此前该分支只有 `sleep(0.5); continue`，
+# 没有任何上限——一旦页面持续无法归类（例如被 `_drain_activity_settlement` 的兜底误点干扰），
+# 会静默空转到任务墙钟耗尽都不会产生一行日志。超时后 `raise GamePageUnknownError`，交给外层
+# 既有的页面异常处理，不在本层自行猜测恢复动作。
+ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT = 20
+# 普通爬塔专用结算单击的「点击前反应」区间（秒，PROVISIONAL，未经 Level C 标定）。
+# 本线自己持有这个 reaction owner，不再借用 GeneralBattle 的
+# `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE`——后者语义是 Micro-Burst **同一 burst 内两击之间的
+# 观察间隔**（0.10~0.30s），既不是「点击前反应」，也属于通用 Settlement V3 的 timing，本线
+# 已经退出 Micro-Burst（见 `docs/DECISIONS.md` D025 补记），继续复用只会把两种语义混在一起、
+# 且任何一方调参都会误伤另一方。区间量级对齐 `module/reaction_profile.py` 的 `REACTION_NORMAL`
+# （普通确认类动作），但**不走** `InteractionPolicy` / `appear_then_click(policy=)`——本事务的
+# timing 由本状态机自己拥有（`InteractionPolicy.SPECIAL` 语义），只允许这一层 reaction。
+ACTIVITY_SETTLEMENT_REACTION = (0.45, 0.85)
+# 队伍锁定同步的墙钟上限（秒，PROVISIONAL）。2026-10-20 真机事故：首领页锁 / 开锁都认不出时，原
+# `ui_click` 无上限空等，挑战键一直轮不到。点击间隔沿用原来的 1.5s，10 秒内最多 7 次点击，低于 Device
+# 单按钮 10 次连点兜底，也远低于 60 秒卡死判定；确认不了就抛 `GameStuckError`，不带着未知状态去挑战。
+ACTIVITY_TEAM_LOCK_TIMEOUT = 10
 
 
 class NormalClimbAct:
@@ -57,6 +83,9 @@ class NormalClimbAct:
         # 里的 `try_fatigue_break`）接管，`prepare_next_action` 不再叠加旧 `random_sleep`
         # （见 `docs/DECISIONS.md` D001 Fatigue Safe Point 补记）。
         self._fatigue_owns_macro_idle = True
+        # 爬塔线专用的单击结算（2026-09-23）：`_handle_result` / `_handle_reward` 只在本线运行
+        # 期间才接管，大富翁 / 伪神降临仍走 GeneralBattle 原有 Settlement V3。
+        self._climb_owns_settlement_single_click = True
         self.begin_fatigue_task('ActivityShikigami')
         for action_type in self.conf.general_config.climb_sequence_v:
             if self.time_limit_reached():
@@ -72,10 +101,15 @@ class NormalClimbAct:
         # 首轮没有「上一轮 cycle complete」：第一次 Challenge Ready 仍可记 Fatigue 安全节点，
         # 但 `repeat_completed=False`；一场 battle + 活动结算 drain 完整跑完后才置 True。
         cycle_completed = False
+        # 连续识别不到已知页面的墙钟：只在真正连续 None 时才计时，一旦识别到任意已知页面
+        # 立即清空——不惩罚偶发的一帧过渡，只兜住持续卡在未知页面的情况。
+        unknown_page_timer = None
 
         while True:
             self.screenshot()
             current_page = self.get_current_page()
+            if current_page is not None:
+                unknown_page_timer = None
             if current_page == destination:
                 self._sync_climb_penta_pass()
                 if not self.prepare_next_action(action_type):
@@ -104,6 +138,20 @@ class NormalClimbAct:
                 self.click(pages.random_click(ltrb=(False, False, True, False)), interval=1.5)
                 continue
             if current_page is None:
+                if unknown_page_timer is None:
+                    unknown_page_timer = Timer(ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT).start()
+                    logger.warning(
+                        f'Climb {action_type}: current page not recognized, '
+                        f'start bounded wait ({ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT}s)'
+                    )
+                elif unknown_page_timer.reached():
+                    logger.warning(
+                        f'Climb {action_type}: page stayed unrecognized for '
+                        f'{ACTIVITY_CLIMB_UNKNOWN_PAGE_TIMEOUT}s, abort this climb type'
+                    )
+                    raise GamePageUnknownError(
+                        f'ActivityShikigami climb {action_type}: page unrecognized too long'
+                    )
                 time.sleep(0.5)
                 continue
             self.goto_page(destination)
@@ -114,7 +162,7 @@ class NormalClimbAct:
 
         self.switch_soul_for(
             action_type,
-            self.I_BATTLE_MAIN_TO_RECORDS,
+            self._climb_records_entry(action_type),
             return_page=destination,
         )
         entered = self._enter_climb_battle(action_type)
@@ -131,6 +179,104 @@ class NormalClimbAct:
 
     def _climb_fire_rule(self, action_type: str):
         return self.I_AS_BOSS_FIRE if action_type == 'boss' else self.I_ACT_FIRE
+
+    def _climb_records_entry(self, action_type: str):
+        # 首领页的式神录入口和体力 / 门票页位置不同（2026-10-20 从首领页重截），其余页面共用一个
+        return self.I_BOSS_MAIN_TO_RECORD if action_type == 'boss' else self.I_BATTLE_MAIN_TO_RECORDS
+
+    # ------------------------------------------------------------------------------------
+    # 爬塔线专用结算单击（2026-09-23）：只在 `_climb_owns_settlement_single_click` 为真
+    # （= `run_climb()` 运行期间）接管 `_handle_result` / `_handle_reward`，取消 GeneralBattle
+    # 通用 Settlement Micro-Burst Session（segment 预算 / burst 连击 / anchor 跨调用复用）在本线
+    # 的参与；大富翁 / 伪神降临不受影响，`super()` 原样回落到 GeneralBattle 原有实现。
+    #
+    # 每次 `_handle_result` / `_handle_reward` 调用最多点一次，且每次都是独立完整的一轮事务
+    # （reaction → fresh screenshot → 再确认结算状态仍存在 → 70/30 选区域 → 现采坐标 → 单击），
+    # 不预授权第二击、不跨调用复用上一次的 anchor——需要继续处理结算时，由 `run_general_battle`
+    # 主循环下一帧重新调用本方法，自然形成全新的一轮。
+    # ------------------------------------------------------------------------------------
+
+    def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        if not self._climb_owns_settlement_single_click:
+            return super()._handle_result(context, config)
+        # 与 BaseAct._handle_result 一致：boss 结算前先点掉专属附属弹窗，不因本轮改造丢失。
+        if self.current_action_type == 'boss':
+            self.appear_then_click(self.I_UI_BACK_RED, interval=1.5)
+        context.reward_no_battle_ts = None
+        context.is_win = not self.appear(self.I_FALSE, threshold=0.8)
+        if context.last_page != page_battle_result:
+            self.device.click_record_clear()
+        if self._is_generic_result_context():
+            self._activity_settlement_single_click(context, current_page=page_battle_result)
+        else:
+            # 非通用结果标志（更宽的 I_BATTLE_STATE_INFO）：本轮不改，沿用旧的单次节流点击。
+            self._settlement_click(context)
+        return BattleAction.CONTINUE
+
+    def _handle_reward(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        if not self._climb_owns_settlement_single_click:
+            return super()._handle_reward(context, config)
+        context.reward_no_battle_ts = None
+        context.is_win = True
+        if context.last_page != page_reward:
+            self.device.click_record_clear()
+        # 特殊弹窗：本轮确实点中任意一个就立即 CONTINUE，下一轮 fresh screenshot 再判
+        # （与 GeneralBattle._handle_reward 一致，未改）。
+        if self.appear_then_click(self.I_OVER_GHOST, interval=0.8):
+            return BattleAction.CONTINUE
+        if self.appear_then_click(self.I_GB_SKIN_CONFIRM, interval=0.8):
+            return BattleAction.CONTINUE
+        self._activity_settlement_single_click(context, current_page=page_reward)
+        return BattleAction.CONTINUE
+
+    def _activity_settlement_single_click(self, context: BattleContext, current_page: Page) -> None:
+        """一次独立的结算单击事务，最多执行 1 次 `execute_single_click`。
+
+        reaction owner：本线自己的 `ACTIVITY_SETTLEMENT_REACTION`（0.45~0.85s，见常量定义处），
+        不再借用 GeneralBattle 的 `SETTLEMENT_BURST_CLICK_INTERVAL_RANGE`（那是 Micro-Burst
+        同一 burst 内两击之间的观察间隔，语义不同、且属于通用 Settlement V3 的 timing）。
+        本事务的 timing 由本状态机自己拥有（`InteractionPolicy.SPECIAL` 语义），手动采样 +
+        sleep，不经过 `appear_then_click(policy=...)` / `confirm_delay`，因此整条链路上
+        **只有这一层 reaction**，不会和通用 L2 policy 叠加。
+
+        顺序固定：reaction → sleep → fresh screenshot → 确认仍需结算（含真实挑战页 / 挑战键
+        硬停止）→ 70/30 选区域 → 现采坐标 → 单击。**坐标一定在等待之后才采样**，不允许先采样
+        再跨等待复用。
+        """
+        reaction = random_delay(*ACTIVITY_SETTLEMENT_REACTION)
+        time.sleep(reaction)
+        self.screenshot()
+        if self._climb_settlement_should_stop():
+            return
+        if self._classify_general_battle_page() != current_page:
+            # 结算状态已经变化（含彻底离开 result/reward）：不用旧判断硬点，交回外层
+            # `run_general_battle` 主循环下一帧 fresh classify、按新状态重新分发。
+            return
+        region = self._select_activity_settlement_region()
+        x, y = self._sample_settlement_point(region)
+        execute_single_click(self.device, FinalPoint(x, y), control_name=region.name)
+
+    def _climb_settlement_should_stop(self) -> bool:
+        """结算期间若已经出现真正的挑战页（`page_climb_<type>`）或挑战键，说明战斗-结算
+        流程其实已经结束，不能再当成结算继续点——复用已有的 `page_climb_<type>` /
+        `_climb_fire_rule`，不新造判据（2026-09-22 真机事故教训：`page_climb_pass` 不是
+        弹窗，是真实挑战页）。非爬塔行动类型理论上不会走到这里（由
+        `_climb_owns_settlement_single_click` 门控），这里仍加一层防御性判断。"""
+        action_type = self.current_action_type
+        if action_type not in CLIMB_TYPES:
+            return False
+        destination = getattr(pages, f'page_climb_{action_type}')
+        if self.get_current_page() == destination:
+            return True
+        return self.appear(self._climb_fire_rule(action_type))
+
+    def _select_activity_settlement_region(self) -> RuleClick:
+        """70% `C_RANDOM_ACTIVITY_1` / 30% `C_RANDOM_ACTIVITY_2`。用项目已有的
+        `module.base.utils.random.random_int`（模块级 `SystemRandom`，与
+        `GeneralBattle._select_reward_region` 同一随机源），不新建 `random.Random`。"""
+        if random_int(1, 100) <= 70:
+            return self.C_RANDOM_ACTIVITY_1
+        return self.C_RANDOM_ACTIVITY_2
 
     def _record_climb_consumption(self, action_type: str) -> None:
         """成功进入战斗时保存本场不可变的资源消耗快照。"""
@@ -401,17 +547,40 @@ class NormalClimbAct:
         `page_battle_result` recognizer）通常已把弹窗点掉；本方法是**有界的兜底 + 回稳定挑战页
         的正向确认**：直到 `destination` 页 + 挑战键可见（= cycle complete 边界）或点击次数 /
         墙钟用尽。**弹窗消失本身不算成功**——必须重新识别到挑战页 + 挑战键 positive。
+
+        2026-09-22 真机事故修正：`self.get_current_page() == destination`（结构性已经在挑战页，
+        如标题横幅 + 模式标志）为真、但 `fire_rule`（挑战/FIRE 键）还没渲染出来这一状态，**不是**
+        残留结算弹窗——是挑战页自己的进场动画还没走完，此时点 `C_RANDOM_DEFAULT` 既没有意义（没有
+        弹窗要点掉），也可能干扰挑战键的正常渲染。这里复用 FIRE 契约已有的
+        `_wait_climb_fire_state`（`_enter_climb_battle` 同款有界三态轮询），只等、不点；等到
+        `'battle'`（又落回战斗态）按原语义交回外层，等到 `'ready'` 或 `'timeout'` 都回到本函数
+        顶部重新判定——**不新增点击路径、不绕过既有的次数 / 墙钟上限**。只有 `get_current_page()`
+        不等于 `destination`（真正还是别的页面 / 未知帧）才继续走原有的盲点兜底。
         """
         fire_rule = self._climb_fire_rule(action_type)
         timer = Timer(ACTIVITY_SETTLEMENT_TIMEOUT).start()
         clicks = 0
         while not timer.reached():
             self.screenshot()
-            if self.get_current_page() == destination and self.appear(fire_rule):
+            if self.get_current_page() == destination:
+                if self.appear(fire_rule):
+                    logger.info(
+                        f'Activity settlement drained, back to climb {action_type} challenge page'
+                    )
+                    return True
+                # 已经结构性落在挑战页，只是挑战键还没就绪——不是弹窗，不能盲点，有界等一个
+                # 决定性状态（复用 FIRE 契约既有的三态轮询，不新发明机制）。
                 logger.info(
-                    f'Activity settlement drained, back to climb {action_type} challenge page'
+                    f'Activity settlement drain: on {destination} but {fire_rule.name} not ready yet, '
+                    'wait instead of blind click'
                 )
-                return True
+                state = self._wait_climb_fire_state(fire_rule)
+                if state == 'battle':
+                    logger.info(
+                        'Activity settlement drain: battle re-entered while waiting for fire, defer to loop'
+                    )
+                    return False
+                continue  # 'ready' 下一轮顶部会命中 return True；'timeout' 回到顶部重新判定
             if self._is_active_battle_entry():
                 # 兜底：又落回战斗态，交回外层循环处理，不在这里点 random_default
                 logger.info('Activity settlement drain: battle entry re-detected, defer to loop')
@@ -431,15 +600,24 @@ class NormalClimbAct:
     def _sync_climb_team_lock(self, action_type: str):
         enable = self.battle_config(action_type).lock_team_enable
         if action_type == 'boss':
-            lock_rule, unlock_rule = self.I_LOCK, self.I_UNLOCK
+            # 首领页的锁在 (907,651)；旧 I_LOCK / I_UNLOCK 与体力那对是同一张图（锁在 801）裁的，首领页两种状态都认不出
+            lock_rule, unlock_rule = self.I_BOSS_LOCK, self.I_BOSS_UNLOCK
         else:
             lock_rule, unlock_rule = self.I_AP_LOCK, self.I_AP_UNLOCK
         if enable:
             logger.info(f'Lock {action_type} team')
-            self.ui_click(unlock_rule, stop=lock_rule, interval=1.5)
+            target_rule = lock_rule
+            synced = self.ui_click_until_appear_or_timeout(unlock_rule, stop=lock_rule, interval=1.5,
+                                                           timeout=ACTIVITY_TEAM_LOCK_TIMEOUT)
         else:
             logger.info(f'Unlock {action_type} team')
-            self.ui_click(lock_rule, stop=unlock_rule, interval=1.5)
+            target_rule = unlock_rule
+            synced = self.ui_click_until_appear_or_timeout(lock_rule, stop=unlock_rule, interval=1.5,
+                                                           timeout=ACTIVITY_TEAM_LOCK_TIMEOUT)
+        if not synced:
+            logger.warning(f'Climb {action_type}: team lock state {target_rule.name} '
+                           f'not confirmed in {ACTIVITY_TEAM_LOCK_TIMEOUT}s')
+            raise GameStuckError(f'ActivityShikigami climb {action_type}: team lock state not confirmed')
 
     def _climb_resource_available(self, action_type: str) -> bool:
         logger.hr(f'Check {action_type} resource')

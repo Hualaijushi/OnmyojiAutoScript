@@ -21,8 +21,9 @@ class BossType(IntEnum):
 
 
 class MetaDemonConfig(ConfigBase):
-    limit_time: Time = Field(default=Time(minute=45), description='limit_time_help')
-    limit_count: int = Field(default=50, description='limit_count_help')
+    use_current_queue: bool = Field(default=False, title='沿用当前队列', description='启用后只召唤当前队列，不重新选择星级；关闭后仍按攻击顺序选票。其他功能仍按各自配置执行。')
+    limit_time: Time = Field(default=Time(minute=45), description='运行时长上限，00:00:00表示不限；原默认值保留')
+    limit_count: int = Field(default=50, description='进入战斗次数上限，0表示不限；原默认值保留')
     auto_tea: bool = Field(default=False, description='疲劳度满时是否自动喝茶, 关闭则自动根据调度器等待间隔时间安排下一次调度')
     fire_sequence: str = Field(default='1 2 3 4', description='攻击顺序:从左到右,空格分隔(1:一星鬼王,2:二星鬼王...)\n例:3 2(先攻击三星鬼王然后二星鬼王)')
     powerful_list: str = Field(default='', description='开启强力鬼王列表(空格分隔),例:4 5(四星鬼王和五星鬼王开启强力追击)')

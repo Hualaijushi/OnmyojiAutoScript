@@ -4,8 +4,9 @@
 import time
 
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from module.atom.image import RuleImage
+from module.base.timer import Timer
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
@@ -15,7 +16,7 @@ from tasks.MetaDemon.assets import MetaDemonAssets
 import tasks.MetaDemon.page as ipages
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import TaskEnd, GamePageUnknownError, ScriptError
 
 
 class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
@@ -83,7 +84,7 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
                     if self.check_and_prepare_battle():
                         self.start_battle()
                 case ipages.page_battle:
-                    self.battle_wait(self.conf.general_battle.random_click_swipt_enable)
+                    self.battle_wait(self.conf.switch_soul.get_general_battle_conf(self.cur_boss_type).random_click_swipt_enable)
                 case ipages.page_reward | ipages.page_battle_result:
                     self.click(ipages.random_click(), interval=0.6)
                 case _:
@@ -95,7 +96,7 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
         logger.hr('Click fire, start battle')
         while True:
             self.screenshot()
-            if self.is_in_battle(False):
+            if self._meta_battle_started() or self.is_in_battle(False):
                 self.total_count += 1
                 self.run_general_battle(
                     self.conf.switch_soul.get_general_battle_conf(self.cur_boss_type),
@@ -108,7 +109,8 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
                     continue
                 # 不喝茶则结束任务安排下一次运行
                 self.ui_click_until_disappear(self.I_MD_CLOSE_POPUP, interval=0.6)
-                self.set_next_run('MetaDemon', target=datetime.now() + self.conf.scheduler.wait_interval)
+                self.screenshot()
+                self._schedule_fatigue_recovery()
                 self.finish_task()
             if self.appear_then_click(self.I_MD_FIRE, interval=0.8):
                 continue
@@ -143,8 +145,8 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
         return win
 
     def update_global_state(self):
-        if datetime.now() - self.start_time >= self.limit_time or \
-                self.total_count >= self.limit_count:
+        if (self.limit_time.total_seconds() > 0 and datetime.now() - self.start_time >= self.limit_time) or \
+                (self.limit_count > 0 and self.total_count >= self.limit_count):
             self.State.done = True
 
     def check_and_prepare_battle(self) -> bool:
@@ -155,7 +157,22 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
         if not self.check_fatigue():
             return False
         self.synthesis_boss_ticket()
-        return self.check_and_switch_ticket() and self.check_and_switch_soul() and self.check_and_switch_powerful()
+        if not self.check_and_switch_ticket():
+            return False
+        if self._meta_battle_started():
+            return True
+        if not self.check_and_switch_soul():
+            return False
+        self.screenshot()
+        if self._meta_battle_started():
+            return True
+        return self.check_and_switch_powerful()
+
+    def _meta_battle_started(self):
+        """只用准备按钮或战斗标志确认已离开鬼王页。"""
+        return (self.appear(self.I_PREPARE_HIGHLIGHT)
+                or self.appear(self.I_PREPARE_DARK)
+                or self.appear(self.I_BATTLE_INFO))
 
     def synthesis_boss_ticket(self):
         """合成鬼王"""
@@ -213,14 +230,33 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
         logger.hr('Check fatigue')
         current, remain, total = self.O_MD_FATIGUE.ocr_digit_counter(self.device.image)
         # 不喝茶且当前疲劳度已满
-        if not self.conf.meta_demon_config.auto_tea and (current > total or remain < 0):
-            self.set_next_run('MetaDemon', target=datetime.now() + self.conf.scheduler.wait_interval)
+        if not self.conf.meta_demon_config.auto_tea and total > 0 and current >= total:
+            self._schedule_fatigue_recovery((current, remain, total))
             self.finish_task()
         return True
+
+    def _schedule_fatigue_recovery(self, reading=None):
+        """有效读数按恢复至60点加一分钟缓冲，异常读数沿用原等待间隔。"""
+        if reading is None:
+            try:
+                reading = self.O_MD_FATIGUE.ocr_digit_counter(self.device.image)
+            except ScriptError as exc:
+                logger.warning(f'疲劳OCR服务失败，沿用设置的等待间隔：{exc}')
+                reading = (0, 0, 0)
+        current, remain, total = reading
+        if (total > 60 and 60 < current <= total and remain == total - current):
+            wait = timedelta(minutes=current - 60 + 1)
+            logger.info(f'疲劳 {current}/{total}，预计恢复至60需等待 {current - 60 + 1} 分钟（含缓冲）')
+        else:
+            wait = self.conf.scheduler.wait_interval
+            logger.warning(f'疲劳读数不可信或与喝茶提示不符：{current}/{total}，沿用设置的等待间隔 {wait}')
+        self.set_next_run('MetaDemon', target=datetime.now() + wait)
 
     def check_and_switch_ticket(self):
         """切换鬼王门票并更新当前鬼王级别"""
         logger.hr('Summon boss')
+        if self.conf.meta_demon_config.use_current_queue:
+            return self.summon_current_queue()
         # 打开切换门票弹窗
         while True:
             self.screenshot()
@@ -282,9 +318,55 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
                 continue
         return False
 
+    def summon_current_queue(self):
+        """只召唤当前队列；原选星流程和其他功能仍保留。"""
+        timer = Timer(30).start()
+        for _ in range(120):
+            if timer.reached():
+                break
+            self.screenshot()
+            if self._meta_battle_started():
+                return True
+            if self.appear(self.I_MD_FIRE):
+                self.sync_current_boss_type()
+                return True
+            if self.appear(self.I_MD_TICKET_EMPTY):
+                time.sleep(0.4)
+                self.screenshot()
+                if not self.appear(self.I_MD_FIRE) and self.appear(self.I_MD_TICKET_EMPTY):
+                    self.State.done = True
+                    return False
+                continue
+            if self.appear_then_click(self.I_MD_GET_BOSS, interval=1):
+                continue
+            if self.appear_then_click(self.I_MD_SUMMON_BOSS, interval=1):
+                continue
+            time.sleep(0.25)
+        raise GamePageUnknownError('当前队列召唤未到达挑战页，未当作无鬼王')
+
+    def sync_current_boss_type(self):
+        """仅在已配置的按星级功能需要时读星级，不重新选择鬼王。"""
+        soul = self.conf.switch_soul
+        need_type = ((soul.enable and not soul.switch_once)
+                     or bool(self.conf.meta_demon_config.powerful_list_v)
+                     or any(getattr(soul, f'enable_{kind.name.lower()}_preset')
+                            for kind in BossType if kind != BossType.MONEY))
+        if not need_type:
+            self.cur_boss_type = None
+            return
+        value = self.O_MD_BOSS_STAR.ocr_digit(self.device.image)
+        if value not in range(1, 7):
+            raise GamePageUnknownError('无法读出当前鬼王星级，停止避免错用已配置的御魂或强力')
+        kind = BossType(value)
+        if kind != self.cur_boss_type and not soul.switch_once:
+            self.State.switch_soul_done = False
+        self.cur_boss_type = kind
+
     def check_and_switch_powerful(self) -> bool:
         """检查并切换是否开启强力"""
         logger.hr('process power fire')
+        if self._meta_battle_started():
+            return True
         if not self.appear(self.I_MD_FIRE):
             self.goto_page(ipages.page_meta_demon_boss)
             self.screenshot()
@@ -293,14 +375,29 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
         powerful_list = self.conf.meta_demon_config.powerful_list_v
         # 当前boss类型未知或不在强力列表中则使用普通追击
         if self.cur_boss_type is None or self.cur_boss_type not in powerful_list:
-            self.ui_click(self.I_MD_ENABLE_POWERFUL_FIRE, self.I_MD_DISABLE_POWERFUL_FIRE, interval=0.6)
-            return True
-        # 已知类型且在强力列表中则开启强力追击
-        self.ui_click(self.I_MD_DISABLE_POWERFUL_FIRE, self.I_MD_ENABLE_POWERFUL_FIRE, interval=0.6)
-        return True
+            click, stop = self.I_MD_ENABLE_POWERFUL_FIRE, self.I_MD_DISABLE_POWERFUL_FIRE
+        else:
+            click, stop = self.I_MD_DISABLE_POWERFUL_FIRE, self.I_MD_ENABLE_POWERFUL_FIRE
+        timer = Timer(15).start()
+        for _ in range(60):
+            if timer.reached():
+                break
+            self.screenshot()
+            if self._meta_battle_started():
+                return True
+            if self.appear(stop):
+                return True
+            if not self.appear(self.I_MD_FIRE):
+                time.sleep(0.25)
+                continue
+            self.appear_then_click(click, interval=0.6)
+            time.sleep(0.25)
+        raise GamePageUnknownError('强力追击状态未确认，停止等待')
 
     def check_and_switch_soul(self) -> bool:
         """切换御魂"""
+        if not self.conf.switch_soul.enable:
+            return True
         if self.State.switch_soul_done:
             return True
         logger.hr('Switch soul')
