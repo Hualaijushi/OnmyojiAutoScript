@@ -14,7 +14,7 @@ from module.click_sampler import ClickSampler
 from module.exception import (
     GameBugError, GameNotRunningError, GamePageUnknownError, GameStuckError,
     GameTooManyClickError, RequestHumanTakeover, ScriptError, TaskEnd,
-    OcrUnavailableError, ImageFrameExpiredError,
+    OcrUnavailableError, ImageFrameExpiredError, CourtyardStallRecoveryExhausted,
 )
 from module.logger import logger
 from module.multi_account.account import Account
@@ -946,6 +946,28 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             OcrUnavailableError, ImageFrameExpiredError,
         ))
 
+    def _verify_switch_courtyard(self, account: Account) -> bool:
+        """区分庭院页面未确认和已进入庭院但角色不匹配。"""
+        from tasks.GameUi.nonbattle_recovery import recover_nonbattle_courtyard
+        if self._verify_courtyard_character(account):
+            return True
+        from tasks.GameUi.page import page_main
+        self.screenshot()
+        if self.get_current_page() != page_main:
+            # 登录后弹窗可能遮住庭院；重新走导航关闭已识别页面，再核验账号。
+            logger.warning('切号后庭院未确认，尝试关闭遮挡页面并重新核验')
+            try:
+                if recover_nonbattle_courtyard(self, timeout=20) and self._verify_courtyard_character(account):
+                    return True
+            except (OcrUnavailableError, ImageFrameExpiredError, CourtyardStallRecoveryExhausted):
+                raise
+            except (GamePageUnknownError, GameStuckError, GameTooManyClickError, GameNotRunningError) as exc:
+                raise TeamStallError('switch courtyard page unconfirmed') from exc
+            self.screenshot()
+            if self.get_current_page() != page_main:
+                raise TeamStallError('switch courtyard page unconfirmed')
+        return False
+
     def _run_prebattle_session(self, config, sync, run_id, group, role, account, checkpoint_key):
         """切号和等待就绪时允许有限换代；进入嵌入式战斗流程后保留旧执行段隔离。"""
         deadline = time.monotonic() + config.sync_timeout_seconds
@@ -965,12 +987,12 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                     result = AccountSwitcher(
                         self.config, self.device, max_attempts=3, retry_delay=2,
                         timeout=max(.01, deadline-time.monotonic()),
-                        home_verifier=self._verify_courtyard_character, fast=True,
+                        home_verifier=self._verify_switch_courtyard, fast=True,
                     ).ensure_account(account)
                     # 队友可能在本端切号期间发起恢复，先响应整组暂停。
                     sync.assert_active(run_id, group)
                     if not result.success:
-                        if result.error_code == SwitchErrorCode.UNKNOWN:
+                        if result.error_code in (SwitchErrorCode.UNKNOWN, SwitchErrorCode.TIMEOUT):
                             state = sync.request_recovery(
                                 run_id, group, role,
                                 f"PREBATTLE: SWITCH_UNKNOWN: group {group} account switch failed",
@@ -991,6 +1013,16 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
                 return run_id, state
             except RecoveryRequested as exc:
                 self._recover_current_group(sync, run_id, group, role, account, exc.epoch)
+                verified = False
+                deadline = time.monotonic() + config.sync_timeout_seconds
+            except CourtyardStallRecoveryExhausted as exc:
+                if self._team_group_entered:
+                    raise
+                state = sync.request_recovery(
+                    run_id, group, role, f'PREBATTLE: SWITCH_UNKNOWN: {exc}',
+                    max_attempts=self.auto_recovery_attempts,
+                )
+                self._recover_current_group(sync, run_id, group, role, account, sync.recovery_epoch(state))
                 verified = False
                 deadline = time.monotonic() + config.sync_timeout_seconds
             except (OcrUnavailableError, ImageFrameExpiredError, ImageServiceUnavailable) as exc:

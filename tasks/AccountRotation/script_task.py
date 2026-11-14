@@ -27,7 +27,7 @@ class RotationAccountSwitcher(AccountSwitcher):
     def ensure_account(self, account, **kwargs):
         result = super().ensure_account(account, **kwargs)
         for attempt in range(1, 4):
-            if result.success or result.error_code != SwitchErrorCode.UNKNOWN:
+            if result.success or result.error_code not in (SwitchErrorCode.UNKNOWN, SwitchErrorCode.TIMEOUT):
                 break
             logger.warning("[AccountRotation] instance=%s account_id=%s 切号未知，重启游戏 %s/3",
                            account.instance, account.account_id, attempt)

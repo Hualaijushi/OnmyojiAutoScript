@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 
-from module.exception import OcrUnavailableError, ImageFrameExpiredError
+from module.exception import OcrUnavailableError, ImageFrameExpiredError, CourtyardStallRecoveryExhausted
 from module.atom.ocr import RuleOcr
 from module.logger import logger
 from module.multi_account.account import Account
@@ -45,7 +45,7 @@ class CourtyardCharacterVerifierMixin:
         if callable(goto_page):
             try:
                 arrived = goto_page(page_main)
-            except (OcrUnavailableError, ImageFrameExpiredError):
+            except (OcrUnavailableError, ImageFrameExpiredError, CourtyardStallRecoveryExhausted):
                 raise
             except Exception as exc:
                 logger.warning(
@@ -74,6 +74,8 @@ class CourtyardCharacterVerifierMixin:
             return False
         for attempt in range(1, self.character_verify_attempts + 1):
             try:
+                # 每次页面判断使用新画面，避免弹窗变化后反复识别旧帧。
+                self.screenshot()
                 if self.get_current_page() != page_main:
                     logger.warning(
                         "[Account] instance=%s account_id=%s courtyard verification page mismatch attempt=%s/%s",

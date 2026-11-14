@@ -228,6 +228,8 @@ class LoginService(
                 continue
             if self.appear_then_click(self.I_LOGIN_RED_CLOSE, interval=0.6):
                 logger.info('Close red close')
+                # 弹窗关闭后重新计时，不能沿用弹窗出现前的庭院确认时间。
+                confirm_timer.reset()
                 continue
             if self.appear_then_click(self.I_LOGIN_YELLOW_CLOSE, interval=0.6):
                 logger.info('Close yellow close')
@@ -242,9 +244,6 @@ class LoginService(
             from tasks.Component.GeneralInvite.assets import GeneralInviteAssets as gia
             if self.appear_then_click(gia.I_I_REJECT, interval=0.8):
                 logger.info("reject invites")
-                continue
-            if self.appear_then_click(self.I_LOGIN_LOGIN_ONMYOJI_GENIE):
-                logger.info("click onmyoji genie")
                 continue
             if not self.skip_specific_server and self.appear(self.I_LOGIN_SPECIFIC_SERVE, interval=0.6) \
                     and self.ocr_appear_click(self.O_LOGIN_SPECIFIC_SERVE, interval=0.6):

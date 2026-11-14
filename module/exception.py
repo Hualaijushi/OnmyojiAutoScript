@@ -53,6 +53,10 @@ class GamePageUnknownError(Exception):
     pass
 
 
+class CourtyardStallRecoveryExhausted(GamePageUnknownError):
+    """返回庭院连续无进展，额外兜底已用尽。"""
+
+
 class RequestHumanTakeover(Exception):
     # Request human takeover
     # Alas is unable to handle such error, probably because of wrong settings.

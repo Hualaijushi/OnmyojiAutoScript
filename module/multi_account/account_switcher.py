@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from module.exception import OcrUnavailableError, ImageFrameExpiredError
+from module.exception import (OcrUnavailableError, ImageFrameExpiredError,
+                              RequestHumanTakeover, CourtyardStallRecoveryExhausted)
 from module.logger import logger
 from module.multi_account.account import Account
 from tasks.Component.SwitchAccount.switch_account import SwitchAccount
@@ -157,7 +158,8 @@ class AccountSwitcher:
                     fast=use_fast,
                 )
                 if not bool(switch.switchAccount()):
-                    last_code, last_message = SwitchErrorCode.ROLE_MISMATCH, "account switch verification failed"
+                    # 切号流程未完成不代表角色不匹配，允许调用方处理页面卡住。
+                    last_code, last_message = SwitchErrorCode.UNKNOWN, "account switch did not complete"
                 elif not self.wait_until_home(account):
                     last_code, last_message = SwitchErrorCode.ROLE_MISMATCH, "post-switch verification mismatch"
                 else:
@@ -167,7 +169,10 @@ class AccountSwitcher:
                         elapsed_seconds=time.monotonic() - started,
                         detected_account_id=account.account_id,
                     )
-            except (OcrUnavailableError, ImageFrameExpiredError):
+            except CourtyardStallRecoveryExhausted as exc:
+                last_code, last_message = SwitchErrorCode.UNKNOWN, str(exc)
+                break
+            except (OcrUnavailableError, ImageFrameExpiredError, RequestHumanTakeover):
                 raise
             except Exception as exc:
                 last_code = self._classify(exc)

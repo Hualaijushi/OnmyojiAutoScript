@@ -20,7 +20,7 @@ from module.atom.list import RuleList
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
 from module.click_pipeline import FinalPoint, execute_single_click
-from module.exception import GamePageUnknownError, GameNotRunningError
+from module.exception import GamePageUnknownError, GameNotRunningError, CourtyardStallRecoveryExhausted
 from module.logger import logger
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.GameUi.action import ActionSequence, ConditionalAction
@@ -803,9 +803,15 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
         """
 
         destination = self.navigator.resolve_page(destination) or self.navigator.add_page(destination)
+        from tasks.GameUi.page import page_main
+        # 调用方显式使用短超时时保留原行为，不改动专用页面退出保护。
+        watch_courtyard = destination.key == page_main.key and timeout >= 20
         logger.hr(f"UI goto {destination}")
         start_time = time.time()
-        progress_timer = Timer(timeout).start()
+        progress_timer = Timer(max(timeout, 21) if watch_courtyard else timeout).start()
+        last_confirmed_key = None
+        last_confirmed_at = time.monotonic()
+        courtyard_fallback_rounds = 0
         last_progress_signature: tuple[str, str] | None = None
         last_detected_page_key: str | None = None
         repeated_failure_transition_key: str | None = None
@@ -820,6 +826,49 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
         while True:
             current = self._refresh_current_page(destination, skip_first_screenshot)
             skip_first_screenshot = False
+
+            if watch_courtyard:
+                if current == destination and courtyard_fallback_rounds:
+                    # 兜底后庭院底图可能仍被遮罩覆盖，不能仅凭底图判定成功。
+                    self.screenshot()
+                    if (self.appear(GlobalGameAssets.I_UI_BACK_RED)
+                            or self.appear(GameUiAssets.I_AD_CLOSE_RED)):
+                        current = None
+                now = time.monotonic()
+                if current is not None and current.key != last_confirmed_key:
+                    last_confirmed_key = current.key
+                    last_confirmed_at = now
+                    courtyard_fallback_rounds = 0
+                elif courtyard_fallback_rounds >= 2:
+                    from tasks.GameUi.nonbattle_recovery import is_protected_page_now
+                    if is_protected_page_now(self):
+                        # 排除状态继续原流程，额外兜底不点击也不触发重启。
+                        courtyard_fallback_rounds = 0
+                        last_confirmed_at = time.monotonic()
+                    else:
+                        # 保护状态检查使用了新画面，先重新识别实际页面再决定是否失败。
+                        fresh = self.get_current_page()
+                        if fresh == destination and (
+                                self.appear(GlobalGameAssets.I_UI_BACK_RED)
+                                or self.appear(GameUiAssets.I_AD_CLOSE_RED)):
+                            fresh = None
+                        if fresh is not None and (fresh == destination or fresh.key != last_confirmed_key):
+                            current = fresh
+                            last_confirmed_key = fresh.key
+                            last_confirmed_at = time.monotonic()
+                            courtyard_fallback_rounds = 0
+                        else:
+                            raise CourtyardStallRecoveryExhausted('返回庭院连续无进展，额外兜底已尝试两轮')
+                elif now - last_confirmed_at >= 20:
+                    from tasks.GameUi.nonbattle_recovery import try_unknown_closer_once
+                    result = try_unknown_closer_once(self)
+                    last_confirmed_at = time.monotonic()
+                    if result is not None:
+                        courtyard_fallback_rounds += 1
+                        logger.warning('返回庭院无进展，未知页额外兜底第 %s/2 轮，动作=%s',
+                                       courtyard_fallback_rounds, result)
+                        progress_timer.reset()
+                        continue
 
             if current is None:
                 if self.close_unknown_pages(skip_first_screenshot=False):
@@ -845,6 +894,13 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
                 reset_repeated_transition_failures()
 
             if current == destination:
+                if watch_courtyard:
+                    # 庭院入口钩子可能刚处理过遮罩，使用新画面确认关闭后再返回。
+                    self.screenshot()
+                    if (self.appear(GlobalGameAssets.I_UI_BACK_RED)
+                            or self.appear(GameUiAssets.I_AD_CLOSE_RED)):
+                        logger.warning('庭院仍有遮罩，继续等待页面稳定')
+                        continue
                 # current 来自 _refresh_current_page，其返回已是两帧稳定确认的结果，无需再次 confirm。
                 return self._finalize_arrival(destination, confirm_wait, start_time)
 
@@ -890,6 +946,10 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
                             reset_repeated_transition_failures()
                     break
                 progress_timer.reset()
+                if watch_courtyard and transition.destination.key != last_confirmed_key:
+                    last_confirmed_key = transition.destination.key
+                    last_confirmed_at = time.monotonic()
+                    courtyard_fallback_rounds = 0
                 last_detected_page_key = transition.destination.key
                 last_repeated_failure_close_result = None
                 reset_repeated_transition_failures()
