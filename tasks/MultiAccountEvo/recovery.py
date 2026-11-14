@@ -111,7 +111,9 @@ class GroupGameRestart(RestartTask):
         self.device.app_start()
         self.device.wait_app_start_ready()
         self._recovery_check()
-        login = LoginService(config=self.config, device=self.device)
+        login = LoginService(config=self.config, device=self.device,
+                             expected_account=getattr(self, 'expected_account', None),
+                             account_guard=self._recovery_check)
         screenshot = login.screenshot
 
         def checked_screenshot():

@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
+from module.exception import GameStuckError
+from module.logger import logger
 from tasks.MetaDemonRotation.engine import AccountDriver, AccountResult, run_account
-from tasks.MetaDemonRotation.progress import RotationProgress, account_identity
+from tasks.MetaDemonRotation.progress import RotationProgress, account_identity, score_needs_confirmation
 
 
 @dataclass(frozen=True)
@@ -18,7 +20,8 @@ class RotationResult:
 
 
 def run_rotation(accounts: Iterable, switcher, progress: RotationProgress,
-                 driver_factory: Callable, *, rental_team: int, battle_limit: int) -> list[RotationResult]:
+                 driver_factory: Callable, *, rental_team: int, battle_limit: int,
+                 recover_account: Callable | None = None) -> list[RotationResult]:
     """按既有账号顺序切号；不确定的战斗中断本轮以免在战斗中切号。"""
     results = []
     for account in accounts:
@@ -32,8 +35,12 @@ def run_rotation(accounts: Iterable, switcher, progress: RotationProgress,
             results.append(RotationResult(account.account_id, False, state['entered'],
                                           '上次战斗状态未确认，停止本轮'))
             break
+        if score_needs_confirmation(state):
+            results.append(RotationResult(account.account_id, False, state['entered'],
+                                          '积分领取未确认，需人工核实'))
+            break
         if state['entered'] >= battle_limit:
-            results.append(RotationResult(account.account_id, True, state['entered'], '今日已达目标'))
+            results.append(RotationResult(account.account_id, True, state['entered'], '本轮已达目标'))
             continue
         switched = switcher.ensure_account(account)
         if not switched.success:
@@ -41,9 +48,23 @@ def run_rotation(accounts: Iterable, switcher, progress: RotationProgress,
             results.append(RotationResult(account.account_id, False, state['entered'], '切号失败'))
             break
         try:
-            outcome: AccountResult = run_account(driver_factory(account), progress,
-                                                  account_id=account.account_id, identity=identity,
-                                                  rental_team=rental_team, battle_limit=battle_limit)
+            driver = driver_factory(account)
+            try:
+                outcome: AccountResult = run_account(driver, progress,
+                                                      account_id=account.account_id, identity=identity,
+                                                      rental_team=rental_team, battle_limit=battle_limit)
+            except GameStuckError:
+                state = progress.update(account.account_id, identity, 'read', target=battle_limit)
+                if state['phase'] != 'idle' or state['entered'] >= battle_limit or recover_account is None:
+                    raise
+                logger.warning('[超鬼王轮换] 账号=%s 卡住，尝试重启并重新核对', account.account_id)
+                if not recover_account(account):
+                    raise RuntimeError('重启后账号核对未通过')
+                retry_driver = driver_factory(account)
+                if hasattr(driver, 'rotation_started'):
+                    retry_driver.rotation_started = driver.rotation_started
+                outcome = run_account(retry_driver, progress, account_id=account.account_id,
+                                      identity=identity, rental_team=rental_team, battle_limit=battle_limit)
         except Exception as exc:
             state = progress.update(account.account_id, identity, 'read', target=battle_limit)
             if state['phase'] == 'idle':

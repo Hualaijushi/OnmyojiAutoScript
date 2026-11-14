@@ -31,7 +31,9 @@ class RotationAccountSwitcher(AccountSwitcher):
                 break
             logger.warning("[AccountRotation] instance=%s account_id=%s 切号未知，重启游戏 %s/3",
                            account.instance, account.account_id, attempt)
-            RestartTask(self.config, self.device).app_restart()
+            restart = RestartTask(self.config, self.device)
+            restart.expected_account = account
+            restart.app_restart()
             result = super().ensure_account(account, **kwargs)
         return result
 

@@ -217,8 +217,10 @@ class NeteaseAccountUi:
                 break
         return False
 
-    def click_login(self) -> bool:
+    def click_login(self, expected_account: str | None = None) -> bool:
         root = self.dump()
+        if expected_account is not None and not self.account_matches(self.current_account(root), expected_account):
+            return False
         buttons = [
             node for node in self._nodes(root, self.LOGIN_BUTTON_ID)
             if node.attrib.get("class") == "android.widget.Button"

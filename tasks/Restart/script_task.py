@@ -41,7 +41,19 @@ class ScriptTask(BaseTask):
         logger.hr('App start')
         self.device.app_start()
         self.device.wait_app_start_ready()
-        LoginService(config=self.config, device=self.device).app_handle_login()
+        LoginService(config=self.config, device=self.device,
+                     expected_account=getattr(self, 'expected_account', None),
+                     guard_unknown_account=self._rotation_recovery_pending()).app_handle_login()
+
+    def _rotation_recovery_pending(self):
+        """通用重启未携带目标时，仅保护正在运行或即将运行的轮换任务。"""
+        names = {'accountrotation', 'multiaccountevo', 'metademonrotation'}
+        running = str(getattr(self.config.model, 'running_task', '') or '').casefold()
+        if running:
+            return running in names
+        pending = getattr(self.config, 'pending_task', None)
+        first = pending[0] if pending else None
+        return str(getattr(first, 'command', '') or '').casefold() in names
 
     def app_restart(self):
         logger.hr('App restart')

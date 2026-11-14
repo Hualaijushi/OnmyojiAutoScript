@@ -103,6 +103,8 @@ class MetaDemonAssets:
 	I_MD_IFNOTION_YES = RuleImage(roi_front=(561,366,44,45), roi_back=(546,364,182,53), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_ifnotion_yes.png")
 	# 超鬼王租借队伍不再提示确认 
 	I_MD_SURE_PORMPT = RuleImage(roi_front=(665,439,173,55), roi_back=(665,439,173,55), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_sure_pormpt.png")
+	# 超鬼王积分宝箱
+	I_MD_SCORE_BOX = RuleImage(roi_front=(1205,303,34,27), roi_back=(1178,280,89,80), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_score_box.png")
 
 
 	# Ocr Rule Assets

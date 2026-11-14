@@ -84,6 +84,7 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
             device=self.device,
             skip_specific_server=self.fast,
             fast_login=self.fast,
+            expected_account=self.to_account_info if self.fast else None,
         )
         login_handler.set_specific_usr(self.to_account_info.svr)
         login_handler.app_handle_login()

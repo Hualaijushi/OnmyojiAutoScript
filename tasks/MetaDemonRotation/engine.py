@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Literal, Protocol
 
-from tasks.MetaDemonRotation.progress import RotationProgress, RotationProgressError
+from tasks.MetaDemonRotation.progress import RotationProgress, RotationProgressError, score_needs_confirmation
 
 
 Availability = Literal['ready', 'unavailable', 'unknown']
@@ -19,6 +19,7 @@ class AccountDriver(Protocol):
     def fatigue_status(self) -> Availability: ...
     def prepare_current_or_four_star(self) -> BossState: ...
     def challenge(self, on_entered: Callable[[], None]) -> bool | Literal['fatigue', 'popup_unknown']: ...
+    def claim_score(self) -> Literal['claimed', 'empty', 'unknown']: ...
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,8 @@ def run_account(driver: AccountDriver, progress: RotationProgress, *, account_id
     state = update('read')
     if state['phase'] != 'idle':
         return AccountResult(False, state['entered'], '上次战斗状态未确认，需人工核实')
+    if score_needs_confirmation(state):
+        return AccountResult(False, state['entered'], '积分领取未确认，需人工核实')
     if state['entered'] >= battle_limit:
         return AccountResult(True, state['entered'], '已达目标')
 
@@ -83,4 +86,9 @@ def run_account(driver: AccountDriver, progress: RotationProgress, *, account_id
             return AccountResult(False, state['entered'], '战斗未确认结束，需人工核实')
         state = update('finished')
         if state['entered'] >= battle_limit:
-            return AccountResult(True, state['entered'], '已达目标')
+            claim = driver.claim_score()
+            if claim not in {'claimed', 'empty'}:
+                return stop('积分领取未确认')
+            reason = '积分已领取' if claim == 'claimed' else '无可领取积分'
+            state = update('score_result', reason)
+            return AccountResult(True, state['entered'], '已达目标，' + reason)

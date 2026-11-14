@@ -10,6 +10,7 @@ from module.logger import logger
 from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.chess_battle import ChessBattleNavigationMixin
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
+from tasks.Component.Login.saved_account_popup import SavedAccountPopup
 from tasks.Restart.assets import RestartAssets
 from tasks.base_task import BaseTask
 
@@ -44,10 +45,13 @@ class LoginService(
 ):
     character: str
 
-    def __init__(self, *wargs, skip_specific_server: bool = False, fast_login: bool = False, **kwargs):
+    def __init__(self, *wargs, skip_specific_server: bool = False, fast_login: bool = False,
+                 expected_account=None, account_guard=None, guard_unknown_account=False, **kwargs):
         super().__init__(*wargs, **kwargs)
         self.skip_specific_server = skip_specific_server
         self.fast_login = fast_login or self._recovery_should_use_fast_login()
+        self._saved_account_popup = (SavedAccountPopup(self, expected_account, account_guard)
+                                     if expected_account is not None or guard_unknown_account else None)
         self._enter_game_attempts = 0
         self._login_method_page_handled = False
         self.character = self.config.restart.login_character_config.character
@@ -174,6 +178,9 @@ class LoginService(
                 orientation_timer.reset()
 
             self.screenshot()
+            popup = getattr(self, '_saved_account_popup', None)
+            if popup is not None and popup.step():
+                continue
             if self.appear_then_click(
                 self.I_RETURN_CHESS_CANCEL,
                 interval=0.8,

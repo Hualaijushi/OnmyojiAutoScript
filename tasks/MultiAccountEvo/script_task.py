@@ -1181,7 +1181,9 @@ class ScriptTask(EvoZoneScriptTask, CourtyardCharacterVerifierMixin):
             )
             check()
             logger.warning("MultiAccountEvo recovery: group=%s epoch=%s role=%s restart game", group, epoch, role)
-            GroupGameRestart(self.config, self.device, check).app_restart()
+            restart = GroupGameRestart(self.config, self.device, check)
+            restart.expected_account = account
+            restart.app_restart()
             check()
             if not prebattle_switch and not self._verify_courtyard_character(account):
                 raise ScriptError("character verification failed after automatic game restart")

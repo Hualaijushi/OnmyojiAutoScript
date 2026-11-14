@@ -5,12 +5,16 @@ from datetime import datetime
 
 from module.exception import RequestHumanTakeover, TaskEnd
 from module.logger import logger
+from module.multi_account.account_switcher import AccountSwitcher
+from module.multi_account.courtyard_verifier import CourtyardCharacterVerifierMixin
 from tasks.AccountRotation.script_task import RotationAccountSwitcher
 from tasks.base_task import BaseTask
+from tasks.GameUi.navigator import GameUi
 from tasks.MetaDemonRotation.accounts import accounts_for_range
 from tasks.MetaDemonRotation.driver import RotationDriver
 from tasks.MetaDemonRotation.progress import RotationProgress
 from tasks.MetaDemonRotation.rotation import run_rotation
+from tasks.Restart.script_task import ScriptTask as RestartTask
 
 
 def fatigue_retry_only(results, total: int) -> bool:
@@ -19,8 +23,21 @@ def fatigue_retry_only(results, total: int) -> bool:
     return len(results) == total and bool(unfinished) and all(item.reason == '疲劳不足' for item in unfinished)
 
 
+class _RecoveryVerifier(GameUi, CourtyardCharacterVerifierMixin):
+    """使用现有庭院导航与角色核对，不能依赖切号器缓存。"""
+
+
 class ScriptTask(BaseTask):
     task_name = 'MetaDemonRotation'
+
+    def _recover_account(self, account):
+        restart = RestartTask(self.config, self.device)
+        restart.expected_account = account
+        restart.app_restart()
+        verifier = _RecoveryVerifier(self.config, self.device)
+        switcher = AccountSwitcher(self.config, self.device, max_attempts=1, fast=True,
+                                   home_verifier=verifier._verify_courtyard_character)
+        return switcher.ensure_account(account).success
 
     def run(self):
         settings = self.config.account_rotation.account_rotation_config
@@ -34,10 +51,12 @@ class ScriptTask(BaseTask):
             retry_delay=settings.retry_delay_seconds, timeout=settings.switch_timeout_seconds,
             fast=True, home_verifier=None,
         )
-        progress = RotationProgress(Path.cwd() / 'config', self.config.config_name)
+        progress = RotationProgress(Path.cwd() / 'config', self.config.config_name,
+                                    reset_generation=conf.reset_generation)
         results = run_rotation(accounts, switcher, progress,
                                lambda account: RotationDriver(self.config, self.device),
-                               rental_team=conf.rental_team, battle_limit=conf.battle_limit)
+                               rental_team=conf.rental_team, battle_limit=conf.battle_limit,
+                               recover_account=self._recover_account)
         for item in results:
             logger.info('[超鬼王轮换] 账号=%s 场次=%s/%s 结果=%s',
                         item.account_id, item.entered if item.entered is not None else '未确认',

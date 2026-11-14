@@ -11,6 +11,7 @@ class RotationSettings(ConfigBase):
     account_end: int = Field(default=18, validate_default=True, json_schema_extra={'minimum': 1, 'maximum': 20}, description='本实例结束处理的账号序号（含）')
     rental_team: int = Field(default=1, ge=1, le=3, description='租借队伍列表中可见的前一至三队')
     battle_limit: int = Field(default=40, ge=1, description='每个账号的挑战场数上限')
+    reset_generation: int = Field(default=0, ge=0, title='进度重置批次', description='需要重置本实例进度时，停止任务并将数字加一；下次运行会先备份原进度，再开始新一轮。')
 
     @field_validator('account_start')
     @classmethod

@@ -211,6 +211,7 @@ class RotationProgressTest(TestCase):
         self.update('begin', target=1)
         self.update('entered', target=1)
         self.update('finished', target=1)
+        self.store.update('A01', self.identity, 'score_result', target=1, reason='积分已领取')
         before = self.store.path.read_bytes()
         switcher = Mock()
         result = run_rotation([account], switcher, self.store, lambda _: Mock(),
@@ -242,7 +243,8 @@ class RotationProgressTest(TestCase):
     def test_target_completion_and_identity_mismatch_are_preserved(self):
         self.update('begin', target=1)
         self.update('entered', target=1)
-        self.assertEqual('completed', self.update('finished', target=1)['status'])
+        self.assertTrue(self.update('finished', target=1)['score_pending'])
+        self.store.update('A01', self.identity, 'score_result', target=1, reason='积分已领取')
         before = self.store.path.read_bytes()
         with self.assertRaises(RotationProgressError):
             self.update('begin', target=1)
@@ -256,12 +258,14 @@ class RotationProgressTest(TestCase):
         driver.fatigue_status.return_value = 'ready'
         driver.prepare_current_or_four_star.side_effect = ['current', 'current', 'four_ready']
         driver.challenge.side_effect = lambda entered: (entered(), True)[1]
+        driver.claim_score.return_value = 'claimed'
         result = run_account(driver, self.store, account_id='A01', identity=self.identity,
                              rental_team=1, battle_limit=3)
         self.assertTrue(result.completed)
         self.assertEqual(3, result.entered)
         self.assertEqual(3, driver.challenge.call_count)
         driver.deploy_rental.assert_called_once_with(1)
+        driver.claim_score.assert_called_once_with()
 
     def test_unavailable_rental_skips_without_battle(self):
         driver = Mock()
@@ -357,13 +361,14 @@ class RotationProgressTest(TestCase):
         self.update('begin', target=1)
         self.update('entered', target=1)
         self.update('finished', target=1)
+        self.store.update('A01', self.identity, 'score_result', target=1, reason='积分已领取')
         switcher = Mock()
         switcher.ensure_account.return_value.success = True
         driver = Mock()
         driver.deploy_rental.return_value = 'unavailable'
         results = run_rotation([first, second], switcher, self.store, lambda _: driver,
                                rental_team=1, battle_limit=1)
-        self.assertEqual([(True, '今日已达目标'), (False, '租借队伍不可用')],
+        self.assertEqual([(True, '本轮已达目标'), (False, '租借队伍不可用')],
                          [(item.completed, item.reason) for item in results])
         switcher.ensure_account.assert_called_once_with(second)
 

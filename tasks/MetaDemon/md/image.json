@@ -385,5 +385,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "超鬼王租借队伍不再提示确认"
+  },
+  {
+    "itemName": "md_score_box",
+    "imageName": "md_md_score_box.png",
+    "roiFront": "1205,303,34,27",
+    "roiBack": "1178,280,89,80",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "超鬼王积分宝箱"
   }
 ]

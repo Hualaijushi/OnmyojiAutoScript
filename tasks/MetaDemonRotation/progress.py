@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import shutil
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -16,6 +18,17 @@ class RotationProgressError(RuntimeError):
     """进度不可信时停止该账号，保留记录。"""
 
 
+def score_needs_confirmation(item: dict) -> bool:
+    """保留已知待确认状态，并识别旧版领取失败记录。"""
+    if item.get('score_pending', False) or item.get('reason') == '积分领取未确认':
+        return True
+    previous_target = item.get('target')
+    return (item.get('status') == 'incomplete'
+            and str(item.get('reason', '')).startswith('执行失败：')
+            and type(previous_target) is int and previous_target > 0
+            and item.get('entered', -1) >= previous_target)
+
+
 def account_identity(instance: str, position: int, login: str, server: str, character: str) -> str:
     """用摘要绑定账号身份，避免记录明文登录凭据。"""
     values = [instance.lower(), int(position), login.strip().casefold(), server.strip(), character.strip()]
@@ -23,29 +36,67 @@ def account_identity(instance: str, position: int, login: str, server: str, char
 
 
 class RotationProgress:
-    """按实例和日期分文件，写入前使用进程锁与原子替换。"""
+    """按实例跨天保存进度，写入前使用进程锁与原子替换。"""
 
-    def __init__(self, directory: Path, instance: str, *, day: str | None = None):
+    def __init__(self, directory: Path, instance: str, *, day: str | None = None, reset_generation: int = 0):
         instance = instance.lower()
         if instance not in {'oas3', 'oas4', 'oas5'}:
             raise RotationProgressError('仅支持已配置的 oas3、oas4、oas5 实例')
         self.day = date.fromisoformat(day).isoformat() if day else date.today().isoformat()
         self.directory = Path(directory)
-        self.path = self.directory / f'.meta_demon_rotation_{instance}_{self.day}.json'
+        if type(reset_generation) is not int or reset_generation < 0:
+            raise RotationProgressError('进度重置批次无效')
+        self.reset_generation = reset_generation
+        self.path = self.directory / f'.meta_demon_rotation_{instance}_continuing.json'
         self.lock_path = self.directory / f'.meta_demon_rotation_{instance}.lock'
         self.instance = instance
 
     def _load(self) -> dict:
         if not self.path.exists():
-            return {'date': self.day, 'instance': self.instance, 'accounts': {}}
+            return {'instance': self.instance, 'generation': self.reset_generation,
+                    'legacy_import': self.reset_generation == 0, 'accounts': {}}
         try:
             state = json.loads(self.path.read_text(encoding='utf-8'))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise RotationProgressError('账号轮换进度无法读取，保留原文件') from exc
-        if (not isinstance(state, dict) or state.get('date') != self.day
-                or state.get('instance') != self.instance or not isinstance(state.get('accounts'), dict)):
+        if (not isinstance(state, dict) or state.get('instance') != self.instance
+                or type(state.get('generation')) is not int or state['generation'] < 0
+                or type(state.get('legacy_import')) is not bool or not isinstance(state.get('accounts'), dict)):
             raise RotationProgressError('账号轮换进度格式不匹配，保留原文件')
+        if self.reset_generation < state['generation']:
+            raise RotationProgressError('进度重置批次小于已有批次，请检查实例配置')
+        if state['generation'] != self.reset_generation:
+            backup = self.path.with_name(f'{self.path.name}.backup-{uuid.uuid4().hex}')
+            with self.path.open('rb') as source, backup.open('xb') as destination:
+                shutil.copyfileobj(source, destination)
+                destination.flush()
+                os.fsync(destination.fileno())
+            state = {'instance': self.instance, 'generation': self.reset_generation,
+                     'legacy_import': False, 'accounts': {}}
+            self._save(state)
         return state
+
+    def _legacy_account(self, account_id: str, identity: str):
+        """按日期倒序找身份匹配的最近旧记录，不合并不同日期。"""
+        pattern = re.compile(rf'^\.meta_demon_rotation_{re.escape(self.instance)}_(\d{{4}}-\d{{2}}-\d{{2}})\.json$')
+        paths = sorted((p for p in self.directory.iterdir() if pattern.fullmatch(p.name)),
+                       key=lambda p: p.name, reverse=True)
+        for path in paths:
+            match = pattern.fullmatch(path.name)
+            try:
+                old = json.loads(path.read_text(encoding='utf-8'))
+                date.fromisoformat(match.group(1))
+            except (ValueError, OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise RotationProgressError('旧轮换进度无法读取，保留原文件') from exc
+            if (not isinstance(old, dict) or old.get('date') != match.group(1)
+                    or old.get('instance') != self.instance or not isinstance(old.get('accounts'), dict)):
+                raise RotationProgressError('旧轮换进度格式不匹配，保留原文件')
+            item = old['accounts'].get(account_id)
+            if item is not None and not isinstance(item, dict):
+                raise RotationProgressError('旧账号进度格式无效，保留原文件')
+            if item and item.get('identity') == identity:
+                return dict(item)
+        return None
 
     def _save(self, state: dict) -> None:
         temporary = self.directory / f'.{self.path.name}.{uuid.uuid4().hex}.tmp'
@@ -62,8 +113,10 @@ class RotationProgress:
             state = self._load()
             accounts = state['accounts']
             item = accounts.get(account_id)
+            is_new = item is None
             if item is None:
-                item = {'identity': identity, 'entered': 0, 'phase': 'idle', 'status': 'pending', 'reason': ''}
+                item = self._legacy_account(account_id, identity) if state['legacy_import'] else None
+                item = item or {'identity': identity, 'entered': 0, 'phase': 'idle', 'status': 'pending', 'reason': ''}
                 accounts[account_id] = item
             if item.get('identity') != identity:
                 raise RotationProgressError('账号身份与既有进度不一致，停止该账号')
@@ -71,6 +124,10 @@ class RotationProgress:
             phase = item.get('phase')
             if type(count) is not int or count < 0 or phase not in {'idle', 'pending', 'entered'}:
                 raise RotationProgressError('账号战斗进度格式无效，保留原文件')
+            if 'score_pending' in item and type(item['score_pending']) is not bool:
+                raise RotationProgressError('账号积分进度格式无效，保留原文件')
+            if is_new:
+                self._save(state)
             if action == 'read':
                 return dict(item)
             if action == 'begin':
@@ -84,11 +141,17 @@ class RotationProgress:
             elif action == 'finished':
                 if phase != 'entered':
                     raise RotationProgressError('战斗是否已开始无法确认')
-                item.update(phase='idle', status='completed' if count >= target else 'pending')
+                item.update(phase='idle', status='running' if count >= target else 'pending')
+                if count >= target:
+                    item['score_pending'] = True
             elif action == 'not_entered':
                 if phase != 'pending':
                     raise RotationProgressError('不存在待确认的战斗')
                 item.update(phase='idle', status='pending')
+            elif action == 'score_result':
+                if phase != 'idle' or count < target or reason not in {'积分已领取', '无可领取积分'}:
+                    raise RotationProgressError('积分结果与已完成场次不匹配')
+                item.update(status='completed', reason=reason, score_pending=False)
             elif action == 'stop':
                 if phase != 'idle':
                     raise RotationProgressError('存在未结束战斗，需先核实')

@@ -10,6 +10,7 @@ from tasks.MetaDemon.script_task import ScriptTask as MetaDemonTask
 from tasks.MetaDemon import page as pages
 from tasks.MetaDemonRotation.rental import deploy_rental
 from tasks.MetaDemonRotation.rental_prompt import handle_rental_prompt
+from tasks.MetaDemonRotation.score_claim import claim_score
 
 
 class RotationDriver(MetaDemonTask):
@@ -20,8 +21,12 @@ class RotationDriver(MetaDemonTask):
         self.State = SimpleNamespace(done=False, switch_soul_done=False, synthesis_done=False)
         self.cur_boss_type = None
 
+    def claim_score(self) -> str:
+        return claim_score(self)
+
     def deploy_rental(self, sequence: int) -> str:
-        self.rotation_started = time.monotonic()
+        if not hasattr(self, 'rotation_started'):
+            self.rotation_started = time.monotonic()
         self.before_run()
         # 仅修改当前驱动的内存副本，不写超鬼王配置或其他账号设置。
         self.conf = self.conf.model_copy(deep=True)
