@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from module.exception import GameStuckError
 from module.logger import logger
 from tasks.MetaDemonRotation.engine import AccountDriver, AccountResult, run_account
-from tasks.MetaDemonRotation.progress import RotationProgress, account_identity, score_needs_confirmation
+from tasks.MetaDemonRotation.progress import RotationProgress, account_identity
 
 
 @dataclass(frozen=True)
@@ -34,10 +34,6 @@ def run_rotation(accounts: Iterable, switcher, progress: RotationProgress,
         if state['phase'] != 'idle':
             results.append(RotationResult(account.account_id, False, state['entered'],
                                           '上次战斗状态未确认，停止本轮'))
-            break
-        if score_needs_confirmation(state):
-            results.append(RotationResult(account.account_id, False, state['entered'],
-                                          '积分领取未确认，需人工核实'))
             break
         if state['entered'] >= battle_limit:
             results.append(RotationResult(account.account_id, True, state['entered'], '本轮已达目标'))

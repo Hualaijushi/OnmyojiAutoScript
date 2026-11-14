@@ -26,6 +26,7 @@ class SavedAccountPopupTest(TestCase):
         self.visible = {A.I_SA_NETEASE_GAME_LOGO, A.I_SA_ACCOUNT_LOGIN_BTN}
         self.task.appear.side_effect = lambda rule: rule in self.visible
         self.ui = Mock()
+        self.ui.ACCOUNT_TEXT_IDS = ('account',)
         self.ui.account_matches.side_effect = lambda actual, expected: actual == expected
         self.ui.current_account.return_value = self.target.account
         self.ui.click_login.return_value = True
@@ -43,9 +44,13 @@ class SavedAccountPopupTest(TestCase):
         ui.ACCOUNT_LIST_ID = 'list'
         ui.ACCOUNT_TEXT_IDS = ('account',)
         ui._nodes.side_effect = lambda root, name: [object()] if name == 'account' else []
-        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=ui):
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=ui), patch(
+            'tasks.Component.Login.saved_account_popup.time.monotonic', side_effect=[0, 6]
+        ), patch('tasks.Component.Login.saved_account_popup.time.sleep'):
+            handler = SavedAccountPopup(self.task, self.target)
+            self.assertTrue(handler.step())
             with self.assertRaises(RequestHumanTakeover):
-                SavedAccountPopup(self.task, self.target).step()
+                handler.step()
         ui.click_login.assert_not_called()
 
     def test_partial_image_other_page_keeps_normal_flow(self):
@@ -97,12 +102,112 @@ class SavedAccountPopupTest(TestCase):
                 ui.click_login.return_value = False
                 if mode == 'unreadable':
                     ui.current_account.side_effect = AccountUiUnavailable('sensitive internal detail')
-                with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=ui):
-                    with self.assertRaises(RequestHumanTakeover) as caught:
-                        SavedAccountPopup(self.task, self.target).step()
+                with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=ui), patch(
+                    'tasks.Component.Login.saved_account_popup.time.monotonic', side_effect=[0, 6]
+                ), patch('tasks.Component.Login.saved_account_popup.time.sleep'):
+                    handler = SavedAccountPopup(self.task, self.target)
+                    if mode == 'changed':
+                        with self.assertRaises(RequestHumanTakeover) as caught:
+                            handler.step()
+                    else:
+                        self.assertTrue(handler.step())
+                        with self.assertRaises(RequestHumanTakeover) as caught:
+                            handler.step()
                 self.assertNotIn('sensitive', str(caught.exception))
                 if mode != 'changed':
                     ui.click_login.assert_not_called()
+
+    def test_transient_popup_without_native_controls_yields_to_normal_login(self):
+        self.ui.current_account.return_value = None
+        self.ui._nodes.return_value = []
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui), patch(
+            'tasks.Component.Login.saved_account_popup.time.sleep'
+        ):
+            handler = SavedAccountPopup(self.task, self.target)
+            self.assertTrue(handler.step())
+            self.visible = {A.I_CHECK_LOGIN_FORM}
+            self.assertFalse(handler.step())
+        self.ui.select_account.assert_not_called()
+        self.ui.click_login.assert_not_called()
+
+    def test_sustained_unreadable_popup_stops_without_login(self):
+        self.ui.current_account.return_value = None
+        self.ui._nodes.return_value = []
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui), patch(
+            'tasks.Component.Login.saved_account_popup.time.monotonic', side_effect=[0, 6]
+        ), patch('tasks.Component.Login.saved_account_popup.time.sleep'):
+            handler = SavedAccountPopup(self.task, self.target)
+            self.assertTrue(handler.step())
+            with self.assertRaises(RequestHumanTakeover):
+                handler.step()
+        self.ui.select_account.assert_not_called()
+        self.ui.click_login.assert_not_called()
+
+    def test_open_native_account_list_still_selects_target(self):
+        self.ui.current_account.return_value = None
+        self.ui._nodes.return_value = [object()]
+        self.ui.select_account.return_value = True
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui):
+            self.assertTrue(SavedAccountPopup(self.task, self.target).step())
+        self.ui.select_account.assert_called_once_with(self.target.account)
+        self.ui.click_login.assert_called_once_with(expected_account=self.target.account)
+
+    def test_missing_normal_page_after_transition_stays_paused(self):
+        self.ui.current_account.return_value = None
+        self.ui._nodes.return_value = []
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui), patch(
+            'tasks.Component.Login.saved_account_popup.time.monotonic', side_effect=[0, 6]
+        ), patch('tasks.Component.Login.saved_account_popup.time.sleep'):
+            handler = SavedAccountPopup(self.task, self.target)
+            self.assertTrue(handler.step())
+            self.visible.clear()
+            with self.assertRaises(RequestHumanTakeover):
+                handler.step()
+
+    def test_normal_page_marker_never_bypasses_native_dialog(self):
+        self.ui.current_account.return_value = None
+        self.ui._nodes.return_value = []
+        self.ui.ACCOUNT_TEXT_IDS = ('account',)
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui), patch(
+            'tasks.Component.Login.saved_account_popup.time.monotonic', side_effect=[0, 6]
+        ), patch('tasks.Component.Login.saved_account_popup.time.sleep'):
+            handler = SavedAccountPopup(self.task, self.target)
+            self.assertTrue(handler.step())
+            self.visible = {A.I_CHECK_LOGIN_FORM}
+            self.ui._nodes.return_value = [object()]
+            with self.assertRaises(RequestHumanTakeover):
+                handler.step()
+        self.ui.click_login.assert_not_called()
+
+    def test_login_loop_after_transient_reaches_original_enter_game(self):
+        task = Mock()
+        task.device = Mock()
+        task.skip_specific_server = True
+        task.appear_then_click.return_value = False
+        task.chess_result_flow_visible.return_value = False
+        frame = {'number': 0}
+        def screenshot():
+            frame['number'] += 1
+        task.screenshot.side_effect = screenshot
+        def appear(rule, **kwargs):
+            if frame['number'] == 1:
+                return rule in (A.I_SA_NETEASE_GAME_LOGO, A.I_SA_ACCOUNT_LOGIN_BTN)
+            if frame['number'] == 2:
+                return rule is A.I_CHECK_LOGIN_FORM or rule is task.I_LOGIN_8
+            return rule is task.I_CHECK_CHESS
+        task.appear.side_effect = appear
+        task._try_click_enter_game.return_value = True
+        task._saved_account_popup = SavedAccountPopup(task, self.target)
+        self.ui.current_account.return_value = None
+        self.ui._nodes.return_value = []
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui), patch(
+            'tasks.Component.Login.saved_account_popup.time.sleep'
+        ):
+            self.assertTrue(LoginService._app_handle_login(task))
+        self.assertEqual(3, task.screenshot.call_count)
+        task._try_click_enter_game.assert_called_once_with()
+        self.ui.select_account.assert_not_called()
+        self.ui.click_login.assert_not_called()
 
     def test_unknown_target_stops_before_native_login(self):
         with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi') as make_ui:

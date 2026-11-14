@@ -9,6 +9,9 @@ from tasks.Component.SwitchAccount.login_account import LoginAccount
 from tasks.Component.SwitchAccount.netease_account_ui import AccountUiUnavailable, NeteaseAccountUi
 
 
+POPUP_SETTLE_TIMEOUT = 5.0
+
+
 class _CheckedAccountUi(NeteaseAccountUi):
     """复用原生账号选择，并在每次读写前后响应组队恢复检查。"""
 
@@ -64,6 +67,18 @@ class SavedAccountPopup:
         self.expected_account = expected_account
         self.check = check or (lambda: None)
         self.submitted_at = None
+        self.uncertain_since = None
+        self.selection_attempted = False
+
+    def _wait_for_page(self):
+        """等待外层登录循环获取新画面，超过期限交由人工核实。"""
+        now = time.monotonic()
+        if self.uncertain_since is None:
+            self.uncertain_since = now
+        elif now - self.uncertain_since >= POPUP_SETTLE_TIMEOUT:
+            raise RequestHumanTakeover('保存账号弹窗状态持续未确认')
+        time.sleep(.3)
+        return True
 
     def _popup_visible(self):
         logo = self.task.appear(SwitchAccountAssets.I_SA_NETEASE_GAME_LOGO)
@@ -78,9 +93,9 @@ class SavedAccountPopup:
             root = ui.dump()
             ids = (ui.ACCOUNT_ITEM_ID, ui.ACCOUNT_LIST_ID, *ui.ACCOUNT_TEXT_IDS)
             if any(ui._nodes(root, resource_id) for resource_id in ids):
-                raise RequestHumanTakeover('保存账号弹窗图像识别不完整')
-        except AccountUiUnavailable as exc:
-            raise RequestHumanTakeover('登录页面图像识别不完整且原生界面不可用') from exc
+                return None
+        except AccountUiUnavailable:
+            return None
         return False
 
     def step(self):
@@ -94,7 +109,10 @@ class SavedAccountPopup:
                     raise RequestHumanTakeover('保存账号弹窗后的登录平台未确认')
                 self.submitted_at = None
                 return True
-            if self._popup_visible():
+            visible = self._popup_visible()
+            if visible is None:
+                return self._wait_for_page()
+            if visible:
                 if elapsed >= 20:
                     raise RequestHumanTakeover('保存账号弹窗提交后未关闭')
                 time.sleep(.3)
@@ -105,8 +123,26 @@ class SavedAccountPopup:
             self.submitted_at = None
             return False
 
-        if not self._popup_visible():
-            return False
+        visible = self._popup_visible()
+        if visible is None:
+            return self._wait_for_page()
+        if not visible:
+            if self.uncertain_since is None:
+                return False
+            ui = _CheckedAccountUi(self.task.device, self.check)
+            try:
+                root = ui.dump()
+                ids = (ui.ACCOUNT_ITEM_ID, ui.ACCOUNT_LIST_ID, ui.LOGIN_BUTTON_ID, *ui.ACCOUNT_TEXT_IDS)
+                if any(ui._nodes(root, resource_id) for resource_id in ids):
+                    return self._wait_for_page()
+            except AccountUiUnavailable:
+                return self._wait_for_page()
+            if (self.task.appear(SwitchAccountAssets.I_CHECK_LOGIN_FORM)
+                    or self.task.appear(self.task.I_MAIN_GOTO_SHIKIGAMI_RECORDS)):
+                self.uncertain_since = None
+                self.selection_attempted = False
+                return False
+            return self._wait_for_page()
         expected = (getattr(self.expected_account, 'login_account', None)
                     or getattr(self.expected_account, 'account', None))
         if not isinstance(expected, str) or not expected.strip():
@@ -114,14 +150,23 @@ class SavedAccountPopup:
         ui = _CheckedAccountUi(self.task.device, self.check)
         try:
             current = ui.current_account()
+            if not current:
+                root = ui.dump()
+                if not ui._nodes(root, ui.ACCOUNT_LIST_ID):
+                    return self._wait_for_page()
             if not ui.account_matches(current, expected):
+                if self.selection_attempted:
+                    return self._wait_for_page()
+                self.selection_attempted = True
                 if not ui.select_account(expected):
-                    raise RequestHumanTakeover('保存账号弹窗无法选择目标账号')
+                    return self._wait_for_page()
             # 按钮点击使用同一原生快照再次核验账号，避免选择结果变化。
             if not ui.click_login(expected_account=expected):
                 raise RequestHumanTakeover('保存账号弹窗目标账号或登录按钮未确认')
-        except AccountUiUnavailable as exc:
-            raise RequestHumanTakeover('保存账号弹窗原生账号信息不可用') from exc
+        except AccountUiUnavailable:
+            return self._wait_for_page()
         logger.info('已核验目标账号并提交保存账号登录')
+        self.uncertain_since = None
+        self.selection_attempted = False
         self.submitted_at = time.monotonic()
         return True

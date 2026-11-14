@@ -18,17 +18,6 @@ class RotationProgressError(RuntimeError):
     """进度不可信时停止该账号，保留记录。"""
 
 
-def score_needs_confirmation(item: dict) -> bool:
-    """保留已知待确认状态，并识别旧版领取失败记录。"""
-    if item.get('score_pending', False) or item.get('reason') == '积分领取未确认':
-        return True
-    previous_target = item.get('target')
-    return (item.get('status') == 'incomplete'
-            and str(item.get('reason', '')).startswith('执行失败：')
-            and type(previous_target) is int and previous_target > 0
-            and item.get('entered', -1) >= previous_target)
-
-
 def account_identity(instance: str, position: int, login: str, server: str, character: str) -> str:
     """用摘要绑定账号身份，避免记录明文登录凭据。"""
     values = [instance.lower(), int(position), login.strip().casefold(), server.strip(), character.strip()]
@@ -124,8 +113,6 @@ class RotationProgress:
             phase = item.get('phase')
             if type(count) is not int or count < 0 or phase not in {'idle', 'pending', 'entered'}:
                 raise RotationProgressError('账号战斗进度格式无效，保留原文件')
-            if 'score_pending' in item and type(item['score_pending']) is not bool:
-                raise RotationProgressError('账号积分进度格式无效，保留原文件')
             if is_new:
                 self._save(state)
             if action == 'read':
@@ -141,9 +128,7 @@ class RotationProgress:
             elif action == 'finished':
                 if phase != 'entered':
                     raise RotationProgressError('战斗是否已开始无法确认')
-                item.update(phase='idle', status='running' if count >= target else 'pending')
-                if count >= target:
-                    item['score_pending'] = True
+                item.update(phase='idle', status='completed' if count >= target else 'pending')
             elif action == 'not_entered':
                 if phase != 'pending':
                     raise RotationProgressError('不存在待确认的战斗')
