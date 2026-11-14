@@ -94,18 +94,14 @@ class LoginService(
         if self._login_method_page_handled:
             return False
         try:
-            # 完整 OCR 返回的是匹配区域元组，而不是识别出的文本。
-            warning_area = O_LOGIN_AGREEMENT_WARNING.ocr(self.device.image)
+            # 区域坐标不能证明文字内容，必须检查完整提示文本。
+            boxes = O_LOGIN_AGREEMENT_WARNING.detect_and_ocr(self.device.image, logDisplay=False)
+            text = ''.join(str(getattr(box, 'ocr_text', '') or '') for box in boxes)
+            text = ''.join(text.split())
         except Exception:
             return False
-        # 第一次点击进入游戏前不要点击返回；正常保存账号页面的相同区域也可能有文字。
-        # 进入游戏超时后，该区域可作为登录平台/用户协议页面的可靠提示，强制路径是最后的兜底。
-        if not force:
-            if isinstance(warning_area, str):
-                if "未勾选" not in warning_area:
-                    return False
-            elif self._enter_game_attempts <= 0 or not warning_area:
-                return False
+        if '未勾选' not in text or '无法登录' not in text:
+            return False
         logger.info(
             "Leave other-login page via top-left back button%s",
             " (forced fallback)" if force else "",
@@ -134,6 +130,12 @@ class LoginService(
         button until the too-many-click guard trips.
         """
         if self._handle_login_method_page():
+            return False
+        # 登录入口的年龄标识可能在弹窗背后仍可见；其他页面仍在时不能点底层入口。
+        if (self.appear(SwitchAccountAssets.I_SA_NETEASE_GAME_LOGO)
+                or self.appear(SwitchAccountAssets.I_SA_ACCOUNT_LOGIN_BTN)
+                or self.appear(SwitchAccountAssets.I_SA_LOGIN_FORM_APPLE)
+                or self.appear(SwitchAccountAssets.I_SA_LOGIN_FORM_ANDROID)):
             return False
         if self.fast_login:
             clicked = self.click(
@@ -180,6 +182,10 @@ class LoginService(
             self.screenshot()
             popup = getattr(self, '_saved_account_popup', None)
             if popup is not None and popup.step():
+                continue
+            # 其他登录方式页未必显示登录入口标识，须先确认提示才返回。
+            if (self.appear(SwitchAccountAssets.I_SA_NETEASE_GAME_LOGO)
+                    and self._handle_login_method_page()):
                 continue
             if self.appear_then_click(
                 self.I_RETURN_CHESS_CANCEL,

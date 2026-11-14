@@ -248,6 +248,25 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         platform = self.I_SA_LOGIN_FORM_ANDROID if apple_or_android else self.I_SA_LOGIN_FORM_APPLE
         self.appear_then_click(platform, interval=1.0)
 
+    def _open_fast_saved_account_page(self, timeout: float = 15) -> bool:
+        """从登录入口有界返回原账号选择页，不在目标未确认时等待渠道。"""
+        deadline = time.monotonic() + timeout
+        opened_center = False
+        while time.monotonic() < deadline:
+            self.screenshot()
+            if self.appear(self.I_SA_LOGIN_FORM_APPLE) or self.appear(self.I_SA_LOGIN_FORM_ANDROID):
+                return False
+            if self.appear(self.I_SA_NETEASE_GAME_LOGO):
+                return bool(self.appear(self.I_SA_ACCOUNT_LOGIN_BTN)
+                            or self.appear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED))
+            if self.appear_then_click(self.I_SA_SWITCH_ACCOUNT_BTN, interval=1):
+                continue
+            if not opened_center and self.appear(self.I_CHECK_LOGIN_FORM):
+                self.click(self.C_SA_LOGIN_FORM_USER_CENTER, interval=1)
+                opened_center = True
+            time.sleep(.3)
+        return False
+
     def login_fast(self, accountInfo: AccountInfo) -> bool:
         """执行不包含服务商、服务器和角色识别的快速多账号登录。
 
@@ -271,6 +290,10 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                 break
             self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT)
 
+        # 重试可能停在普通登录入口，先恢复账号页，不能直接等待渠道。
+        if not self._open_fast_saved_account_page():
+            logger.warning('Fast login saved-account page not confirmed [redacted]')
+            return False
         # Saved-account page: select the target account and submit.
         if self.appear(self.I_SA_NETEASE_GAME_LOGO) and not self.appear(self.I_SA_LOGIN_FORM_APPLE):
             if not accountInfo.account:
@@ -308,7 +331,15 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                         "Fast account selection did not confirm target [redacted]"
                     )
                     return False
-            self.submit_saved_account_login()
+            # 快速轮换每次提交前核对目标，原生控件不可用时不盲点固定区域。
+            if not self._account_selection_confirmed(accountInfo):
+                return False
+            try:
+                if not self._netease_account_ui().click_login(expected_account=accountInfo.account):
+                    return False
+            except AccountUiUnavailable:
+                return False
+            time.sleep(1.0)
 
         # 平台页面到达时间不固定，先有界等待页面标识，再匹配对应平台按钮。
         if not self.wait_until_appear(self.I_SA_LOGIN_FORM_APPLE, False, wait_time=45):

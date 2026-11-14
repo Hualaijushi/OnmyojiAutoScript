@@ -83,16 +83,18 @@ class SavedAccountPopup:
     def _popup_visible(self):
         logo = self.task.appear(SwitchAccountAssets.I_SA_NETEASE_GAME_LOGO)
         button = self.task.appear(SwitchAccountAssets.I_SA_ACCOUNT_LOGIN_BTN)
-        if logo and button:
-            return True
         if not logo and not button:
             return False
-        # 部分图像命中时检查原生控件，避免把其他网易登录页当作此弹窗。
+        # 弹窗必须同时具有图像和原生账号控件，避免单靠图像误判正常页。
         ui = _CheckedAccountUi(self.task.device, self.check)
         try:
             root = ui.dump()
-            ids = (ui.ACCOUNT_ITEM_ID, ui.ACCOUNT_LIST_ID, *ui.ACCOUNT_TEXT_IDS)
-            if any(ui._nodes(root, resource_id) for resource_id in ids):
+            has_account = any(ui._nodes(root, resource_id) for resource_id in
+                              (ui.ACCOUNT_ITEM_ID, ui.ACCOUNT_LIST_ID, *ui.ACCOUNT_TEXT_IDS))
+            has_login = bool(ui._nodes(root, ui.LOGIN_BUTTON_ID))
+            if logo and button and has_account and has_login:
+                return True
+            if has_account or has_login or (logo and button):
                 return None
         except AccountUiUnavailable:
             return None
@@ -162,7 +164,7 @@ class SavedAccountPopup:
                     return self._wait_for_page()
             # 按钮点击使用同一原生快照再次核验账号，避免选择结果变化。
             if not ui.click_login(expected_account=expected):
-                raise RequestHumanTakeover('保存账号弹窗目标账号或登录按钮未确认')
+                return self._wait_for_page()
         except AccountUiUnavailable:
             return self._wait_for_page()
         logger.info('已核验目标账号并提交保存账号登录')

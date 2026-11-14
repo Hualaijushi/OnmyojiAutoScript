@@ -27,6 +27,7 @@ class SavedAccountPopupTest(TestCase):
         self.task.appear.side_effect = lambda rule: rule in self.visible
         self.ui = Mock()
         self.ui.ACCOUNT_TEXT_IDS = ('account',)
+        self.ui._nodes.return_value = [object()]
         self.ui.account_matches.side_effect = lambda actual, expected: actual == expected
         self.ui.current_account.return_value = self.target.account
         self.ui.click_login.return_value = True
@@ -96,6 +97,8 @@ class SavedAccountPopupTest(TestCase):
         for mode in ('missing', 'changed', 'unreadable'):
             with self.subTest(mode=mode):
                 ui = Mock()
+                ui.ACCOUNT_TEXT_IDS = ('account',)
+                ui._nodes.return_value = [object()]
                 ui.account_matches.return_value = False
                 ui.current_account.return_value = 'different@example.test'
                 ui.select_account.return_value = mode == 'changed'
@@ -106,16 +109,24 @@ class SavedAccountPopupTest(TestCase):
                     'tasks.Component.Login.saved_account_popup.time.monotonic', side_effect=[0, 6]
                 ), patch('tasks.Component.Login.saved_account_popup.time.sleep'):
                     handler = SavedAccountPopup(self.task, self.target)
-                    if mode == 'changed':
-                        with self.assertRaises(RequestHumanTakeover) as caught:
-                            handler.step()
-                    else:
-                        self.assertTrue(handler.step())
-                        with self.assertRaises(RequestHumanTakeover) as caught:
-                            handler.step()
+                    self.assertTrue(handler.step())
+                    with self.assertRaises(RequestHumanTakeover) as caught:
+                        handler.step()
                 self.assertNotIn('sensitive', str(caught.exception))
                 if mode != 'changed':
                     ui.click_login.assert_not_called()
+
+    def test_disappearing_popup_before_login_button_recheck_resumes_login_page(self):
+        self.ui.click_login.return_value = False
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui), patch(
+            'tasks.Component.Login.saved_account_popup.time.sleep'
+        ):
+            handler = SavedAccountPopup(self.task, self.target)
+            self.assertTrue(handler.step())
+            self.visible = {A.I_CHECK_LOGIN_FORM}
+            self.ui._nodes.return_value = []
+            self.assertFalse(handler.step())
+        self.ui.click_login.assert_called_once_with(expected_account=self.target.account)
 
     def test_transient_popup_without_native_controls_yields_to_normal_login(self):
         self.ui.current_account.return_value = None
@@ -140,6 +151,19 @@ class SavedAccountPopupTest(TestCase):
             self.assertTrue(handler.step())
             with self.assertRaises(RequestHumanTakeover):
                 handler.step()
+        self.ui.select_account.assert_not_called()
+        self.ui.click_login.assert_not_called()
+
+    def test_two_image_matches_without_native_login_do_not_select_account(self):
+        self.ui.ACCOUNT_ITEM_ID = 'item'
+        self.ui.ACCOUNT_LIST_ID = 'list'
+        self.ui.LOGIN_BUTTON_ID = 'login'
+        self.ui._nodes.side_effect = lambda root, name: [object()] if name == 'account' else []
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui), patch(
+            'tasks.Component.Login.saved_account_popup.time.sleep'
+        ):
+            self.assertTrue(SavedAccountPopup(self.task, self.target).step())
+        self.ui.current_account.assert_not_called()
         self.ui.select_account.assert_not_called()
         self.ui.click_login.assert_not_called()
 
@@ -210,10 +234,11 @@ class SavedAccountPopupTest(TestCase):
         self.ui.click_login.assert_not_called()
 
     def test_unknown_target_stops_before_native_login(self):
-        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi') as make_ui:
+        with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui):
             with self.assertRaises(RequestHumanTakeover):
                 SavedAccountPopup(self.task, SimpleNamespace()).step()
-        make_ui.assert_not_called()
+        self.ui.select_account.assert_not_called()
+        self.ui.click_login.assert_not_called()
 
     def test_popup_remains_after_submit_stops_without_second_click(self):
         with patch('tasks.Component.Login.saved_account_popup._CheckedAccountUi', return_value=self.ui), patch(
@@ -259,6 +284,7 @@ class SavedAccountPopupTest(TestCase):
     def test_login_loop_handles_popup_before_any_other_click(self):
         task = Mock()
         task._saved_account_popup.step.side_effect = [True, False]
+        task._handle_login_method_page.return_value = False
         task.appear_then_click.return_value = False
         task.appear.return_value = True
         self.assertTrue(LoginService._app_handle_login(task))
