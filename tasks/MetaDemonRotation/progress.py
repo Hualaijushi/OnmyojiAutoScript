@@ -95,13 +95,16 @@ class RotationProgress:
             os.fsync(stream.fileno())
         atomic_replace_with_retry(temporary, self.path, timeout=5)
 
-    def update(self, account_id: str, identity: str, action: str, *, target: int, reason: str = '') -> dict:
+    def update(self, account_id: str, identity: str, action: str, *, target: int, reason: str = '',
+               expected_state: dict | None = None) -> dict:
         if not account_id or not identity or type(target) is not int or target < 1:
             raise RotationProgressError('账号身份或目标次数无效')
         with interprocess_file_lock(self.lock_path, timeout=10):
             state = self._load()
             accounts = state['accounts']
             item = accounts.get(account_id)
+            if action == 'resume_from_courtyard' and (item is None or item != expected_state):
+                raise RotationProgressError('庭院核对期间进度已变化，保留记录并停止')
             is_new = item is None
             if item is None:
                 item = self._legacy_account(account_id, identity) if state['legacy_import'] else None
@@ -133,6 +136,11 @@ class RotationProgress:
                 if phase != 'pending':
                     raise RotationProgressError('不存在待确认的战斗')
                 item.update(phase='idle', status='pending')
+            elif action == 'resume_from_courtyard':
+                if phase not in {'pending', 'entered'}:
+                    raise RotationProgressError('不存在需要恢复的旧战斗标记')
+                # 仅核对庭院后解除标记，入场次数既不补计也不回退。
+                item.update(phase='idle', status='completed' if count >= target else 'pending', reason='')
             elif action == 'score_result':
                 if phase != 'idle' or count < target or reason not in {'积分已领取', '无可领取积分'}:
                     raise RotationProgressError('积分结果与已完成场次不匹配')

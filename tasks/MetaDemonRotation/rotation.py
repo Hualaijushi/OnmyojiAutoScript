@@ -21,7 +21,8 @@ class RotationResult:
 
 def run_rotation(accounts: Iterable, switcher, progress: RotationProgress,
                  driver_factory: Callable, *, rental_team: int, battle_limit: int,
-                 recover_account: Callable | None = None) -> list[RotationResult]:
+                 recover_account: Callable | None = None,
+                 resume_account: Callable | None = None) -> list[RotationResult]:
     """按既有账号顺序切号；不确定的战斗中断本轮以免在战斗中切号。"""
     results = []
     for account in accounts:
@@ -31,15 +32,27 @@ def run_rotation(accounts: Iterable, switcher, progress: RotationProgress,
         identity = account_identity(account.instance, account.position, account.login_account,
                                     account.server, account.character)
         state = progress.update(account.account_id, identity, 'read', target=battle_limit)
+        resumed = False
         if state['phase'] != 'idle':
-            results.append(RotationResult(account.account_id, False, state['entered'],
-                                          '上次战斗状态未确认，停止本轮'))
-            break
+            try:
+                if resume_account is None or resume_account(account) is not True:
+                    results.append(RotationResult(account.account_id, False, state['entered'],
+                                                  '上次战斗状态未确认，庭院账号核对未通过，停止本轮'))
+                    break
+                state = progress.update(account.account_id, identity, 'resume_from_courtyard',
+                                        target=battle_limit, expected_state=state)
+                resumed = True
+                logger.info('[超鬼王轮换] 账号=%s 庭院核对通过，保留场次=%s，解除旧战斗标记',
+                            account.account_id, state['entered'])
+            except Exception as exc:
+                results.append(RotationResult(account.account_id, False, state['entered'],
+                                              f'庭院续刷未确认：{type(exc).__name__}，停止本轮'))
+                break
         if state['entered'] >= battle_limit:
             results.append(RotationResult(account.account_id, True, state['entered'], '本轮已达目标'))
             continue
-        switched = switcher.ensure_account(account)
-        if not switched.success:
+        # 恢复入口已通过新画面核对，无需再走普通切号入口。
+        if not resumed and not switcher.ensure_account(account).success:
             state = progress.update(account.account_id, identity, 'stop', target=battle_limit, reason='切号失败')
             results.append(RotationResult(account.account_id, False, state['entered'], '切号失败'))
             break

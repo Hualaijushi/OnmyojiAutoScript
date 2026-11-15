@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from datetime import datetime
+import time
 
 from module.exception import RequestHumanTakeover, TaskEnd
 from module.logger import logger
@@ -10,6 +11,8 @@ from module.multi_account.courtyard_verifier import CourtyardCharacterVerifierMi
 from tasks.AccountRotation.script_task import RotationAccountSwitcher
 from tasks.base_task import BaseTask
 from tasks.GameUi.navigator import GameUi
+from tasks.GameUi.nonbattle_recovery import ensure_nonbattle_frame
+from tasks.MetaDemon import page as meta_pages
 from tasks.MetaDemonRotation.accounts import accounts_for_range
 from tasks.MetaDemonRotation.driver import RotationDriver
 from tasks.MetaDemonRotation.progress import RotationProgress
@@ -27,8 +30,38 @@ class _RecoveryVerifier(GameUi, CourtyardCharacterVerifierMixin):
     """使用现有庭院导航与角色核对，不能依赖切号器缓存。"""
 
 
+class _CourtyardResumeVerifier(_RecoveryVerifier):
+    """续刷时识别超鬼王页面，复用活动首领到庭院的既有返回路径。"""
+
+    def _infer_task_category(self):
+        return meta_pages.page_meta_demon_boss.category
+
+
 class ScriptTask(BaseTask):
     task_name = 'MetaDemonRotation'
+
+    def _resume_account_from_courtyard(self, account):
+        """只为旧战斗记录核对庭院；不重启游戏、不主动切换账号。"""
+        verifier = _CourtyardResumeVerifier(self.config, self.device)
+        screenshot = verifier.screenshot
+        deadline = time.monotonic() + 60
+
+        def guarded_screenshot():
+            if time.monotonic() >= deadline:
+                raise RequestHumanTakeover('庭院续刷核对超时，保留旧战斗标记')
+            result = screenshot()
+            if time.monotonic() >= deadline:
+                raise RequestHumanTakeover('庭院续刷核对超时，保留旧战斗标记')
+            # 导航与角色核对每次取新帧都排除战斗、结算及登录等受保护页面。
+            ensure_nonbattle_frame(verifier)
+            return result
+
+        verifier.screenshot = guarded_screenshot
+        try:
+            verifier.screenshot()
+            return verifier._verify_courtyard_character(account) is True
+        finally:
+            del verifier.screenshot
 
     def _recover_account(self, account):
         restart = RestartTask(self.config, self.device)
@@ -56,7 +89,8 @@ class ScriptTask(BaseTask):
         results = run_rotation(accounts, switcher, progress,
                                lambda account: RotationDriver(self.config, self.device),
                                rental_team=conf.rental_team, battle_limit=conf.battle_limit,
-                               recover_account=self._recover_account)
+                               recover_account=self._recover_account,
+                               resume_account=self._resume_account_from_courtyard)
         for item in results:
             logger.info('[超鬼王轮换] 账号=%s 场次=%s/%s 结果=%s',
                         item.account_id, item.entered if item.entered is not None else '未确认',
