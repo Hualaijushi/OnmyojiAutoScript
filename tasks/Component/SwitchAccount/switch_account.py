@@ -16,6 +16,9 @@ from module.logger import logger
 
 class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
 
+    # 默认仍使用原登录处理器；专用任务可选择自己的异常恢复处理器。
+    login_service_type = None
+
     def __init__(
         self,
         config: Config,
@@ -79,7 +82,8 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         else:
             logger.info("%s login suc", self.to_account_info.character)
         # 处理位于登录界面各种奇葩弹窗
-        login_handler = LoginService(
+        login_service = getattr(type(self), 'login_service_type', None) or LoginService
+        login_handler = login_service(
             config=self.config,
             device=self.device,
             skip_specific_server=self.fast,

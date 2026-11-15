@@ -15,6 +15,7 @@ from tasks.GameUi.nonbattle_recovery import ensure_nonbattle_frame
 from tasks.MetaDemon import page as meta_pages
 from tasks.MetaDemonRotation.accounts import accounts_for_range
 from tasks.MetaDemonRotation.driver import RotationDriver
+from tasks.MetaDemonRotation.login_recovery import RotationRetrySwitchAccount
 from tasks.MetaDemonRotation.progress import RotationProgress
 from tasks.MetaDemonRotation.rotation import run_rotation
 from tasks.Restart.script_task import ScriptTask as RestartTask
@@ -83,6 +84,7 @@ class ScriptTask(BaseTask):
             self.config, self.device, max_attempts=settings.max_switch_attempts,
             retry_delay=settings.retry_delay_seconds, timeout=settings.switch_timeout_seconds,
             fast=True, home_verifier=None,
+            switch_factory=RotationRetrySwitchAccount,
         )
         progress = RotationProgress(Path.cwd() / 'config', self.config.config_name,
                                     reset_generation=conf.reset_generation)

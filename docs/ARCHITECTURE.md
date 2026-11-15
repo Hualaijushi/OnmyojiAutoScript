@@ -1,5 +1,7 @@
 # 项目架构地图
 
+> 多账号超鬼王：run 的 switch_factory 选择 RotationRetrySwitchAccount → 专用 RotationRetryLoginService；普通 SwitchAccount 的 login_service_type 默认空，仍选原 LoginService。仅明确进入游戏超时在专用处理器内重启一次 → 新建原 LoginService 重置运行期状态并携带原目标 → 原页面识别与账号弹窗 → 新庭院角色核对。重试异常转 RequestHumanTakeover，绕过外层普通切号重启，场次存储不参与此恢复。
+
 > 2026-11-15 最新：MetaDemonRotation 启动读取到旧 pending/entered → 专用庭院核对器采用 meta_demon 页面分类 → 复用首领页→活动页→庭院导航 → 新帧角色核对 → 进度锁内比较读取快照并解除旧标记，场次不变。每次截图排除战斗、结算及登录等保护页面；失败不改记录，不进入普通切号。原安全阶段卡死重启回调保持独立。
 
 > 快速切号从普通入口重试时，有界打开原用户中心和保存账号页；原生核对目标并确认提交后才等待渠道，不使用固定区域提交兜底。
