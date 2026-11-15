@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from module.exception import GameStuckError
+from module.exception import GamePageUnknownError, GameStuckError
 from module.logger import logger
 from tasks.MetaDemonRotation.engine import AccountDriver, AccountResult, run_account
 from tasks.MetaDemonRotation.progress import RotationProgress, account_identity
@@ -58,22 +58,36 @@ def run_rotation(accounts: Iterable, switcher, progress: RotationProgress,
             break
         try:
             driver = driver_factory(account)
-            try:
-                outcome: AccountResult = run_account(driver, progress,
-                                                      account_id=account.account_id, identity=identity,
-                                                      rental_team=rental_team, battle_limit=battle_limit)
-            except GameStuckError:
-                state = progress.update(account.account_id, identity, 'read', target=battle_limit)
-                if state['phase'] != 'idle' or state['entered'] >= battle_limit or recover_account is None:
-                    raise
-                logger.warning('[超鬼王轮换] 账号=%s 卡住，尝试重启并重新核对', account.account_id)
-                if not recover_account(account):
-                    raise RuntimeError('重启后账号核对未通过')
-                retry_driver = driver_factory(account)
-                if hasattr(driver, 'rotation_started'):
-                    retry_driver.rotation_started = driver.rotation_started
-                outcome = run_account(retry_driver, progress, account_id=account.account_id,
-                                      identity=identity, rental_team=rental_team, battle_limit=battle_limit)
+            unknown_restarts = 0
+            stuck_restarts = 0
+            while True:
+                try:
+                    outcome: AccountResult = run_account(driver, progress,
+                                                          account_id=account.account_id, identity=identity,
+                                                          rental_team=rental_team, battle_limit=battle_limit)
+                    break
+                except (GamePageUnknownError, GameStuckError) as exc:
+                    state = progress.update(account.account_id, identity, 'read', target=battle_limit)
+                    if state['phase'] != 'idle' or state['entered'] >= battle_limit or recover_account is None:
+                        raise
+                    if isinstance(exc, GamePageUnknownError):
+                        if unknown_restarts >= 3:
+                            raise
+                        unknown_restarts += 1
+                        attempt, limit = unknown_restarts, 3
+                    else:
+                        if stuck_restarts >= 1:
+                            raise
+                        stuck_restarts += 1
+                        attempt, limit = stuck_restarts, 1
+                    logger.warning('[超鬼王轮换] 账号=%s 异常=%s，重启并核对账号 %s/%s',
+                                   account.account_id, type(exc).__name__, attempt, limit)
+                    if not recover_account(account):
+                        raise RuntimeError('重启后账号核对未通过')
+                    retry_driver = driver_factory(account)
+                    if hasattr(driver, 'rotation_started'):
+                        retry_driver.rotation_started = driver.rotation_started
+                    driver = retry_driver
         except Exception as exc:
             state = progress.update(account.account_id, identity, 'read', target=battle_limit)
             if state['phase'] == 'idle':
