@@ -155,7 +155,7 @@
   {
     "itemName": "check_act_list_metademon_act",
     "imageName": "md_check_act_list_metademon_act.png",
-    "roiFront": "922,45,34,118",
+    "roiFront": "924,45,32,113",
     "roiBack": "896,1,144,374",
     "method": "Template matching",
     "threshold": 0.8,

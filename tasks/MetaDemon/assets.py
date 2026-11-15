@@ -52,7 +52,7 @@ class MetaDemonAssets:
 	# 喝茶 
 	I_MD_DRINK_TEA = RuleImage(roi_front=(555,467,168,58), roi_back=(527,455,235,80), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_drink_tea.png")
 	# 活动列表页超鬼王活动标志 
-	I_CHECK_ACT_LIST_METADEMON_ACT = RuleImage(roi_front=(922,45,34,118), roi_back=(896,1,144,374), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_check_act_list_metademon_act.png")
+	I_CHECK_ACT_LIST_METADEMON_ACT = RuleImage(roi_front=(924,45,32,113), roi_back=(896,1,144,374), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_check_act_list_metademon_act.png")
 	# 禁用强力追击 
 	I_MD_DISABLE_POWERFUL_FIRE = RuleImage(roi_front=(1113,513,24,24), roi_back=(1108,508,36,36), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_disable_powerful_fire.png")
 	# 开启强力追击 
