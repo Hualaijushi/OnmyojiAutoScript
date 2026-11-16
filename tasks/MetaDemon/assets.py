@@ -90,7 +90,7 @@ class MetaDemonAssets:
 	# 庭院直接进入超鬼王活动页面 
 	I_MAIN_GOTO_ACT_2 = RuleImage(roi_front=(733,307,21,26), roi_back=(684,242,134,214), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_main_goto_act_2.png")
 	# 庭院进入超鬼王活动备用入口 
-	I_MAIN_GOTO_ACT = RuleImage(roi_front=(1190,226,35,28), roi_back=(1164,134,83,393), threshold=0.7, method="Template matching", file="./tasks/MetaDemon/md/md_main_goto_act.png")
+	I_MAIN_GOTO_ACT = RuleImage(roi_front=(1192,228,32,26), roi_back=(1164,134,83,393), threshold=0.7, method="Template matching", file="./tasks/MetaDemon/md/md_main_goto_act.png")
 	# 活动主页进入鬼王玩法 
 	I_MD_GOTO_BOSS = RuleImage(roi_front=(922,45,34,118), roi_back=(896,1,144,374), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_goto_boss.png")
 	# 超鬼王队伍预设 
