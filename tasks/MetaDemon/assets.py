@@ -107,6 +107,9 @@ class MetaDemonAssets:
 	I_MD_SCORE_BOX = RuleImage(roi_front=(1205,303,34,27), roi_back=(1178,280,89,80), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_score_box.png")
 
 
+	# 免费喝茶
+	I_MD_DRINK_FREETEA = RuleImage(roi_front=(555,467,168,58), roi_back=(527,455,235,80), threshold=0.8, method="Template matching", file="./tasks/MetaDemon/md/md_md_drink_freetea.png")
+
 	# Ocr Rule Assets
 	# 疲劳度 
 	O_MD_FATIGUE = RuleOcr(roi=(1109,22,114,34), area=(1106,17,124,41), mode="DigitCounter", method="Default", keyword="", name="md_fatigue")

@@ -42,7 +42,8 @@ class RotationDriver(MetaDemonTask):
             return 'time_limit'
         self.screenshot()
         current, remain, total = self.O_MD_FATIGUE.ocr_digit_counter(self.device.image)
-        if not (0 < total and 0 <= current <= total and remain == total - current):
+        # 疲劳可以超过上限，103/100及其剩余值-3应进入疲劳已满处理。
+        if not (0 < total and current >= 0 and remain == total - current):
             return 'unknown'
         return 'unavailable' if current >= total and not self.conf.meta_demon_config.auto_tea else 'ready'
 

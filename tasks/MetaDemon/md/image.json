@@ -394,5 +394,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "超鬼王积分宝箱"
+  },
+  {
+    "itemName": "md_drink_freetea",
+    "imageName": "md_md_drink_freetea.png",
+    "roiFront": "555,467,168,58",
+    "roiBack": "527,455,235,80",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "免费喝茶"
   }
 ]

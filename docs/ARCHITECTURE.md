@@ -1,5 +1,9 @@
 # 项目架构地图
 
+> 2026-11-16：轮换允许当前疲劳超过总值且剩余值相符，仍由原auto_tea开关决定继续或疲劳退出；共用start_battle选择原喝茶/免费使用按钮。租借出战后5秒内连续两帧确认首领页，超时抛GamePageUnknownError接回原run_rotation恢复预算；不增加重启循环、不提前计数。
+
+> 远端897719d扩展run_rotation执行期异常循环：GamePageUnknownError最多恢复3次，GameStuckError最多1次，预算分别计数；仅idle且未达场次目标且提供恢复回调时重启核对。每次重建驱动并沿用账号运行起始时间，预算耗尽或存在未确认战斗则停止，进度不清零。此链路不改变网易账号弹窗识别。
+
 > 多账号超鬼王：run 的 switch_factory 选择 RotationRetrySwitchAccount → 专用 RotationRetryLoginService；普通 SwitchAccount 的 login_service_type 默认空，仍选原 LoginService。仅明确进入游戏超时在专用处理器内重启一次 → 新建原 LoginService 重置运行期状态并携带原目标 → 原页面识别与账号弹窗 → 新庭院角色核对。重试异常转 RequestHumanTakeover，绕过外层普通切号重启，场次存储不参与此恢复。
 
 > 2026-11-15 最新：MetaDemonRotation 启动读取到旧 pending/entered → 专用庭院核对器采用 meta_demon 页面分类 → 复用首领页→活动页→庭院导航 → 新帧角色核对 → 进度锁内比较读取快照并解除旧标记，场次不变。每次截图排除战斗、结算及登录等保护页面；失败不改记录，不进入普通切号。原安全阶段卡死重启回调保持独立。

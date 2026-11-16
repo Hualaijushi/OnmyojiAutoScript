@@ -1,5 +1,9 @@
 # 验证规则
 
+> 三项合并修复直接检查见tests/test_meta_demon_fatigue_overcap.py、tests/test_meta_demon_tea_popup.py和tests/test_meta_demon_rental_settle.py；同时核对原疲劳调度、租借入口/确认和跨天恢复。素材核对及模拟通过不代表实际喝茶/页面识别通过，需重载后现场验证。
+
+> 接收897719d后的局部验证：既有tests.test_meta_demon_continuation及tests.test_meta_demon_courtyard_resume通过；另外检查页面未知3次后继续、第四次停止、未确认战斗不恢复，以及页面未知与卡住的独立预算。补充用例及日志保存在D:\Codex\workspace\oas-remote-merge-20261115；仅离线，不代表游戏实测通过。
+
 > 登录重启续接检查见 tests/test_meta_demon_login_retry.py：正常不重启、明确进入游戏超时重启一次、重建处理器传递原目标、恢复登录后庭院角色核对、二次异常/错号暂停、启动失败和外层停止，以及默认切号处理器不变。并检查已有保存账号弹窗和快速登录边界；离线模拟不证明实际设备登录成功。
 
 > 庭院续刷定向检查见 tests/test_meta_demon_courtyard_resume.py：pending/entered 场次保留、达标跳过、失败不改记录、核对期间进度变化拒绝清除、正常入口不触发恢复、受保护页面和60秒预算、原活动返回路径。连同既有场次与跨天续刷用例进行局部检查；模拟和导航图检查不等于真实截图识别或游戏内通过。

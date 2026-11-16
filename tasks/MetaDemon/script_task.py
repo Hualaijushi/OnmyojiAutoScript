@@ -107,9 +107,11 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
                     battle_key=self._meta_demon_battle_key(),
                 )
                 break
-            if self.appear(self.I_MD_DRINK_TEA, interval=1.2):  # 出现喝茶弹窗
+            tea_button = next((button for button in (self.I_MD_DRINK_TEA, self.I_MD_DRINK_FREETEA)
+                               if self.appear(button, interval=1.2)), None)
+            if tea_button is not None:  # 两种喝茶弹窗沿用相同的开关与疲劳处理。
                 if self.conf.meta_demon_config.auto_tea:
-                    self.click(self.I_MD_DRINK_TEA)  # 喝茶
+                    self.click(tea_button)  # 点击当前识别到的喝茶按钮。
                     continue
                 # 不喝茶则结束任务安排下一次运行
                 self.ui_click_until_disappear(self.I_MD_CLOSE_POPUP, interval=0.6)

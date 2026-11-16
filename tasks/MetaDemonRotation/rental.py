@@ -8,6 +8,7 @@ import numpy as np
 
 from module.atom.click import RuleClick
 from module.interaction_policy import InteractionPolicy
+from module.exception import GamePageUnknownError
 from tasks.MetaDemon.assets import MetaDemonAssets
 
 
@@ -68,9 +69,18 @@ def deploy_rental(task, sequence: int) -> str:
         return 'unknown'
     if not task.appear_then_click(DEPLOY, policy=InteractionPolicy.CONFIRM):
         return 'unknown'
-    for _ in range(2):
-        time.sleep(.4)
+    settle_deadline = time.monotonic() + 5
+    confirmed = 0
+    while time.monotonic() < settle_deadline:
+        time.sleep(min(.4, max(0, settle_deadline - time.monotonic())))
         task.screenshot()
-        if task.appear(DEPLOY) or not task.appear(task.I_CHECK_BOSS_PAGE):
-            return 'unknown'
-    return 'ready'
+        if time.monotonic() > settle_deadline:
+            break
+        if not task.appear(DEPLOY) and task.appear(task.I_CHECK_BOSS_PAGE):
+            confirmed += 1
+            if confirmed >= 2:
+                return 'ready'
+        else:
+            confirmed = 0
+    # 仅出战后的确认超时进入已有恢复预算，前面的选队失败仍按原逻辑返回。
+    raise GamePageUnknownError('租借出战后5秒内未确认返回首领页')
