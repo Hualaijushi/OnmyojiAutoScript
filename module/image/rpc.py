@@ -11,7 +11,7 @@ from typing import Any, Optional
 import numpy as np
 import zerorpc
 
-from module.exception import ScriptError
+from module.exception import ImageFrameExpiredError, ScriptError
 from module.image.runtime import ImageRuntime
 from module.logger import logger
 
@@ -331,8 +331,10 @@ class ImageClient:
             return rpc_call(frame_id, payload)
         except zerorpc.exceptions.RemoteError as exc:
             message = f"{getattr(exc, 'name', '')}: {getattr(exc, 'msg', '')}\n{exc}"
-            if frame_id is None or image is None or "Unknown frame id" not in message:
+            if frame_id is None or "Unknown frame id" not in message:
                 raise
+            if image is None:
+                raise ImageFrameExpiredError('截图缓存失效且缺少同一张原图') from exc
             logger.warning(f"Image frame expired, retry with inline image: {frame_id}")
             return rpc_call(None, pickle.dumps(image, protocol=4))
 

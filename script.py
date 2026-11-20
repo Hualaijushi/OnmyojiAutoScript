@@ -682,6 +682,12 @@ class Script:
             self._capture_task_runtime_outcome(command)
             return True
 
+        if isinstance(e, (OcrUnavailableError, ImageFrameExpiredError)):
+            minutes = 10 if command == 'AccountRotation' else 5
+            logger.warning(f'{command} 识别暂时不可用，{minutes} 分钟后重新进入任务：{e}')
+            self.config.task_delay(command, target=datetime.now() + timedelta(minutes=minutes), server=False)
+            return True
+
         if isinstance(e, GameNotRunningError):
             logger.warning(e)
             self.exception_handler(e=e, command=command)

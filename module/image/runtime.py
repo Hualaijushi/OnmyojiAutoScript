@@ -16,6 +16,7 @@ import numpy as np
 from numpy import fromfile, uint8
 
 from module.base.utils import is_approx_rectangle
+from module.base.future_wait import wait_future
 from module.logger import logger
 
 
@@ -372,7 +373,7 @@ class ImageRuntime:
             )
             for rule_data in rules_data
         ]
-        return [future.result() for future in futures]
+        return [wait_future(future) for future in futures]
 
     def match_all(
         self,
@@ -433,7 +434,7 @@ class ImageRuntime:
             )
             for rule_data in rules_data
         ]
-        return [future.result() for future in futures]
+        return [wait_future(future) for future in futures]
 
     def match_dynamic_template(
         self,
