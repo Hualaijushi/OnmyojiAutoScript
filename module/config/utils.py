@@ -4,14 +4,39 @@
 import os
 import json
 import yaml
+import time as monotonic_time
+from contextlib import contextmanager
 
-from filelock import FileLock
+from filelock import FileLock, Timeout as FileLockTimeout
 from datetime import datetime, timedelta, timezone, time
 
-from module.config.atomicwrites import atomic_write
+from module.config.atomicwrites import atomic_write, retry_file_access
+from module.exception import ConfigPersistenceError
 from module.logger import logger
 
 DEFAULT_TIME = datetime(2023, 1, 1, 0, 0)
+CONFIG_LOCK_TIMEOUT = 5.0
+
+
+@contextmanager
+def _config_access(file, operation):
+    """读写共用原文件锁，锁等待有期限；错误保留文件路径和系统错误码。"""
+    started = monotonic_time.monotonic()
+    try:
+        folder = os.path.dirname(file)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        with FileLock(f'{file}.lock', timeout=CONFIG_LOCK_TIMEOUT):
+            yield
+    except (OSError, FileLockTimeout) as exc:
+        raise ConfigPersistenceError(
+            os.path.abspath(file), operation, exc, monotonic_time.monotonic() - started,
+        ) from exc
+
+
+def _read_text(file):
+    with open(file, mode='r', encoding='utf-8') as stream:
+        return stream.read()
 
 def filepath_config(filename, mod_name='script') -> str:
     """
@@ -41,30 +66,22 @@ def read_file(file: str):
     Returns:
         dict, list:
     """
-    folder = os.path.dirname(file)
-    if not os.path.exists(folder):
-        os.mkdir(folder)
-
-    if not os.path.exists(file):
-        return {}
-
     _, ext = os.path.splitext(file)
-    lock = FileLock(f"{file}.lock")
-    with lock:
+    with _config_access(file, '读取'):
+        if not os.path.exists(file):
+            return {}
         logger.debug(f'read: {file}')
         if ext == '.yaml':
-            with open(file, mode='r', encoding='utf-8') as f:
-                s = f.read()
-                data = list(yaml.safe_load_all(s))
-                if len(data) == 1:
-                    data = data[0]
-                if not data:
-                    data = {}
-                return data
+            s = retry_file_access(lambda: _read_text(file))
+            data = list(yaml.safe_load_all(s))
+            if len(data) == 1:
+                data = data[0]
+            if not data:
+                data = {}
+            return data
         elif ext == '.json':
-            with open(file, mode='r', encoding='utf-8') as f:
-                s = f.read()
-                return json.loads(s)
+            s = retry_file_access(lambda: _read_text(file))
+            return json.loads(s)
         else:
             logger.warning(f'Unsupported config file extension: {ext}')
             return {}
@@ -77,13 +94,8 @@ def write_file(file: str, data):
         file (str):
         data (dict, list):
     """
-    folder = os.path.dirname(file)
-    if not os.path.exists(folder):
-        os.mkdir(folder)
-
     _, ext = os.path.splitext(file)
-    lock = FileLock(f"{file}.lock")
-    with lock:
+    with _config_access(file, '保存'):
         logger.debug(f'write: {file}')
         if ext == '.yaml':
             with atomic_write(file, overwrite=True, encoding='utf-8', newline='') as f:

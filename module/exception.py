@@ -23,6 +23,23 @@ class ScriptError(Exception):
     pass
 
 
+class ConfigPersistenceError(OSError):
+    """配置未能可靠读写，调度器必须停止，不能按已保存继续执行。"""
+
+    def __init__(self, path, operation, cause, elapsed):
+        self.path = str(path)
+        self.operation = operation
+        self.original_error = cause
+        self.elapsed = elapsed
+        winerror = getattr(cause, 'winerror', None)
+        super().__init__(
+            f'配置{operation}失败：path={path}，elapsed={elapsed:.3f}s，'
+            f'errno={getattr(cause, "errno", None)}，winerror={winerror}，'
+            f'cause={type(cause).__name__}: {cause}'
+        )
+        self.winerror = winerror
+
+
 class ScriptEnd(Exception):
     pass
 

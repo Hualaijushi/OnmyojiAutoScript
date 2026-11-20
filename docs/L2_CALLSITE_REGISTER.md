@@ -703,8 +703,8 @@
 
 | # | 位置 | 函数 | 调用 | 目标 | timing | 循环 | 已有等待 | decision | 依据 |
 | ---: | --- | --- | --- | --- | --- | :-: | --- | --- | --- |
-| 388 | `DailyTrifles/cooperation_adapter.py` | `CooperationAdapter._open_wanted_quests#1` | appear_then_click | `self.I_WQ_SEAL` | IMMEDIATE | Y | Timer,sleep | EXCLUDED | rule/R1 |
-| 389 | `DailyTrifles/cooperation_adapter.py` | `CooperationAdapter._return_to_main#1` | appear_then_click | `self.owner.I_UI_BACK_RED` | IMMEDIATE | Y | Timer | EXCLUDED | rule/R1 |
+| 388 | `DailyTrifles/cooperation_adapter.py` | `CooperationAdapter._open_wanted_quests#1` | appear_then_click | `rule` | IMMEDIATE | Y | Timer,sleep | EXCLUDED | rule/R1 |
+| 389 | `DailyTrifles/cooperation_adapter.py` | `CooperationAdapter._return_to_main_by_dedicated_exit#1` | appear_then_click | `self.I_WQ_EXIT_BUTTON` | IMMEDIATE | Y | Timer,sleep | EXCLUDED | rule/R1 |
 | 390 | `DailyTrifles/hunt_adapter.py` | `HuntRotationAdapter._run_mode#1` | appear_then_click | `GeneralBattleAssets.I_PREPARE_HIGHLIGHT` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
 | 391 | `DailyTrifles/hunt_adapter.py` | `HuntRotationAdapter._run_mode#2` | appear_then_click | `HuntAssets.I_NW` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |
 | 392 | `DailyTrifles/hunt_adapter.py` | `HuntRotationAdapter._run_mode#3` | appear_then_click | `self.owner.I_UI_CONFIRM` | IMMEDIATE | Y | sleep | EXCLUDED | rule/R1 |

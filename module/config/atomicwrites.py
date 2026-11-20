@@ -7,6 +7,27 @@ import io
 import os
 import sys
 import tempfile
+import time
+
+
+FILE_ACCESS_RETRY_TIMEOUT = 2.0
+
+
+def retry_file_access(operation):
+    """仅重试短暂拒绝访问/共享冲突，不重放业务或序列化，不放宽文件权限。"""
+    deadline = time.monotonic() + FILE_ACCESS_RETRY_TIMEOUT
+    delay = 0.01
+    while True:
+        try:
+            return operation()
+        except OSError as exc:
+            if not (isinstance(exc, PermissionError) or getattr(exc, 'winerror', None) in (5, 32, 33)):
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(delay, remaining))
+            delay = min(0.1, delay * 2)
 
 try:
     import fcntl
@@ -209,7 +230,8 @@ class AtomicWriter(object):
     def commit(self, f):
         '''Move the temporary file to the target location.'''
         if self._overwrite:
-            replace_atomic(f.name, self._path)
+            # 始终重试同一个完整临时文件；耗尽后由原回滚路径清理，旧文件不先删。
+            retry_file_access(lambda: replace_atomic(f.name, self._path))
         else:
             move_atomic(f.name, self._path)
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime, timedelta
+import time
 
+from module.exception import ConfigPersistenceError, OcrUnavailableError, ImageFrameExpiredError
 from module.exception import RequestHumanTakeover, TaskEnd
 from module.base.utils import load_module
 from module.logger import logger
@@ -14,6 +16,7 @@ from module.multi_account.daily_task_schedule import is_daily_task_due
 from module.multi_account.rotation_runner import AccountRotationRunner, DailyTaskOutcome
 from tasks.AccountRotation.config import RotationFailurePolicy
 from tasks.DailyTrifles.config import DailyGuildDonate, DailyTriflesConfig, DoneRecord
+from tasks.DailyTrifles.cooperation_adapter import CooperationAdapter, CooperationCleanupError
 from tasks.Restart.script_task import ScriptTask as RestartTask
 from tasks.base_task import BaseTask
 
@@ -40,6 +43,63 @@ class RotationAccountSwitcher(AccountSwitcher):
 
 class ScriptTask(BaseTask, CourtyardCharacterVerifierMixin):
     task_name = "AccountRotation"
+
+    def _run_cooperation_with_recovery(self, task, account):
+        """只恢复协作清理失败；恢复后仍核对同一账号与稳定庭院。"""
+        restarts = 0
+        while True:
+            try:
+                return task.run_cooperation_rotation()
+            except CooperationCleanupError as exc:
+                if account is None or restarts >= 3:
+                    raise RequestHumanTakeover("协作退出恢复耗尽，停止账号轮换") from exc
+                restarts += 1
+                logger.warning("[AccountRotation] 协作退出未确认，重启当前账号 account_id=%s attempt=%s/3",
+                               account.account_id, restarts)
+                while True:
+                    try:
+                        self._recover_cooperation_account(task, account)
+                        # 重启及重新切号后弃用旧导航会话，重建当前账号的协作任务。
+                        task = type(task)(config=task.config, device=self.device)
+                        break
+                    except (ConfigPersistenceError, OcrUnavailableError, ImageFrameExpiredError, RequestHumanTakeover):
+                        raise
+                    except Exception as recovery_error:
+                        if restarts >= 3:
+                            raise RequestHumanTakeover("协作恢复耗尽，停止账号轮换") from recovery_error
+                        restarts += 1
+                        logger.warning("[AccountRotation] 协作重启失败，重试同一账号 account_id=%s attempt=%s/3 error=%s",
+                                       account.account_id, restarts, type(recovery_error).__name__)
+
+    def _recover_cooperation_account(self, task, account):
+        restart = RestartTask(self.config, self.device)
+        restart.expected_account = account
+        restart.app_restart()
+        settings = self.config.account_rotation.account_rotation_config
+        switcher = AccountSwitcher(
+            self.config, self.device, fast=True, max_attempts=settings.max_switch_attempts,
+            retry_delay=settings.retry_delay_seconds, timeout=settings.switch_timeout_seconds,
+        )
+        result = switcher.ensure_account(account)
+        if not result.success:
+            raise RequestHumanTakeover(
+                f"协作恢复后无法确认原账号 account_id={account.account_id} code={result.error_code.value}"
+            )
+        verifier = CooperationAdapter(task)
+        deadline = time.monotonic() + 15
+        stable = 0
+        while time.monotonic() < deadline:
+            task.screenshot()
+            if verifier._dedicated_exit_main_confirmed():
+                stable += 1
+                if stable >= 2:
+                    break
+            else:
+                stable = 0
+            time.sleep(0.3)
+        else:
+            # 已核对原账号，庭院短时未稳定可继续使用同一账号的恢复预算。
+            raise TimeoutError("协作恢复后未能确认稳定庭院")
 
     def _run_daily_task(self, task_name: str, account=None) -> bool | None | DailyTaskOutcome:
         if task_name not in {
@@ -144,7 +204,7 @@ class ScriptTask(BaseTask, CourtyardCharacterVerifierMixin):
             if task_name in {"hunt_kirin", "hunt_netherworld"}:
                 result = task.run_hunt_rotation(task_name)
             elif task_name in {"cooperation_morning", "cooperation_evening"}:
-                result = task.run_cooperation_rotation()
+                result = self._run_cooperation_with_recovery(task, account)
             else:
                 result = task.run()
 
@@ -154,6 +214,10 @@ class ScriptTask(BaseTask, CourtyardCharacterVerifierMixin):
                 return result
         except TaskEnd:
             return True
+        except RequestHumanTakeover:
+            raise
+        except (ConfigPersistenceError, OcrUnavailableError, ImageFrameExpiredError):
+            raise
         except Exception as exc:
             logger.exception("[AccountRotation] daily task failed: %s", task_name)
             failed_task = str(getattr(task, "_active_daily_subtask", "") or "")
@@ -302,6 +366,8 @@ class ScriptTask(BaseTask, CourtyardCharacterVerifierMixin):
         )
         try:
             self.set_next_run(self.task_name, target=retry_target)
+        except (OcrUnavailableError, ImageFrameExpiredError):
+            raise
         except Exception:
             logger.exception("[AccountRotation] failed to delay scheduler after interruption")
 
@@ -363,6 +429,8 @@ class ScriptTask(BaseTask, CourtyardCharacterVerifierMixin):
                 Path.cwd() / "config",
                 recover_instances={str(self.config.config_name).lower()},
             )
+        except (OcrUnavailableError, ImageFrameExpiredError):
+            raise
         except Exception:
             self._delay_after_rotation_interruption()
             raise
@@ -386,6 +454,8 @@ class ScriptTask(BaseTask, CourtyardCharacterVerifierMixin):
                 task_runner_with_account=self._run_daily_task,
                 daily_task_due=self._daily_task_is_due,
             ).run()
+        except (ConfigPersistenceError, OcrUnavailableError, ImageFrameExpiredError):
+            raise
         except Exception:
             # 状态写入等基础异常不能让外部进程重启后立即重复撞错。
             self._delay_after_rotation_interruption()

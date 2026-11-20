@@ -21,11 +21,11 @@ class WantedQuestsAssets:
 
 	# Image Rule Assets
 	# description 
-	I_WQ_INVITE_1 = RuleImage(roi_front=(137,361,39,47), roi_back=(108,338,100,100), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1.png")
+	I_WQ_INVITE_1 = RuleImage(roi_front=(120,404,31,27), roi_back=(98,379,70,71), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1.png")
 	# description 
-	I_WQ_INVITE_2 = RuleImage(roi_front=(462,361,37,47), roi_back=(435,336,100,100), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_2.png")
+	I_WQ_INVITE_2 = RuleImage(roi_front=(388,404,31,27), roi_back=(366,379,70,71), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1.png")
 	# description 
-	I_WQ_INVITE_3 = RuleImage(roi_front=(754,366,39,42), roi_back=(728,339,100,100), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_3.png")
+	I_WQ_INVITE_3 = RuleImage(roi_front=(656,404,31,27), roi_back=(634,379,70,71), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1.png")
 	# description 
 	I_WQ_FRIEND_1 = RuleImage(roi_front=(240,185,180,80), roi_back=(240,185,180,80), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_friend_1.png")
 	# description 
@@ -51,53 +51,53 @@ class WantedQuestsAssets:
 	# 邀请跨服好友,已选中状态，高亮状态 
 	I_WQ_INVITE_DIFF_SVR_HIGHLIGHT = RuleImage(roi_front=(260,70,120,90), roi_back=(260,70,120,90), threshold=0.9, method="Template matching", file="./tasks/WantedQuests/invite/wq_invite_diff_svr_highlight.png")
 	# 从左到右第一个协作任务的类型 
-	I_WQ_COOPERATION_TYPE_GOLD_1 = RuleImage(roi_front=(195,505,180,90), roi_back=(195,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_gold.png")
+	I_WQ_COOPERATION_TYPE_GOLD_1 = RuleImage(roi_front=(261,532,49,44), roi_back=(195,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_gold.png")
 	# 从左到右第一个协作任务的类型 
-	I_WQ_COOPERATION_TYPE_JADE_1 = RuleImage(roi_front=(195,505,180,90), roi_back=(195,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_jade.png")
+	I_WQ_COOPERATION_TYPE_JADE_1 = RuleImage(roi_front=(260,532,51,46), roi_back=(195,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_jade.png")
 	# 从左到右第一个协作任务的类型为狗粮 
 	I_WQ_COOPERATION_TYPE_DOG_FOOD_1 = RuleImage(roi_front=(195,505,180,90), roi_back=(195,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_dog_food.png")
 	# 从左到右第一个协作任务的类型为猫粮 
 	I_WQ_COOPERATION_TYPE_CAT_FOOD_1 = RuleImage(roi_front=(195,505,180,90), roi_back=(195,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_cat_food.png")
 	# 从左到右第一个协作任务的类型 
-	I_WQ_COOPERATION_TYPE_SUSHI_1 = RuleImage(roi_front=(195,505,180,90), roi_back=(195,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_sushi.png")
+	I_WQ_COOPERATION_TYPE_SUSHI_1 = RuleImage(roi_front=(260,531,53,45), roi_back=(195,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_sushi.png")
 	# 从左到右第二个协作任务的类型 
 	I_WQ_COOPERATION_TYPE_GOLD_2 = RuleImage(roi_front=(490,505,180,90), roi_back=(490,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_gold.png")
 	# 从左到右第二个协作任务的类型 
-	I_WQ_COOPERATION_TYPE_JADE_2 = RuleImage(roi_front=(490,505,180,90), roi_back=(490,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_jade.png")
+	I_WQ_COOPERATION_TYPE_JADE_2 = RuleImage(roi_front=(528,532,51,46), roi_back=(463,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_jade.png")
 	# 从左到右第二个协作任务的类型为狗粮 
 	I_WQ_COOPERATION_TYPE_DOG_FOOD_2 = RuleImage(roi_front=(490,505,180,90), roi_back=(490,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_dog_food.png")
 	# 从左到右第二个协作任务的类型为猫粮 
 	I_WQ_COOPERATION_TYPE_CAT_FOOD_2 = RuleImage(roi_front=(490,505,180,90), roi_back=(490,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_cat_food.png")
 	# 从左到右第二个协作任务的类型 
-	I_WQ_COOPERATION_TYPE_SUSHI_2 = RuleImage(roi_front=(490,505,180,90), roi_back=(490,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_sushi.png")
+	I_WQ_COOPERATION_TYPE_SUSHI_2 = RuleImage(roi_front=(528,531,53,45), roi_back=(463,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_sushi.png")
 	# 从左到右第三个协作任务的类型 
 	I_WQ_COOPERATION_TYPE_GOLD_3 = RuleImage(roi_front=(790,505,180,90), roi_back=(790,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_gold.png")
 	# 从左到右第三个协作任务的类型 
-	I_WQ_COOPERATION_TYPE_JADE_3 = RuleImage(roi_front=(790,505,180,90), roi_back=(790,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_jade.png")
+	I_WQ_COOPERATION_TYPE_JADE_3 = RuleImage(roi_front=(796,532,51,46), roi_back=(731,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_jade.png")
 	# 从左到右第三个协作任务的类型为狗粮 
 	I_WQ_COOPERATION_TYPE_DOG_FOOD_3 = RuleImage(roi_front=(790,505,180,90), roi_back=(790,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_dog_food.png")
 	# 从左到右第三个协作任务的类型为猫粮 
 	I_WQ_COOPERATION_TYPE_CAT_FOOD_3 = RuleImage(roi_front=(790,505,180,90), roi_back=(790,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_cat_food.png")
 	# 从左到右第三个协作任务的类型 
-	I_WQ_COOPERATION_TYPE_SUSHI_3 = RuleImage(roi_front=(790,505,180,90), roi_back=(790,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_sushi.png")
+	I_WQ_COOPERATION_TYPE_SUSHI_3 = RuleImage(roi_front=(796,531,53,45), roi_back=(731,505,180,90), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/wq_cooperation_type_sushi.png")
 	# 现世协作1
-	I_WQ_INVITE_1_REALWORLD = RuleImage(roi_front=(139,361,37,46), roi_back=(108,338,100,100), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1_realworld.png")
+	I_WQ_INVITE_1_REALWORLD = RuleImage(roi_front=(120,404,31,27), roi_back=(96,380,74,68), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1_realworld.png")
 	# 现世协作2
-	I_WQ_INVITE_2_REALWORLD = RuleImage(roi_front=(437,361,41,43), roi_back=(408,334,100,100), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_2_realworld.png")
+	I_WQ_INVITE_2_REALWORLD = RuleImage(roi_front=(388,404,31,27), roi_back=(364,380,74,68), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1_realworld.png")
 	# 现世协作3
-	I_WQ_INVITE_3_REALWORLD = RuleImage(roi_front=(754,366,39,42), roi_back=(728,339,100,100), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_3_realworld.png")
+	I_WQ_INVITE_3_REALWORLD = RuleImage(roi_front=(656,404,31,27), roi_back=(632,380,74,68), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_wq_invite_1_realworld.png")
 	# 是否为现世协作
-	I_IS_REALWORLD_1 = RuleImage(roi_front=(157,292,30,32), roi_back=(155,290,35,37), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_realworld_1.png")
+	I_IS_REALWORLD_1 = RuleImage(roi_front=(135,310,26,27), roi_back=(120,292,58,56), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_realworld_1.png")
 	# 是否为现世协作2
-	I_IS_REALWORLD_2 = RuleImage(roi_front=(457,292,30,32), roi_back=(455,290,35,37), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_realworld_1.png")
+	I_IS_REALWORLD_2 = RuleImage(roi_front=(403,310,26,27), roi_back=(388,292,58,56), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_realworld_1.png")
 	# 是否为现世协作3
-	I_IS_REALWORLD_3 = RuleImage(roi_front=(757,292,30,32), roi_back=(755,290,35,37), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_realworld_1.png")
+	I_IS_REALWORLD_3 = RuleImage(roi_front=(671,310,26,27), roi_back=(656,292,58,56), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_realworld_1.png")
 	# 是否为普通协作
-	I_IS_NORMAL_1 = RuleImage(roi_front=(157,292,30,32), roi_back=(155,290,35,37), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_normal_1.png")
+	I_IS_NORMAL_1 = RuleImage(roi_front=(135,310,26,27), roi_back=(116,291,61,61), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_normal_1.png")
 	# 是否为普通协作2
-	I_IS_NORMAL_2 = RuleImage(roi_front=(457,292,30,32), roi_back=(455,290,35,37), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_normal_1.png")
+	I_IS_NORMAL_2 = RuleImage(roi_front=(403,310,26,27), roi_back=(384,291,61,61), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_normal_1.png")
 	# 是否为普通协作3
-	I_IS_NORMAL_3 = RuleImage(roi_front=(757,292,30,32), roi_back=(755,290,35,37), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_normal_1.png")
+	I_IS_NORMAL_3 = RuleImage(roi_front=(671,310,26,27), roi_back=(652,291,61,61), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/invite/invite_is_normal_1.png")
 
 
 	# Ocr Rule Assets
@@ -118,13 +118,13 @@ class WantedQuestsAssets:
 
 	# Image Rule Assets
 	# 封印 
-	I_WQ_SEAL = RuleImage(roi_front=(174,184,20,29), roi_back=(27,93,693,488), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_wq_seal.png")
+	I_WQ_SEAL = RuleImage(roi_front=(243,336,26,34), roi_back=(27,93,693,488), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_wq_seal.png")
 	# 勾号 
 	I_WQ_DONE = RuleImage(roi_front=(248,183,37,39), roi_back=(25,147,652,461), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_wq_done.png")
 	# 一键追踪 
-	I_TRACE_ENABLE = RuleImage(roi_front=(1097,588,101,70), roi_back=(1097,588,101,70), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_trace_enable.png")
+	I_TRACE_ENABLE = RuleImage(roi_front=(1145,608,78,74), roi_back=(1093,573,169,130), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_trace_enable.png")
 	# 取消追踪 
-	I_TRACE_DISABLE = RuleImage(roi_front=(1091,586,108,70), roi_back=(1091,586,108,70), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_trace_disable.png")
+	I_TRACE_DISABLE = RuleImage(roi_front=(1145,602,78,74), roi_back=(1113,556,138,150), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_trace_disable.png")
 	# 奖励宝箱 
 	I_WQ_BOX = RuleImage(roi_front=(48,187,43,38), roi_back=(0,72,118,552), threshold=0.7, method="Template matching", file="./tasks/WantedQuests/wq/wq_wq_box.png")
 	# 小号追踪 
@@ -152,7 +152,9 @@ class WantedQuestsAssets:
 	# 探索界面,左侧任务列表右上角右下角标志 
 	I_WQ_LIST_TOP_BOTTOM_CHECK = RuleImage(roi_front=(120,125,25,425), roi_back=(120,125,25,425), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_list_top_bottom_check.png")
 	# 悬赏封印主页面标题
-	I_PAGE_WANTED_QUESTS = RuleImage(roi_front=(580,68,118,33), roi_back=(575,62,128,43), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_page_wanted_quests.png")
+	I_PAGE_WANTED_QUESTS = RuleImage(roi_front=(583,55,118,33), roi_back=(526,15,228,87), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_page_wanted_quests.png")
+	# 悬赏退出按钮
+	I_WQ_EXIT_BUTTON = RuleImage(roi_front=(1193,87,42,45), roi_back=(1176,68,73,76), threshold=0.8, method="Template matching", file="./tasks/WantedQuests/wq/wq_wq_exit_button.png")
 
 
 	# Ocr Rule Assets

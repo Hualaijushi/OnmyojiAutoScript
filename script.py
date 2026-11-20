@@ -114,6 +114,8 @@ class Script:
             from module.config.config import Config
             config = Config(config_name=self.config_name)
             return config
+        except ConfigPersistenceError:
+            raise
         except RequestHumanTakeover:
             logger.critical('Request human takeover')
             exit(1)
@@ -127,6 +129,8 @@ class Script:
             from module.device.device import Device
             device = Device(config=self.config)
             return device
+        except ConfigPersistenceError:
+            raise
         except RequestHumanTakeover:
             logger.critical('Request human takeover')
             exit(1)
@@ -544,6 +548,15 @@ class Script:
         return False
 
     def loop(self):
+        """配置故障覆盖初始化、调度准备、任务执行及收尾，停止后不再取下一任务。"""
+        try:
+            return self._loop()
+        except ConfigPersistenceError as error:
+            from module.server.script_process import report_config_persistence_failure
+            report_config_persistence_failure(self.config_name, error, self.state_queue)
+            return False
+
+    def _loop(self):
         """
         Main loop of scheduler.
         :return:
@@ -661,6 +674,10 @@ class Script:
         对致命异常 (ScriptError / RequestHumanTakeover / 未识别 Exception)
         在内部直接 exit(1)。
         """
+        if isinstance(e, ConfigPersistenceError):
+            # 不诊断游戏、不再保存配置或调度 Restart，交外层停止并报告。
+            raise e
+
         if isinstance(e, TaskEnd):
             self._capture_task_runtime_outcome(command)
             return True

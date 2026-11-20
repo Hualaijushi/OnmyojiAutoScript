@@ -51,8 +51,8 @@ def refresh_report_archive(output_dir: Path, today: date) -> list[Path]:
     try:
         with temp.open("w", encoding="utf-8", newline="\n") as stream:
             stream.write(_render_index(
-                [item for item in reports if item[1].startswith('OAS每日任务结果_')], today, cutoff,
-                [item for item in reports if item[1].startswith('OAS超鬼王门票刷取情况_')],
+                [item for item in reports if item[1].lower().startswith('oas每日任务结果_')], today, cutoff,
+                [item for item in reports if item[1].lower().startswith('oas超鬼王门票刷取情况_')],
             ))
             stream.flush()
             os.fsync(stream.fileno())

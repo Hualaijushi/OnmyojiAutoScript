@@ -3,10 +3,12 @@
 # 脚本进程
 # github https://github.com/runhey
 import multiprocessing
+import os
 from asyncio import QueueEmpty, CancelledError, sleep
 from enum import Enum
 
 from module.logger import logger
+from module.exception import ConfigPersistenceError
 from module.server.config_manager import ConfigManager
 from module.server.script_websocket import ScriptWSManager
 
@@ -20,6 +22,14 @@ class ScriptState(int, Enum):
     RUNNING = 1
     WARNING = 2
     UPDATING = 3
+
+
+def report_config_persistence_failure(config_name, error, state_queue):
+    """报告时不再访问配置或设备，避免二次保存掩盖原错误。"""
+    logger.error(f'账号={config_name} pid={os.getpid()} {error}')
+    logger.critical('配置读写持续失败，已停止本账号调度；排除文件占用或权限问题后请手动重新启动账号。')
+    if state_queue is not None:
+        state_queue.put({'state': ScriptState.WARNING})
 
 
 class ScriptProcess(ScriptWSManager):
@@ -201,6 +211,8 @@ def func(
         script = Script(config_name=config)
         script.attach_runtime_channels(state_queue, command_queue)
         script.loop()
+    except ConfigPersistenceError as error:
+        report_config_persistence_failure(config, error, state_queue)
     except SystemExit as e:
         logger.info(f'Script {config} process exit')
         logger.error(f'Error: {e}')

@@ -6,10 +6,12 @@ from datetime import datetime
 from pathlib import Path
 
 from module.logger import logger
+from module.exception import ConfigPersistenceError, OcrUnavailableError, ImageFrameExpiredError, RequestHumanTakeover
 from module.multi_account.account_manager import AccountManager
 from module.multi_account.account_switcher import AccountSwitcher, SwitchResult
 from module.multi_account.daily_state import DailyStateManager
-from module.multi_account.daily_task_report import sync_account_result, write_markdown
+from module.multi_account.daily_task_report import sync_account_result, write_html, write_markdown
+from module.multi_account.daily_task_images import CooperationImage
 
 
 @dataclass(slots=True)
@@ -34,6 +36,7 @@ class DailyTaskOutcome:
     skipped: bool = False
     failed_task: str = ""
     error: str = ""
+    cooperation_images: tuple[CooperationImage, ...] = ()
 
 
 class AccountRotationRunner:
@@ -133,11 +136,25 @@ class AccountRotationRunner:
                 )
                 continue
             self.state.mark_task(account.instance, account.account_id, task_name, "running")
+            cooperation_images = ()
             try:
                 if self.task_runner_with_account is not None:
                     task_result = self.task_runner_with_account(task_name, account)
                 else:
                     task_result = self.task_runner(task_name)
+            except ConfigPersistenceError:
+                # 保存失败交调度器停机，避免执行后续子任务或切号。
+                raise
+            except (OcrUnavailableError, ImageFrameExpiredError) as exc:
+                # 保留已有完成状态，只标记本次中断项并停止切换后续账号。
+                self.state.mark_task(account.instance, account.account_id, task_name, "failed",
+                                     error=f"识别暂时不可用：{exc}")
+                raise
+            except RequestHumanTakeover as exc:
+                # 页面清理失败必须停止轮换，不能当作普通任务失败后继续切号。
+                self.state.mark_task(account.instance, account.account_id, task_name, "failed",
+                                     error=f"RequestHumanTakeover: {exc}")
+                raise
             except Exception as exc:
                 success = False
                 error = f"{type(exc).__name__}: {exc}".strip()
@@ -149,6 +166,7 @@ class AccountRotationRunner:
                     task_skipped = task_result.skipped
                     success = task_result.success and not task_skipped
                     task_result_value = task_result.result
+                    cooperation_images = task_result.cooperation_images
                     failed_task = task_result.failed_task
                     error = task_result.error or "task returned false"
                 else:
@@ -196,6 +214,12 @@ class AccountRotationRunner:
                 "completed",
                 result=task_result_value,
             )
+            if cooperation_images and task_name in {"cooperation_morning", "cooperation_evening"}:
+                write_html(
+                    self.state,
+                    Path.cwd() / "config",
+                    image_updates={(task_name, account.instance.lower(), account.account_id): cooperation_images},
+                )
             logger.info(
                 "[Account] instance=%s account_id=%s task=%s completed",
                 account.instance,

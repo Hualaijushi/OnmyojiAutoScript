@@ -2,7 +2,7 @@
   {
     "itemName": "wq_seal",
     "imageName": "wq_wq_seal.png",
-    "roiFront": "174,184,20,29",
+    "roiFront": "243,336,26,34",
     "roiBack": "27,93,693,488",
     "method": "Template matching",
     "threshold": 0.8,
@@ -20,8 +20,8 @@
   {
     "itemName": "trace_enable",
     "imageName": "wq_trace_enable.png",
-    "roiFront": "1097,588,101,70",
-    "roiBack": "1097,588,101,70",
+    "roiFront": "1145,608,78,74",
+    "roiBack": "1093,573,169,130",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "一键追踪"
@@ -29,8 +29,8 @@
   {
     "itemName": "trace_disable",
     "imageName": "wq_trace_disable.png",
-    "roiFront": "1091,586,108,70",
-    "roiBack": "1091,586,108,70",
+    "roiFront": "1145,602,78,74",
+    "roiBack": "1113,556,138,150",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "取消追踪"
@@ -155,10 +155,19 @@
   {
     "itemName": "page_wanted_quests",
     "imageName": "wq_page_wanted_quests.png",
-    "roiFront": "580,68,118,33",
-    "roiBack": "575,62,128,43",
+    "roiFront": "583,55,118,33",
+    "roiBack": "526,15,228,87",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "悬赏封印主页面标题"
+  },
+  {
+    "itemName": "wq_exit_button",
+    "imageName": "wq_wq_exit_button.png",
+    "roiFront": "1193,87,42,45",
+    "roiBack": "1176,68,73,76",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "悬赏退出按钮"
   }
 ]

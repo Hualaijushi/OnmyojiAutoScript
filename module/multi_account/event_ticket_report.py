@@ -101,7 +101,7 @@ class EventTicketReport:
             daily = self.output_dir / f'OAS每日任务结果_{day}.html'
             if daily.exists():
                 content = daily.read_text(encoding='utf-8-sig')
-                if 'id="ticket-report"' not in content:
+                if 'id="ticket-report"' not in content and '</main>' in content:
                     self._write(daily, content.replace('</main>', ticket_entry(day) + '</main>', 1))
             else:
                 self._write(daily, '<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
