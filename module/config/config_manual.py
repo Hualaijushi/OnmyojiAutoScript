@@ -18,7 +18,7 @@ class ConfigManual:
         > CollectiveMissions
         > Pets > TalismanPass > Delegation > Hyakkiyakou
         > Secret > WeeklyTrifles > MysteryShop > Duel > Chess
-        > TrueOrochi > WeeklyPurchase
+        > TrueOrochi > WeeklyPurchase > WeeklyPurchaseRotation
         > MetaDemon > MetaDemonRotation > GhostCount > FrogBoss > FloatParade > Quiz > KittyShop > DyeTrials > MemoryScrolls > GuguArtStudio
         """
 

@@ -50,6 +50,8 @@ class ConfigModify(Config):
         task = convert_to_underscore(task)
         group = convert_to_underscore(group)
         argument = convert_to_underscore(argument)
+        if task == 'weekly_purchase_rotation' and group != 'scheduler':
+            task = 'weekly_purchase'
 
         path = f'{task}.{group}.{argument}'
         task_object = getattr(self.model, task, None)

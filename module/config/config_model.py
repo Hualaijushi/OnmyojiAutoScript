@@ -83,6 +83,7 @@ from tasks.MemoryScrolls.config import MemoryScrolls
 # 每周任务---------------------------------------------------------------------------------------------------------------
 from tasks.TrueOrochi.config import TrueOrochi
 from tasks.WeeklyPurchase.config import WeeklyPurchase
+from tasks.WeeklyPurchaseRotation.config import WeeklyPurchaseRotation
 from tasks.Secret.config import Secret
 from tasks.WeeklyTrifles.config import WeeklyTrifles
 from tasks.MysteryShop.config import MysteryShop
@@ -153,6 +154,7 @@ class ConfigModel(ConfigBase):
     # 这些是每周任务
     true_orochi: TrueOrochi = Field(default_factory=TrueOrochi)
     weekly_purchase: WeeklyPurchase = Field(default_factory=WeeklyPurchase)
+    weekly_purchase_rotation: WeeklyPurchaseRotation = Field(default_factory=WeeklyPurchaseRotation)
     secret: Secret = Field(default_factory=Secret)
     weekly_trifles: WeeklyTrifles = Field(default_factory=WeeklyTrifles)
     mystery_shop: MysteryShop = Field(default_factory=MysteryShop)
@@ -259,6 +261,13 @@ class ConfigModel(ConfigBase):
         filepath = Path.cwd() / "config" / f"{config_name}.json"
         write_file(filepath, data)
 
+    def task_config_view(self, task: str):
+        """轮换页面共享购买选项，同时保留独立的调度配置。"""
+        task = convert_to_underscore(task)
+        if task == 'weekly_purchase_rotation':
+            return self.weekly_purchase.model_copy(update={'scheduler': self.weekly_purchase_rotation.scheduler})
+        return getattr(self, task, None)
+
     def gui_args(self, task: str) -> str:
         """
         返回提供给gui显示的参数
@@ -266,7 +275,7 @@ class ConfigModel(ConfigBase):
         :return: 返回的是pydantic给我们结构化的输出的信息, 如果不能获取就返回空的str
         """
         task = convert_to_underscore(task)
-        task_gui = getattr(self, task, None)
+        task_gui = self.task_config_view(task)
         if task_gui is None:
             logger.warning(f'{task} is no inexistence')
             return ''
@@ -290,7 +299,7 @@ class ConfigModel(ConfigBase):
         :return:
         """
         task_name = convert_to_underscore(task)
-        task = getattr(self, task_name, None)
+        task = self.task_config_view(task_name)
         if task is None:
             logger.warning(f'{task_name} is no inexistence')
             return ''
@@ -359,7 +368,7 @@ class ConfigModel(ConfigBase):
         :return:
         """
         task = convert_to_underscore(task)
-        task = getattr(self, task, None)
+        task = self.task_config_view(task)
         if task is None:
             logger.warning(f'{task} is no inexistence')
             return {}
@@ -473,6 +482,8 @@ class ConfigModel(ConfigBase):
         task = convert_to_underscore(task)
         group = convert_to_underscore(group)
         argument = convert_to_underscore(argument)
+        if task == 'weekly_purchase_rotation' and group != 'scheduler':
+            task = 'weekly_purchase'
 
         # pandtic验证
         if isinstance(value, str) and len(value) == 8:
@@ -564,6 +575,11 @@ class ConfigModel(ConfigBase):
     def copy_script_task(self, task_name: str, source_task: BaseModel) -> bool:
         model_task_name = convert_to_underscore(task_name)
         try:
+            if model_task_name == 'weekly_purchase_rotation':
+                self.weekly_purchase = source_task.model_copy(update={'scheduler': self.weekly_purchase.scheduler}, deep=True)
+                self.weekly_purchase_rotation.scheduler = source_task.scheduler.model_copy(deep=True)
+                self.save()
+                return True
             setattr(self, model_task_name, source_task)
             self.save()
             logger.info(f'Copy task {model_task_name} success')
@@ -575,6 +591,8 @@ class ConfigModel(ConfigBase):
     def copy_task_group(self, task_name: str, group_name: str, source_task: BaseModel) -> bool:
         model_task_name = convert_to_underscore(task_name)
         model_group_name = convert_to_underscore(group_name)
+        if model_task_name == 'weekly_purchase_rotation' and model_group_name != 'scheduler':
+            model_task_name = 'weekly_purchase'
         task_object = getattr(self, model_task_name, None)
         if not task_object:
             return False

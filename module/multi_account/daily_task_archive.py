@@ -5,13 +5,13 @@ from __future__ import annotations
 import os
 import re
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
 
 from module.logger import logger
-from module.multi_account.file_lock import atomic_replace_with_retry
+from module.multi_account.file_lock import atomic_replace_with_retry, interprocess_file_lock
 
 
 RETENTION_DAYS = 7
@@ -45,20 +45,7 @@ def refresh_report_archive(output_dir: Path, today: date) -> list[Path]:
             candidates.append(path)
         elif day <= today and path.suffix.lower() == ".html":
             reports.append((day, path.name))
-    reports.sort(reverse=True)
-    index_path = root / "index.html"
-    temp = index_path.with_name(f"{index_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    try:
-        with temp.open("w", encoding="utf-8", newline="\n") as stream:
-            stream.write(_render_index(
-                [item for item in reports if item[1].lower().startswith('oas每日任务结果_')], today, cutoff,
-                [item for item in reports if item[1].lower().startswith('oas超鬼王门票刷取情况_')],
-            ))
-            stream.flush()
-            os.fsync(stream.fileno())
-        atomic_replace_with_retry(temp, index_path)
-    finally:
-        temp.unlink(missing_ok=True)
+    _write_index(root, reports, today, cutoff)
     removed = []
     for path in candidates:
         # 不递归清理，不跟随链接；删除前再次确认目标仍在指定日志目录中。
@@ -74,8 +61,46 @@ def refresh_report_archive(output_dir: Path, today: date) -> list[Path]:
     return removed
 
 
+def _write_index(root: Path, reports: list[tuple[date, str]], today: date, cutoff: date) -> None:
+    reports.sort(reverse=True)
+    daily_reports = [item for item in reports if item[1].lower().startswith('oas每日任务结果_')]
+    ticket_reports = [item for item in reports if item[1].lower().startswith('oas超鬼王门票刷取情况_')]
+    index_path = root / "index.html"
+    temp = index_path.with_name(f"{index_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        with temp.open("w", encoding="utf-8", newline="\n") as stream:
+            from module.multi_account.weekly_purchase_report import weekly_purchase_summary
+            summary = weekly_purchase_summary(root.parents[1] / 'config', datetime.now())
+            stream.write(_render_index(daily_reports, today, cutoff, ticket_reports, weekly_summary=summary))
+            stream.flush()
+            os.fsync(stream.fileno())
+        atomic_replace_with_retry(temp, index_path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def refresh_weekly_purchase_index(output_dir: Path) -> None:
+    """仅刷新入口，不清理日志；报告错误不影响购买任务。"""
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        root = output_dir.resolve()
+        today = date.today()
+        cutoff = today - timedelta(days=RETENTION_DAYS - 1)
+        with interprocess_file_lock(root / '.daily_task_report.lock', timeout=10):
+            reports = []
+            for path in root.iterdir():
+                if path.is_symlink() or not path.is_file() or path.resolve().parent != root:
+                    continue
+                day = report_date(path)
+                if day is not None and cutoff <= day <= today and path.suffix.lower() == '.html':
+                    reports.append((day, path.name))
+            _write_index(root, reports, today, cutoff)
+    except Exception:
+        logger.exception("每周购买入口统计更新失败")
+
+
 def _render_index(reports: list[tuple[date, str]], today: date, cutoff: date,
-                  ticket_reports: list[tuple[date, str]] | None = None) -> str:
+                  ticket_reports: list[tuple[date, str]] | None = None, *, weekly_summary: str = "") -> str:
     rows = []
     for day, filename in reports:
         label = "今天" if day == today else "历史报告"
@@ -90,8 +115,10 @@ def _render_index(reports: list[tuple[date, str]], today: date, cutoff: date,
     )
     tickets = '<h2>超鬼王门票情况</h2>'
     if ticket_reports:
-        tickets += ''.join(f'<p><a href="{escape(quote(name), quote=True)}">每日超鬼王门票刷取情况 · {day.isoformat()}</a></p>'
-                           for day, name in ticket_reports)
+        tickets += ''.join(
+            f'<p><a href="{escape(quote(name), quote=True)}">每日超鬼王门票刷取情况 · {day.isoformat()}</a></p>'
+            for day, name in ticket_reports
+        )
     else:
         tickets += '<p>尚无门票记录</p>'
     return (
@@ -106,7 +133,7 @@ def _render_index(reports: list[tuple[date, str]], today: date, cutoff: date,
         f'<p>最近 {RETENTION_DAYS} 天：{cutoff.isoformat()} 至 {today.isoformat()}</p>'
         + latest
         + '<table><thead><tr><th>日期</th><th>说明</th><th>查看</th></tr></thead><tbody>'
-        + "".join(rows) + '</tbody></table>' + tickets + '</main><script>'
+        + "".join(rows) + '</tbody></table>' + tickets + '<p>' + escape(weekly_summary) + '</p></main><script>'
         "if(new URLSearchParams(location.search).get('open')==='latest'){"
         "const link=document.getElementById('latest');if(link)location.replace(link.href);}"
         '</script></body></html>\n'

@@ -1,4 +1,5 @@
 {
+  "WeeklyPurchaseRotation": "Weekly Account Purchase Rotation",
   "ocr": "OCR Logs",
   "save_ocr_log": "Save OCR recognition logs",
   "save_ocr_log_help": "Disabled by default. When enabled, saves OCR input images and recognized text for debugging.",

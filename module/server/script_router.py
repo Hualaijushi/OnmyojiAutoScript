@@ -228,7 +228,7 @@ async def config_delete(name: str = ''):
 async def task_copy(task_name: str, dest_config_name: str, source_config_name: str):
     if dest_config_name not in mm.script_process or source_config_name not in mm.script_process:
         return False
-    source_task = getattr(mm.config_cache(source_config_name).model, convert_to_underscore(task_name), None)
+    source_task = mm.config_cache(source_config_name).model.task_config_view(task_name)
     if source_task is None:
         return False
     return mm.config_cache(dest_config_name).model.copy_script_task(task_name, source_task)
@@ -238,7 +238,7 @@ async def task_copy(task_name: str, dest_config_name: str, source_config_name: s
 async def task_group_copy(task_name: str, group_name: str, dest_config_name: str, source_config_name: str):
     if dest_config_name not in mm.script_process or source_config_name not in mm.script_process:
         return False
-    source_task = getattr(mm.config_cache(source_config_name).model, convert_to_underscore(task_name), None)
+    source_task = mm.config_cache(source_config_name).model.task_config_view(task_name)
     if source_task is None:
         return False
     return mm.config_cache(dest_config_name).model.copy_task_group(task_name, group_name, source_task)
