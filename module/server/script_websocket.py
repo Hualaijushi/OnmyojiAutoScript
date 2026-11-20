@@ -2,12 +2,16 @@
 # @author runhey
 # github https://github.com/runhey
 from typing import Iterable
+import asyncio
 
 from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 
 class ScriptWSManager:
+
+    SEND_TIMEOUT = 1.0
+    CLOSE_TIMEOUT = 0.5
 
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -26,7 +30,7 @@ class ScriptWSManager:
             return
         try:
             # 给前端发送最后一次关闭信号
-            await ws.close()
+            await asyncio.wait_for(ws.close(), timeout=self.CLOSE_TIMEOUT)
         except (RuntimeError, WebSocketDisconnect):
             return
         except Exception:
@@ -55,7 +59,7 @@ class ScriptWSManager:
             await self.disconnect(ws)
             return False
         try:
-            await sender(payload)
+            await asyncio.wait_for(sender(payload), timeout=self.SEND_TIMEOUT)
             return True
         except (RuntimeError, WebSocketDisconnect):
             await self.disconnect(ws)
@@ -65,19 +69,11 @@ class ScriptWSManager:
             return False
 
     async def _broadcast(self, connections: Iterable[WebSocket], sender_factory) -> None:
-        dead_connections: list[WebSocket] = []
-        for connection in list(connections):
-            if connection.client_state == WebSocketState.DISCONNECTED:
-                dead_connections.append(connection)
-                continue
-            try:
-                await sender_factory(connection)
-            except (RuntimeError, WebSocketDisconnect):
-                dead_connections.append(connection)
-            except Exception:
-                dead_connections.append(connection)
-        for connection in dead_connections:
-            await self.disconnect(connection)
+        # 并发发送保证一个慢前端不会拖住其他连接；每条连接各自有截止时间。
+        await asyncio.gather(*(
+            self._send(connection, lambda _, ws=connection: sender_factory(ws), None)
+            for connection in list(connections)
+        ))
 
 
 

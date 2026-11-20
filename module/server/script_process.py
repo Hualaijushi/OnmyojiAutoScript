@@ -161,17 +161,21 @@ class ScriptProcess(ScriptWSManager):
                     if not self.log_pipe_out.poll():
                         await sleep(0.3)
                         continue
-                    log = self.log_pipe_out.recv()
-                    if not str(log).strip():
-                        continue
-                    current_log_key = self._extract_log_dedup_key(log)
-                    if current_log_key is not None:
-                        if current_log_key == previous_log_key:
+                    # 一轮适量排空积压，避免健康前端也被固定节流限制为每秒 20 条。
+                    for _ in range(50):
+                        if not self.log_pipe_out.poll():
+                            break
+                        log = self.log_pipe_out.recv()
+                        if not str(log).strip():
                             continue
-                        previous_log_key = current_log_key
-                    else:
-                        previous_log_key = None
-                    await self.broadcast_log(log)
+                        current_log_key = self._extract_log_dedup_key(log)
+                        if current_log_key is not None:
+                            if current_log_key == previous_log_key:
+                                continue
+                            previous_log_key = current_log_key
+                        else:
+                            previous_log_key = None
+                        await self.broadcast_log(log)
                 except EOFError as e:
                     await sleep(0.5)
                     logger.warning(f'EOFError: {e}')
@@ -223,6 +227,10 @@ def func(
         logger.exception(f'Run script {config} error')
         logger.error(f'Error: {e}')
         raise
+    finally:
+        # 退出前送出最后的错误日志，界面才能看到账号停止原因。
+        from module.logger import flush_frontend_logs
+        flush_frontend_logs(timeout=1.0)
 
 
 if __name__ == '__main__':

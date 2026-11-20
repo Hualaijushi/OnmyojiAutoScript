@@ -1,7 +1,9 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import atexit
 import sys
+import time
 
 import logging
 import os
@@ -15,6 +17,7 @@ from rich.highlighter import NullHighlighter
 from rich.logging import RichHandler
 from rich.rule import Rule
 from typing import Callable, List
+from module.base.log_dispatch import BoundedLogSender
 
 
 def cleanup_logs(log_dir: str = "./log", keep_days: int = 7):
@@ -320,8 +323,10 @@ def set_file_logger(name=pyw_name, *, do_cleanup=False):
 #            Set flutter
 # ======================================================================================================================
 class FlutterHandler(RichHandler):
-    # Rename
-    pass
+    def close(self):
+        if isinstance(self.console.file, FlutterLogStream):
+            self.console.file.close()
+        super().close()
 
 
 class FlutterConsole(Console):
@@ -347,15 +352,46 @@ class FlutterLogStream(TextIOBase):
     def __init__(self, *args, func: Callable[[ConsoleRenderable], None] = None, **kwargs):
         super().__init__(*args, **kwargs)
         self._func = func
+        self._sender = BoundedLogSender(func)
 
     def write(self, msg: str) -> int:
         if isinstance(msg, bytes):
             msg = msg.decode("utf-8")
-        self._func(msg)
+        if not self.closed:
+            self._sender.put(msg)
         return len(msg)
+
+    def drain(self, timeout: float = 1.0) -> bool:
+        if self.closed:
+            return True
+        return self._sender.drain(timeout)
+
+    def close(self):
+        if not self.closed:
+            self._sender.close()
+            super().close()
+
+
+def flush_frontend_logs(timeout: float = 1.0) -> None:
+    """进程退出前有限等待界面日志发完；子进程退出路径不保证执行 atexit，入口处需显式调用。"""
+    deadline = time.monotonic() + max(0.0, timeout)
+    for handler in list(logger.handlers):
+        stream = getattr(getattr(handler, 'console', None), 'file', None)
+        if isinstance(handler, FlutterHandler) and isinstance(stream, FlutterLogStream):
+            try:
+                stream.drain(max(0.0, deadline - time.monotonic()))
+            except Exception:
+                pass
+
+
+atexit.register(flush_frontend_logs)
 
 
 def set_func_logger(func):
+    for old in list(logger.handlers):
+        if isinstance(old, FlutterHandler):
+            logger.removeHandler(old)
+            old.close()
     stream = FlutterLogStream(func=func)
     stream_console = Console(
         file=stream,
