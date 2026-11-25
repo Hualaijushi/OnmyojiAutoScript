@@ -9524,3 +9524,9 @@ RealmRaid/ActivityShikigami/RyouToppa/click/swipe/FrameWait 分域回归及 comp
 - master 的 ActivityShikigami 新活动 WIP、FrogBoss / Orochi WIP、SwitchSoul V1/V2、SixRealms 等其它提交；master 的 annotator `Unknown frame id` 结论与隔离方案（本分支 `register_frame` 不删同配置旧帧，机制不同，见 AI_CONTEXT §8）。
 - Level C PENDING：UI 更新适配（含 DailyTrifles 商店两行行为变化）与退四退出确认（含本分支 `hunt_adapter` 主动退出），清单见 ROADMAP。
 - P1：`exit_battle()` 有界化。未 push。
+
+## 2026-11-25 - 每日琐事邮箱流程同步至 synevo
+
+- 以远端 synevo 的 6eb93b10 为基线，移植 master 的 ec9158de 及仅供该优化使用的前置邮箱流程。保留账号轮换子任务归属和完成记录路径，邮箱识别资源放在 DailyTrifles 内。
+- 静态对照确认既有任务方法仅变更 run_pickup_email，新增邮箱判断和领奖弹窗两个辅助方法。L2 原始扫描由 1157 个调用点增至 1162，显式策略由 40 处增至 51；全部 11 处增量属于邮箱流程。全仓 L2 登记生成器在移植前已因 ActivityShikigami 历史清单和源码不一致而失败，本次未更新全仓登记。
+- 守护入口运行邮箱、轮换日报和 L1/L2 点击用例，共 71 项通过，耗时 29.715 秒。受测代码树为 0b8a6e27e4a542426b57451600b20a9f87c39444，之后只去除 4 处生成注释的行尾空格并补项目文档。日志见 D:\Codex\outputs\oas-synevo-mailbox-20261125-230458b4\synevo-mailbox-review.log。真机待验证。

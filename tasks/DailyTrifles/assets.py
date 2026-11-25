@@ -108,6 +108,14 @@ class DailyTriflesAssets:
 	I_HARVEST_MAIL_CONFIRM = RuleImage(roi_front=(672,543,183,64), roi_back=(672,543,183,64), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_harvest_mail_confirm.png")
 	# 右上角的邮件图标 
 	I_DT_HARVEST_MAIL_COPY2 = RuleImage(roi_front=(1158,18,22,20), roi_back=(1127,0,61,56), threshold=0.9, method="Template matching", file="./tasks/DailyTrifles/dt/dt_harvest_mail_copy2.png")
+	# 获得插画标识
+	I_GET_PICTURE = RuleImage(roi_front=(515,74,249,43), roi_back=(478,41,342,89), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_get_picture.png")
+	# 无红点邮箱入口
+	I_DT_HARVEST_MAIL_COPY3 = RuleImage(roi_front=(1137,22,36,25), roi_back=(1127,0,61,56), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_dt_harvest_mail_copy3.png")
+	# 邮箱标题
+	I_PICKUP_MAIL_TITLE = RuleImage(roi_front=(520,58,245,41), roi_back=(520,58,245,41), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_pickup_mail_title.png")
+	# 系统邮件打开状态
+	I_PICKUP_SYSTEM_MAIL_OPEN = RuleImage(roi_front=(1188,217,51,112), roi_back=(1172,184,88,166), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_pickup_system_mail_open.png")
 
 
 	# Ocr Rule Assets

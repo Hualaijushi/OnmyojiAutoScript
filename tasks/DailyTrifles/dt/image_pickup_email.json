@@ -52,5 +52,41 @@
     "method": "Template matching",
     "threshold": 0.9,
     "description": "右上角的邮件图标"
+  },
+  {
+    "itemName": "get_picture",
+    "imageName": "dt_get_picture.png",
+    "roiFront": "515,74,249,43",
+    "roiBack": "478,41,342,89",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "获得插画标识"
+  },
+  {
+    "itemName": "dt_harvest_mail_copy3",
+    "imageName": "dt_dt_harvest_mail_copy3.png",
+    "roiFront": "1137,22,36,25",
+    "roiBack": "1127,0,61,56",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "无红点邮箱入口"
+  },
+  {
+    "itemName": "pickup_mail_title",
+    "imageName": "dt_pickup_mail_title.png",
+    "roiFront": "520,58,245,41",
+    "roiBack": "520,58,245,41",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "邮箱标题"
+  },
+  {
+    "itemName": "pickup_system_mail_open",
+    "imageName": "dt_pickup_system_mail_open.png",
+    "roiFront": "1188,217,51,112",
+    "roiBack": "1172,184,88,166",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "系统邮件打开状态"
   }
 ]

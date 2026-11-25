@@ -9,10 +9,12 @@ from datetime import time, datetime, timedelta
 from module.atom.image import RuleImage
 from module.click_pipeline import FinalPoint, execute_single_click
 from module.ocr.common import BoxedResult
+from module.interaction_policy import InteractionPolicy
 
 from tasks.Component.config_base import Time
 from tasks.DailyTrifles.page import page_store_gift_room, page_friends_luck, page_guild_wish
 
+from tasks.GameUi.default_pages import random_click
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_summon, page_guild, page_mall, page_friends, page_courtyard_affairs
 from tasks.DailyTrifles.config import DailyTriflesConfig
@@ -32,6 +34,22 @@ from typing import Any, Optional, List, Callable
 
 class ScriptTask(GameUi, Summon, DailyTriflesAssets):
 
+    # 领取邮件：邮箱里没有可操作按钮的持续秒数（认为领完）、两次「打开邮箱」点击的最小间隔（展开动画）、
+    # 打开邮箱的最多点击次数、「一键领取」始终没有出现确认弹窗的最多点击次数、整段流程的总时限（都是故障边界）
+    PICKUP_IDLE = 3
+    PICKUP_OPEN_GAP = 3
+    PICKUP_OPEN_TRIES = 3
+    PICKUP_ALL_TRIES = 6
+    PICKUP_TIMEOUT = 60
+    # 「尚未确认打开邮箱」阶段的总时限：入口都认不出 / 点击一直没发出 / 点击后邮箱没打开都算在内，从进入循环算起、不因反复看到入口而重置。
+    # 公共卡死保护约 60 秒无点击就抛 GameStuckError 并整轮重启；正常路径最多 3 次点击（间隔 3 秒）+ 最后一次点击后再等一个间隔 ≈ 9 秒，
+    # 取 20 秒：约两倍余量，又明显早于公共保护。超时只放弃本次领取（不记今日完成），后续每日琐事照常进行，不靠空等触发重启。
+    PICKUP_OPEN_TIMEOUT = 20
+    # 领完之后点关闭叉退出邮箱的最长等待、已经进过邮箱却一直看不到邮箱标志（弹窗 / 全屏页没关掉）时的最长等待
+    PICKUP_EXIT_TIMEOUT = 6
+    PICKUP_LOST_TIMEOUT = 10
+    # 每种弹窗 / 关闭按钮最多点几次：弹窗点了不消失时不能无限点（同名按钮 15 条记录里 ≥10 次会触发点击守卫报错），超过就放弃
+    PICKUP_POPUP_TRIES = 5
     def _run_daily_subtask(self, task_id: str, action):
         """记录当前执行的子任务，供账号轮换准确归属异常。"""
         self._active_daily_subtask = task_id
@@ -725,26 +743,157 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
         logger.warning('Courtyard affairs incomplete after three attempts, mark completed')
         finish_courtyard_affairs()
 
+    def _in_mailbox(self) -> bool:
+        """当前帧是否在邮箱页面：「邮箱」标题或「系统邮件」标签打开状态任一出现即可。
+
+        邮箱打开后顶栏的信封图标仍然露在边框上方，`I_DT_HARVEST_MAIL_COPY2` 照样能匹配，所以必须先判断是不是已经在邮箱里。
+        """
+        return self.appear(self.I_PICKUP_MAIL_TITLE) or self.appear(self.I_PICKUP_SYSTEM_MAIL_OPEN)
+
+    def _pickup_popup(self, counts: dict) -> bool:
+        """领取后可能弹出的弹窗，处理了返回 True。只在领取邮件流程里被调用（`counts` 是本次流程各弹窗的点击计数）。
+
+        - 「是否立即启用…？」这类两个大按钮（取消 / 确定）同时在：只点取消（不改用户当前的设置），从不点确定；
+        - 「获得插画」：点安全空白处关闭（没有关闭叉）。
+        """
+        if self.appear(self.I_UI_CANCEL) and self.appear(self.I_UI_CONFIRM):
+            if self.appear_then_click(self.I_UI_CANCEL, interval=1, policy=InteractionPolicy.CONFIRM):
+                counts['cancel'] = counts.get('cancel', 0) + 1
+                logger.info('Pick up email: cancel the two-button popup (e.g. enable the new illustration now?)')
+                return True
+            return False
+        if self.appear_then_click(self.I_GET_PICTURE, action=random_click(), interval=1.5, policy=InteractionPolicy.NORMAL):
+            counts['picture'] = counts.get('picture', 0) + 1
+            logger.info('Pick up email: close the get-illustration popup')
+            return True
+        return False
+
     def run_pickup_email(self):
-        """领取邮件"""
+        """领取邮件：打开邮箱 → 一键领取 → 处理弹窗 → 领完后点关闭叉退出邮箱。
+
+        - **进过邮箱就一直算在邮箱流程里，直到自己点了退出**：领取后会出现确认 / 获得头像框 / 获得插画 / 「是否立即启用」等弹窗和全屏页，
+          它们会盖住邮箱标志，不能因为这一帧看不到标志就认为离开了邮箱（更不能再去点「打开邮箱」按钮）；
+        - 邮箱标志 = 「邮箱」标题或「系统邮件」标签打开状态任一出现；已在邮箱里不再点任何「打开邮箱」按钮
+          （顶栏信封在邮箱打开后仍然露着，原先因此和「一键领取」来回点到点击守卫报错）；
+        - 弹窗：领取确认的「确定」→ 点；两个大按钮的启用确认 → 只点取消；获得插画 → 点安全空白处；看不到邮箱标志时的红色关闭叉（头像框等全屏页）→ 点；
+          每种最多点 `PICKUP_POPUP_TRIES` 次，点了不消失就放弃（不无限点、不触发点击守卫）；
+        - 一键领取不再出现持续 `PICKUP_IDLE` 秒算领完，然后点邮箱自己的关闭叉退出（最多等 `PICKUP_EXIT_TIMEOUT` 秒，仍没退出由 `goto_page` 兜底）；
+        - 打开邮箱最多点 `PICKUP_OPEN_TRIES` 次、间隔不少于 `PICKUP_OPEN_GAP`；入口有红点（`I_DT_HARVEST_MAIL_COPY2`，及更早的两个旧入口）
+          或没有红点（`I_DT_HARVEST_MAIL_COPY3`）都能点，同一轮最多发出一次打开动作；没有红点只是入口外观，不代表没有邮件，
+          仍要进邮箱确认后才按空邮箱 / 有奖励处理；
+        - 「尚未确认打开邮箱」阶段另有 `PICKUP_OPEN_TIMEOUT` 总时限（见常量处）：到点仍没有看到邮箱标志就放弃；一键领取点了 `PICKUP_ALL_TRIES` 次都没出现确认弹窗就放弃；
+        - 邮箱始终没有确认打开、一键领取始终无效、总超时都**不记今天已完成**（下次运行再试）。
+        """
         logger.hr('pick up email', 2)
+        if self.config.daily_trifles.today_is_done('pickup_email'):
+            logger.info('Today is done, skip')
+            return
         self.goto_page(page_main)
-        timeout_timer = Timer(3).start()
-        while not timeout_timer.reached():
+        total = Timer(self.PICKUP_TIMEOUT).start()
+        open_phase = Timer(self.PICKUP_OPEN_TIMEOUT).start()     # 只在尚未确认打开邮箱时检查，进过邮箱后不再起作用
+        idle = Timer(self.PICKUP_IDLE)          # 邮箱里没有可操作按钮开始计时；一键领取 / 弹窗处理会清零
+        open_gap = Timer(self.PICKUP_OPEN_GAP)
+        exit_timer = Timer(self.PICKUP_EXIT_TIMEOUT)
+        lost = Timer(self.PICKUP_LOST_TIMEOUT)  # 进过邮箱却看不到邮箱标志（弹窗 / 全屏页）开始计时
+        opened = False                          # 看到过邮箱标志（只由标志置位：打开邮箱之前出现的「确定」之类弹窗不算）
+        claimed = False                         # 邮箱里点过一键领取 / 确认弹窗
+        popups = {}                             # 各弹窗 / 关闭按钮的点击次数
+        finished = False
+        gave_up = False
+        open_clicks = 0
+        all_clicks = 0
+        while 1:
             self.screenshot()
-            if self.appear_then_click(self.I_DT_HARVEST_MAIL_COPY2, interval=1.2) or \
-                    self.appear_then_click(self.I_HARVEST_MAIL, interval=1.2) or \
-                    self.appear_then_click(self.I_HARVEST_MAIL_COPY, interval=1.2):
+            if total.reached():
+                logger.warning('Pick up email: total timeout')
+                gave_up = True
+                break
+            if any(count > self.PICKUP_POPUP_TRIES for count in popups.values()):
+                logger.warning(f'Pick up email: a popup is still there after {self.PICKUP_POPUP_TRIES} clicks, give up: {popups}')
+                gave_up = True
+                break
+            if self.appear_then_click(self.I_HARVEST_MAIL_CONFIRM, interval=1, policy=InteractionPolicy.CONFIRM):
+                popups['confirm'] = popups.get('confirm', 0) + 1
+                if opened:
+                    claimed = True
+                    all_clicks = 0
+                idle.clear()
+                lost.clear()
                 continue
-            if self.appear_then_click(self.I_HARVEST_MAIL_CONFIRM, interval=1):
+            if opened and not finished and self._pickup_popup(popups):
+                idle.clear()
+                lost.clear()
                 continue
-            if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=2):
-                timeout_timer.reset()
+            if self._in_mailbox():
+                opened = True
+                lost.clear()
+                if finished:
+                    # 领完：点邮箱自己的关闭叉退出；等不到退出由 goto_page 兜底
+                    if not exit_timer.started():
+                        exit_timer.start()
+                    if exit_timer.reached():
+                        logger.warning('Pick up email: mailbox did not close, leave it to goto_page')
+                        break
+                    self.appear_then_click(self.I_UI_BACK_RED, interval=1.5, policy=InteractionPolicy.NAVIGATION)
+                    continue
+                if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=2, policy=InteractionPolicy.NORMAL):
+                    claimed = True
+                    all_clicks += 1
+                    if all_clicks > self.PICKUP_ALL_TRIES:
+                        logger.warning(f'Pick up email: one-key claim clicked {self.PICKUP_ALL_TRIES} times '
+                                       f'without a confirm popup, give up')
+                        gave_up = True
+                        break
+                    idle.clear()
+                    continue
+                self.appear_then_click(self.I_READ_ALL_MAIL, interval=3, policy=InteractionPolicy.NORMAL)
+                if not idle.started():
+                    idle.start()
+                if idle.reached():
+                    finished = True             # 一键领取不再出现：领完了
                 continue
-            if self.appear_then_click(self.I_READ_ALL_MAIL, interval=3):
+            if opened:
+                if finished:
+                    break                       # 已经点了退出，邮箱标志消失：退出成功
+                if self.appear(self.I_CHECK_MAIN):
+                    break                       # 已经回到主界面（邮箱被关掉了）：不用再等
+                # 进过邮箱但这一帧看不到邮箱标志（弹窗 / 全屏页）：仍算在邮箱流程里，不点「打开邮箱」；
+                # 全屏页（获得头像框等）的红色关闭叉可以直接点
+                if self.appear_then_click(self.I_UI_BACK_RED, interval=1.5, policy=InteractionPolicy.NAVIGATION):
+                    popups['back'] = popups.get('back', 0) + 1
+                    idle.clear()
+                    lost.clear()
+                    continue
+                if not lost.started():
+                    lost.start()
+                if lost.reached():
+                    logger.warning('Pick up email: mailbox markers not seen for a long time, leave it to goto_page')
+                    break
                 continue
+            # 还没进邮箱：才点「打开邮箱」
+            if open_phase.reached():
+                cause = 'clicked but the mailbox did not open' if open_clicks else 'no entrance recognised or no click sent'
+                logger.warning(f'Pick up email: mailbox not opened within {self.PICKUP_OPEN_TIMEOUT}s '
+                               f'(open clicks={open_clicks}: {cause}), give up, not marked as done')
+                gave_up = True
+                break
+            if open_gap.started() and not open_gap.reached():
+                continue
+            if open_clicks >= self.PICKUP_OPEN_TRIES:
+                logger.warning(f'Pick up email: mailbox did not open after {open_clicks} clicks')
+                gave_up = True
+                break
+            if self.appear_then_click(self.I_DT_HARVEST_MAIL_COPY2, interval=1.2, policy=InteractionPolicy.NORMAL) or \
+                    self.appear_then_click(self.I_HARVEST_MAIL, interval=1.2, policy=InteractionPolicy.NORMAL) or \
+                    self.appear_then_click(self.I_HARVEST_MAIL_COPY, interval=1.2, policy=InteractionPolicy.NORMAL) or \
+                    self.appear_then_click(self.I_DT_HARVEST_MAIL_COPY3, interval=1.2, policy=InteractionPolicy.NORMAL):
+                open_clicks += 1
+                open_gap.reset()
         self.goto_page(page_main)
-        self.config.daily_trifles.done_record.pickup_email_dt = datetime.now()
+        if (finished or claimed) and not gave_up:
+            self.config.daily_trifles.done_record.pickup_email_dt = datetime.now()
+        else:
+            logger.warning('Pick up email not finished, not marked as done')
 
     def plan_next_dt(self):
         # 定时领体力（每天 12-14、20-22 时内各有 20 体力）
