@@ -261,6 +261,16 @@
 
 ---
 
+### 5.ad 领取邮件入口与「尚未打开」阶段的离线验证口径（2026-11-01，AI_CONTEXT §4.171 / D057）
+
+- **真实画面夹具**：`tests/fixtures/daily_pickup_email/`（庭院无红点事故帧、庭院有红点帧、邮箱已打开帧），用生产 `ImageRuntime`（进程内替身 `_InProcessImageClient`，不起图像服务）按项目匹配口径打分。**自匹配提示**：模板若截自同一类帧，得分 1.0 只能证明「模板与规则、ROI 配套」，不是独立样本置信度；误命中范围只能说明「在哪些现成样本上测过」，没有样本的页面不能宣称已排除。
+- **资源配套检查**：`itemName` ↔ 生成属性名 ↔ PNG 文件名 ↔ `roi_front` 宽高 ↔ 阈值 ↔ `assets.py` 与生成器输出逐字节一致（`AssetsExtractor` 不写文件，只比对）。生成器会在每行注释末尾留一个空格，`git diff --check` 对新增行会提示，不手改生成文件。
+- **模拟公共卡死保护**：`with_public_stuck(ui, limit)`——距上一次点击（或开始）超过 `limit` 就在截图时抛 `GameStuckError`，按比例缩小（真实 60 秒 → 1.5 秒，本地 20 秒 → 0.5 秒），用来证明「本地时限先结束」；旧实现在同一场景下直接抛 `GameStuckError`。
+- **循环哨兵**：`PickupCase` + `guard(ui)` 给假画面加独立的截图（4000）/ 点击（400）次数上限，抛带用例名与阶段信息的 `AssertionError`；`FakeUi` 不模拟 `appear_then_click` 的 `interval` 节流，所以点击上限放宽到只防空转。
+- **旧实现对照**：`git show HEAD:...` 取修复前的 `run_pickup_email`，在临时模块里只替换这一个方法后运行同一批测试，仓库文件不动；预期「只有 COPY3」「入口全认不出」等用例失败。
+- **已知时序敏感用例**：`tests/test_loop_multiprocess.py::test_yielding_after_publishing_ready_withdraws_it_so_the_peer_cannot_start` 用真实双进程 + 60 倍缩放时钟，断言余量 0.2「缩放秒」≈ 3 毫秒真实时间，机器负载高时偶发失败（2026-11-01 全量 1 败；单独重跑 4 次 2 过 2 败）。与领取邮件无关，本轮没改；遇到时先单独重跑确认是它再下结论，不要为它重跑整组。
+- **登记册联动**：新增 `appear_then_click(..., policy=...)` 点击调用点要跑 `dev_tools/click_callsite_register.py --write`，并同步 `test_l1_l2_integration` 的 `POST_C1_CONSUMERS` 与 policy 总数、`test_l2_c0_registry` 的总数 / decision / basis、`test_l2_interaction_reaction` 里该文件的 policy 数；只改数字与精确元组，不放宽断言。
+
 ## 6. 测试文件组织
 
 - 目录：`tests/`，`unittest` 风格，文件名 `test_*.py`。

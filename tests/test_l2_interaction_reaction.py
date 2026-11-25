@@ -495,7 +495,8 @@ class TimingOwnershipTest(TestCase):
             # 2026-10-23 用户决定：每日琐事 / 狩猎战 / 集体任务所有点击接入 L2（每日琐事 41 处原有点击 + 满级弹窗取消 1 处；
             # ui_get_reward 的 close_policy 不在这里计数，由 tests/test_l2_helper_policy.py 的静态守卫检查）
             # 2026-10-29 领取邮件：弹窗取消 1 处 + 获得插画 1 处 + 红色关闭叉 2 处（全屏页关闭、领完后退出邮箱）：42 → 46
-            'tasks/DailyTrifles/script_task.py': 46,
+            # 2026-11-01 无红点邮箱入口 I_DT_HARVEST_MAIL_COPY3 新增 1 处。
+            'tasks/DailyTrifles/script_task.py': 47,
             'tasks/Hunt/script_task.py': 6,
             'tasks/CollectiveMissions/script_task.py': 11,
         }

@@ -104,6 +104,8 @@ class DailyTriflesAssets:
 	I_DT_HARVEST_MAIL_COPY2 = RuleImage(roi_front=(1158,18,22,20), roi_back=(1127,0,61,56), threshold=0.9, method="Template matching", file="./tasks/DailyTrifles/dt/dt_harvest_mail_copy2.png")
 	# 获得插画标识 
 	I_GET_PICTURE = RuleImage(roi_front=(515,74,249,43), roi_back=(478,41,342,89), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_get_picture.png")
+	# 无红点邮箱入口 
+	I_DT_HARVEST_MAIL_COPY3 = RuleImage(roi_front=(1137,22,36,25), roi_back=(1127,0,61,56), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_dt_harvest_mail_copy3.png")
 
 
 	# Ocr Rule Assets

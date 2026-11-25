@@ -182,28 +182,29 @@ class C0RegistryTest(TestCase):
         # 与 `creat_dokan(strict=True)` 里 1 个有界 `ui_click_until_disappear`（关信息页）：两点都是规则分类、保持立即点击；
         # 净变化：总数 1121 → 1123、KEEP_IMMEDIATE 632 → 634，basis rule 922 → 924
         # 2026-10-29 领取邮件新增 3 个带 policy 的规则分类点（弹窗取消 / 两处红色关闭叉）：总数 1123 → 1127（含获得插画点击），ALREADY_L2 98 → 102，rule 924 → 928
-        self.assertEqual(self.summary['total'], 1127)
+        # 2026-11-01 无红点信封入口新增 1 处 NORMAL 点击，由规则归类为 ALREADY_L2。
+        self.assertEqual(self.summary['total'], 1128)
         self.assertEqual({k: d[k] for k in ('MIGRATE', 'ALREADY_L2', 'KEEP_IMMEDIATE', 'KEEP_SPECIAL', 'NEEDS_C', 'DEFERRED', 'PRIMITIVE', 'EXCLUDED')},
-                         {'MIGRATE': 7, 'ALREADY_L2': 102, 'KEEP_IMMEDIATE': 634, 'KEEP_SPECIAL': 235, 'NEEDS_C': 7,
+                         {'MIGRATE': 7, 'ALREADY_L2': 103, 'KEEP_IMMEDIATE': 634, 'KEEP_SPECIAL': 235, 'NEEDS_C': 7,
                           'DEFERRED': 6, 'PRIMITIVE': 36, 'EXCLUDED': 100})
 
     def test_basis_counts_are_reconciled_and_c0_reviewed_is_a_separate_dimension(self):
         basis = self.summary['by_basis']
-        self.assertEqual(sum(basis.values()), 1127)
+        self.assertEqual(sum(basis.values()), 1128)
         # basis = 决定来源（互斥）：GeneralInvite / GeneralBattle 的 7 点沿用 L2-2 人工结论，所以 c0 basis = 4 + 6 + 3 + 4 = 17，
         # human 182（179 + 本轮新增 3 处 appear_then_click 人工登记行）；rule 897（+1，新增
         # execute_single_click 走规则分类；→ 899：SwitchSoul V1 净增 2 个规则分类点；→ 900：SixRealms 购买确认事务净增 1 个；
         # → 901：孔雀国唤息确认事务净增 1 个；→ 904：每日琐事吉闻 / 庭院事务修复净增 3 个；→ 905：领庭院体力寿司净增 1 个；→ 904：狩猎战两处返回合并成一处；→ 905：庭院事务满级弹窗取消净增 1 个）；
         # → 907：2026-10-25 百鬼棋局上游选择性合入净增 2 个规则分类点；
         # c0_reviewed = 24 是另一个维度（不与 basis 相加）
-        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (182, 17, 928))   # 922：悬赏封印取消追踪改有界事务净减 2；924：福利建馆前置（D-02）净增 2 个规则分类点
+        self.assertEqual((basis['human'], basis['c0'], basis['rule']), (182, 17, 929))   # 922：悬赏封印取消追踪改有界事务净减 2；924：福利建馆前置（D-02）净增 2 个规则分类点
         self.assertEqual(self.summary['c0_reviewed'], 24)
         self.assertEqual(sum(1 for s in self.c0 if s['basis'] == 'human'), 7)
 
     def test_only_the_four_completed_points_gained_a_policy_in_c1(self):
         # 36 = 32 + C1 的 4 处；SwitchSoul V1 另外新增 2 处（不是 C0 复核点位，所以下面 `c0_with_policy` 仍恰好是 DONE）；
         # 97 = 38 + 2026-10-23 每日琐事 / 狩猎战 / 集体任务全部点击接入 L2 的 59 处（同样都不是 C0 复核点位）
-        self.assertEqual(self.summary['policy_sites'], 101)      # 2026-10-29 领取邮件 +4
+        self.assertEqual(self.summary['policy_sites'], 102)      # 2026-10-29 领取邮件 +4，2026-11-01 无红点入口 +1
         self.assertEqual(self.summary['c1_done'], 4)
         c0_with_policy = {_key(s) for s in self.c0 if s['policy']}
         self.assertEqual(c0_with_policy, set(DONE))

@@ -11478,3 +11478,26 @@ Settlement Micro-Burst 的 anchor 跨调用复用模型在"弹窗刚消失、真
 
 ### 提交
 - 累积改动作为一个提交：`script.py`、`tasks/base_task.py`、配置模型 / 模板 / 翻译、`docs/L2_CALLSITE_REGISTER.md`（测试把它的汇总数字与源码逐项对账）和六份文档被各主题交叉修改，按主题拆开会产生没测过、登记册对不上的中间状态。逐个路径暂存，没有用 `git add -A` / `.`。
+
+## 2026-11-01 - 每日琐事领取邮件：无红点信封入口（COPY3）+「尚未打开邮箱」阶段独立时限
+
+### 范围
+- 2026-11-01 oas1 / oas2 多次在 `PICK UP EMAIL` 回到 `page_main` 后没有发出打开邮箱的点击，约 60 秒后 `GameStuckError: Wait too long` 并 Restart；现场信封没有红点，旧入口 COPY2 约 0.5608（阈值 0.9）。只处理邮件入口及其失败边界，不动其他每日任务、调度或用户配置。
+
+### 修改
+- `tasks/DailyTrifles/script_task.py`：`run_pickup_email` 的打开入口链末尾追加 `I_DT_HARVEST_MAIL_COPY3`（用户新增资源，`assets.py` / `image_pickup_email.json` 已由生成器产出，未手改）；新增常量 `PICKUP_OPEN_TIMEOUT=20` 与 `open_phase` 计时器，只在尚未确认进邮箱的分支检查，到点记原因、`gave_up`、不记完成、走原有 `goto_page` 兜底。
+- `tests/test_daily_pickup_email.py` 25 → 49 项 + 三张真实夹具 `tests/fixtures/daily_pickup_email/`；`docs/L2_CALLSITE_REGISTER.md` 重新生成（+1，`run_pickup_email#9`）；`test_l1_l2_integration` / `test_l2_c0_registry` / `test_l2_interaction_reaction` 的精确计数同步。
+- 文档：AI_CONTEXT §4.171、ROADMAP（真机验收项）、DECISIONS D057、TESTING §5.ad。
+
+### 测试
+- 旧实现对照：HEAD 的 `run_pickup_email` 在同一批 49 项上 12 项失败（8 failures + 4 errors），入口认不出的用例直接抛 `GameStuckError`；新实现 49 项全过。
+- 经守护入口：`tests.test_daily_pickup_email` 49 项；相关回归 589 项 + `test_l2_interaction_reaction`；全量 `unittest discover -s tests` 3907 项运行、1 项失败（`test_loop_multiprocess` 的双进程时序用例，与本轮无关，见 §7 基线与 TESTING §5.ad）、skipped=6，461.6 秒，采样峰值 1445 MiB。 日志在 `D:\Codex\outputs\20261101_每日琐事邮箱入口\`。
+
+### 未验证 / 未处理
+- 真机：无红点信封点击能否打开邮箱、邮箱空 / 有奖励两种情况、入口认不出时 20 秒后不再空等重启。COPY3 离线 1.0 为自匹配；没有「邮箱已打开且信封无红点」样本。当时改动留在工作区。
+
+## 2026-11-25 - 每日琐事邮箱优化分支审查
+
+- 以远端 `master` 的 `f96ace76` 为基线整理邮箱修复。业务源码、素材和邮箱测试与首次审查的 `691947dc` 一致。三个 L2 计数守卫按基线同步，登记册仅新增无红点邮箱点击，原有条目除顺序编号外一致。
+- 使用 OAS 工具包的 Python 和 `guarded_unittest.py` 在独立工作树验证。邮箱、每日琐事、排期和 L2 守卫共 182 项通过，unittest 耗时 90.046 秒，6 个改动的 Python 文件编译通过。受测代码树为 `ad76a093e46853220eb8295a4504af46ec90f421`，收尾只补这段开发记录。日志为 `D:\Codex\outputs\oas-daily-trifles-push-20261125-9e5c4915\remote-base-review.log`。
+- 历史邮箱流程在计数大于上限时退出。持续无效时，弹窗最多点 6 次，一键领取最多点 7 次，各比常量多一次，现有测试固定了该行为。生成资产注释的行尾空格与生成器输出一致。真机验收见 ROADMAP。

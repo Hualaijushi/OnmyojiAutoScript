@@ -356,6 +356,8 @@ class CallsiteRegisterGuardTest(TestCase):
         ('tasks/DailyTrifles/script_task.py', 'run_luck_msg', 'self.I_ONE_CLICK_BLESS', 'InteractionPolicy.NORMAL'),
         ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_DT_HARVEST_MAIL_COPY2',
          'InteractionPolicy.NORMAL'),
+        ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_DT_HARVEST_MAIL_COPY3',
+         'InteractionPolicy.NORMAL'),
         ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_HARVEST_MAIL', 'InteractionPolicy.NORMAL'),
         ('tasks/DailyTrifles/script_task.py', 'run_pickup_email', 'self.I_HARVEST_MAIL_ALL',
          'InteractionPolicy.NORMAL'),
@@ -431,7 +433,8 @@ class CallsiteRegisterGuardTest(TestCase):
         self.assertNotIn('tasks/Hyakkiyakou/slave/hya_device.py', raw_files)    # 百鬼夜行已经走 click_with_backend
         # 32 + C1-A1 的 4 处 + 2026-10-06 SwitchSoul V1 的 2 处（数字模式队伍 NORMAL、确认框首次点击 CONFIRM）
         # + 2026-10-23 每日琐事 42 / 狩猎战 6 / 集体任务 11 = 97
-        self.assertEqual(summary['policy_sites'], 101)               # 2026-10-29 领取邮件 +4（弹窗取消 / 获得插画 / 两处红色关闭叉）
+        # 2026-10-29 领取邮件新增 4 处，2026-11-01 无红点信封入口新增 1 处。
+        self.assertEqual(summary['policy_sites'], 102)
         self.assertEqual(summary['confirm_delay_sites'], 3)                       # GeneralBattle.check_lock 透传 ×2 + RealmRaid 再次挑战确认 ×1
 
     def test_needs_c_sites_are_pinned_so_new_candidates_need_a_conscious_decision(self):

@@ -40,6 +40,10 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
     PICKUP_OPEN_TRIES = 3
     PICKUP_ALL_TRIES = 6
     PICKUP_TIMEOUT = 60
+    # 「尚未确认打开邮箱」阶段的总时限：入口都认不出 / 点击一直没发出 / 点击后邮箱没打开都算在内，从进入循环算起、不因反复看到入口而重置。
+    # 公共卡死保护约 60 秒无点击就抛 GameStuckError 并整轮重启；正常路径最多 3 次点击（间隔 3 秒）+ 最后一次点击后再等一个间隔 ≈ 9 秒，
+    # 取 20 秒：约两倍余量，又明显早于公共保护。超时只放弃本次领取（不记今日完成），后续每日琐事照常进行，不靠空等触发重启。
+    PICKUP_OPEN_TIMEOUT = 20
     # 领完之后点关闭叉退出邮箱的最长等待、已经进过邮箱却一直看不到邮箱标志（弹窗 / 全屏页没关掉）时的最长等待
     PICKUP_EXIT_TIMEOUT = 6
     PICKUP_LOST_TIMEOUT = 10
@@ -822,7 +826,10 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
         - 弹窗：领取确认的「确定」→ 点；两个大按钮的启用确认 → 只点取消；获得插画 → 点安全空白处；看不到邮箱标志时的红色关闭叉（头像框等全屏页）→ 点；
           每种最多点 `PICKUP_POPUP_TRIES` 次，点了不消失就放弃（不无限点、不触发点击守卫）；
         - 一键领取不再出现持续 `PICKUP_IDLE` 秒算领完，然后点邮箱自己的关闭叉退出（最多等 `PICKUP_EXIT_TIMEOUT` 秒，仍没退出由 `goto_page` 兜底）；
-        - 打开邮箱最多点 `PICKUP_OPEN_TRIES` 次、间隔不少于 `PICKUP_OPEN_GAP`；一键领取点了 `PICKUP_ALL_TRIES` 次都没出现确认弹窗就放弃；
+        - 打开邮箱最多点 `PICKUP_OPEN_TRIES` 次、间隔不少于 `PICKUP_OPEN_GAP`；入口有红点（`I_DT_HARVEST_MAIL_COPY2`，及更早的两个旧入口）
+          或没有红点（`I_DT_HARVEST_MAIL_COPY3`）都能点，同一轮最多发出一次打开动作；没有红点只是入口外观，不代表没有邮件，
+          仍要进邮箱确认后才按空邮箱 / 有奖励处理；
+        - 「尚未确认打开邮箱」阶段另有 `PICKUP_OPEN_TIMEOUT` 总时限（见常量处）：到点仍没有看到邮箱标志就放弃；一键领取点了 `PICKUP_ALL_TRIES` 次都没出现确认弹窗就放弃；
         - 邮箱始终没有确认打开、一键领取始终无效、总超时都**不记今天已完成**（下次运行再试）。
         """
         logger.hr('pick up email', 2)
@@ -831,6 +838,7 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
             return
         self.goto_page(page_main)
         total = Timer(self.PICKUP_TIMEOUT).start()
+        open_phase = Timer(self.PICKUP_OPEN_TIMEOUT).start()     # 只在尚未确认打开邮箱时检查，进过邮箱后不再起作用
         idle = Timer(self.PICKUP_IDLE)          # 邮箱里没有可操作按钮开始计时；一键领取 / 弹窗处理会清零
         open_gap = Timer(self.PICKUP_OPEN_GAP)
         exit_timer = Timer(self.PICKUP_EXIT_TIMEOUT)
@@ -911,6 +919,12 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
                     break
                 continue
             # 还没进邮箱：才点「打开邮箱」
+            if open_phase.reached():
+                cause = 'clicked but the mailbox did not open' if open_clicks else 'no entrance recognised or no click sent'
+                logger.warning(f'Pick up email: mailbox not opened within {self.PICKUP_OPEN_TIMEOUT}s '
+                               f'(open clicks={open_clicks}: {cause}), give up, not marked as done')
+                gave_up = True
+                break
             if open_gap.started() and not open_gap.reached():
                 continue
             if open_clicks >= self.PICKUP_OPEN_TRIES:
@@ -919,7 +933,8 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
                 break
             if self.appear_then_click(self.I_DT_HARVEST_MAIL_COPY2, interval=1.2, policy=InteractionPolicy.NORMAL) or \
                     self.appear_then_click(self.I_HARVEST_MAIL, interval=1.2, policy=InteractionPolicy.NORMAL) or \
-                    self.appear_then_click(self.I_HARVEST_MAIL_COPY, interval=1.2, policy=InteractionPolicy.NORMAL):
+                    self.appear_then_click(self.I_HARVEST_MAIL_COPY, interval=1.2, policy=InteractionPolicy.NORMAL) or \
+                    self.appear_then_click(self.I_DT_HARVEST_MAIL_COPY3, interval=1.2, policy=InteractionPolicy.NORMAL):
                 open_clicks += 1
                 open_gap.reset()
         self.goto_page(page_main)

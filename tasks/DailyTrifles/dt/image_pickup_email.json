@@ -61,5 +61,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "获得插画标识"
+  },
+  {
+    "itemName": "dt_harvest_mail_copy3",
+    "imageName": "dt_dt_harvest_mail_copy3.png",
+    "roiFront": "1137,22,36,25",
+    "roiBack": "1127,0,61,56",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "无红点邮箱入口"
   }
 ]
