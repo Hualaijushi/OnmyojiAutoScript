@@ -43,9 +43,14 @@
   },
   {
     "itemName": "sou_team_select",
-    "imageName": "ss_sou_team_select.png",
     "roiFront": "977,157,21,21",
     "roiBack": "977,157,21,21",
     "description": "阵容选择按钮位置"
+  },
+  {
+    "itemName": "sou_group_8",
+    "roiFront": "1087,578,156,47",
+    "roiBack": "1087,578,156,47",
+    "description": "第8组御魂"
   }
 ]

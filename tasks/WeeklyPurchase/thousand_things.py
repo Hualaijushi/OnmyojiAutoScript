@@ -18,14 +18,14 @@ class ThousandThings(GameUi, WeeklyPurchaseAssets):
         :param con:
         :return:
         """
-        logger.hr('Start Thousand Things')
+        logger.hr('开始处理千物宝箱')
         if not con.enable:
-            logger.info('Thousand Things is disabled')
+            logger.info('千物宝箱未启用')
             return
         self.goto_page(page_travel)
 
         if con.earn_money:
-            logger.info('Start Earn Money')
+            logger.info('开始获取千物宝箱货币')
             self.tt_earn_money()
 
         while 1:
@@ -34,7 +34,7 @@ class ThousandThings(GameUi, WeeklyPurchaseAssets):
                 break
             if self.appear_then_click(self.I_TT_ENTER, interval=1):
                 continue
-        logger.info('Enter Thousand Things')
+        logger.info('已进入千物宝箱')
         self.screenshot()
         if not self.appear(self.I_TT_TICKET_BULE) and not self.appear(self.I_TT_BLACK) and not self.appear(self.I_TT_AP):
             time.sleep(1)
@@ -53,7 +53,7 @@ class ThousandThings(GameUi, WeeklyPurchaseAssets):
                 break
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
                 continue
-        logger.info('Exit Thousand Things')
+        logger.info('已退出千物宝箱')
 
     def tt_buy_mystery_amulet(self) -> bool:
         """
@@ -62,7 +62,7 @@ class ThousandThings(GameUi, WeeklyPurchaseAssets):
         """
         self.screenshot()
         if not self.appear(self.I_TT_TICKET_BULE):
-            logger.info('No mystery amulet')
+            logger.info('未找到神秘的符咒')
             return False
         if not self.tt_check_money(2000):
             return False
@@ -112,7 +112,7 @@ class ThousandThings(GameUi, WeeklyPurchaseAssets):
                 break
             appear_max = self.appear(self.I_TT_BUY_UP)
             if click_count >= 4:
-                logger.warning('Buy ap failed')
+                logger.warning('购买体力失败')
                 break
             if self.appear_then_click(self.I_TT_BUY_UP, interval=0.5):
                 click_count += 1

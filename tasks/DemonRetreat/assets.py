@@ -31,10 +31,18 @@ class DemonRetreatAssets:
 	I_REWARD_ALL = RuleImage(roi_front=(535,540,177,60), roi_back=(535,540,177,60), threshold=0.8, method="Template matching", file="./tasks/DemonRetreat/DemonRetreat/DemonRetreat_reward_all.png")
 	# 祈愿 
 	I_PRAY = RuleImage(roi_front=(1176,385,43,70), roi_back=(1176,385,43,70), threshold=0.8, method="Template matching", file="./tasks/DemonRetreat/DemonRetreat/DemonRetreat_pray.png")
+	# 开启首领退治按钮
+	I_DEMON_START = RuleImage(roi_front=(1135,544,96,68), roi_back=(1135,544,96,68), threshold=0.8, method="Template matching", file="./tasks/DemonRetreat/DemonRetreat/DemonRetreat_demon_start.png")
 
 
 	# Ocr Rule Assets
 	# 检查是否迟到 
 	O_LATER_ENTER_CHECK = RuleOcr(roi=(928,16,48,35), area=(928,16,48,35), mode="Single", method="Default", keyword="", name="later_enter_check")
+	# 确认框第一行的寮勋章消耗
+	O_RETREAT_OPEN_COST = RuleOcr(roi=(451,263,378,37), area=(451,263,378,37), mode="Single", method="Default", keyword="", name="retreat_open_cost")
+	# 确认框第二行的活动名称
+	O_RETREAT_OPEN_PROMPT = RuleOcr(roi=(451,299,378,37), area=(451,299,378,37), mode="Single", method="Default", keyword="", name="retreat_open_prompt")
+	# 首领退治开启弹窗的确认按钮
+	O_RETREAT_OPEN_CONFIRM = RuleOcr(roi=(700,402,82,42), area=(700,402,82,42), mode="Single", method="Default", keyword="确认", name="retreat_open_confirm")
 
 

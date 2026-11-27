@@ -49,6 +49,10 @@
     testRoiFront: "",
     testRoiBack: "",
 
+    rightEditorTab: "rules",
+    chessCandidateMeta: null,
+    chessCandidateResult: null,
+
     imagePreviewCache: new Map(),
     activeRuleImageExists: false,
     imageCheckToken: 0,
@@ -96,6 +100,7 @@
     roiBackValue: document.getElementById("roiBackValue"),
     testRoiFront: document.getElementById("testRoiFront"),
     testRoiBack: document.getElementById("testRoiBack"),
+    chessOverlayLayer: document.getElementById("chessOverlayLayer"),
     outputLog: document.getElementById("outputLog"),
     clearOutputBtn: document.getElementById("clearOutputBtn"),
 
@@ -142,6 +147,24 @@
     testRuleBtn: document.getElementById("testRuleBtn"),
     saveImageBtn: document.getElementById("saveImageBtn"),
     saveRulesBtn: document.getElementById("saveRulesBtn"),
+
+    modeTabRulesBtn: document.getElementById("modeTabRulesBtn"),
+    modeTabChessBtn: document.getElementById("modeTabChessBtn"),
+    ruleEditorBody: document.getElementById("ruleEditorBody"),
+    chessCandidateBody: document.getElementById("chessCandidateBody"),
+    chessLineupSource: document.getElementById("chessLineupSource"),
+    chessSavedMetaSummary: document.getElementById("chessSavedMetaSummary"),
+    chessTempBadgeThreshold: document.getElementById("chessTempBadgeThreshold"),
+    chessTempPortraitThreshold: document.getElementById("chessTempPortraitThreshold"),
+    chessTempDeployThreshold: document.getElementById("chessTempDeployThreshold"),
+    chessResetThresholdsBtn: document.getElementById("chessResetThresholdsBtn"),
+    chessFillSnapshotTplBtn: document.getElementById("chessFillSnapshotTplBtn"),
+    chessRuntimeSnapshotInput: document.getElementById("chessRuntimeSnapshotInput"),
+    chessRunTestBtn: document.getElementById("chessRunTestBtn"),
+    chessClearOverlayBtn: document.getElementById("chessClearOverlayBtn"),
+    chessSaveThresholdsBtn: document.getElementById("chessSaveThresholdsBtn"),
+    chessCandidateSummary: document.getElementById("chessCandidateSummary"),
+    chessCandidateResults: document.getElementById("chessCandidateResults"),
   };
 
   function getRuleSchema(type = state.ruleType) {
@@ -758,12 +781,13 @@
     if (!state.testOverlayActive || !state.testRoiFront || !state.testRoiBack) {
       el.testRoiFront.classList.add("hidden");
       el.testRoiBack.classList.add("hidden");
-      return;
+    } else {
+      applyBoxFromRoi(el.testRoiFront, state.testRoiFront);
+      applyBoxFromRoi(el.testRoiBack, state.testRoiBack);
+      el.testRoiFront.classList.remove("hidden");
+      el.testRoiBack.classList.remove("hidden");
     }
-    applyBoxFromRoi(el.testRoiFront, state.testRoiFront);
-    applyBoxFromRoi(el.testRoiBack, state.testRoiBack);
-    el.testRoiFront.classList.remove("hidden");
-    el.testRoiBack.classList.remove("hidden");
+    renderChessCandidateOverlays();
   }
 
   function clearTestOverlay() {
@@ -773,6 +797,59 @@
     el.testRoiFront.classList.add("hidden");
     el.testRoiBack.classList.add("hidden");
     updateTestButtonVisibility();
+  }
+
+  function renderChessCandidateOverlays() {
+    if (!el.chessOverlayLayer) {
+      return;
+    }
+    const result = state.chessCandidateResult;
+    const cards = result && Array.isArray(result.cards) ? result.cards : [];
+    if (!cards.length || !el.mainImage.getAttribute("src")) {
+      el.chessOverlayLayer.innerHTML = "";
+      el.chessOverlayLayer.classList.add("hidden");
+      return;
+    }
+    el.chessOverlayLayer.innerHTML = "";
+    for (const card of cards) {
+      if (card.badge_roi_str) {
+        const badgeBox = document.createElement("div");
+        badgeBox.className = "roi roi-chess-badge";
+        const badgeTag = document.createElement("span");
+        badgeTag.className = "tag";
+        badgeTag.textContent = `#${card.index} 角标 ${Number(card.badge_score || 0).toFixed(3)}`;
+        badgeBox.appendChild(badgeTag);
+        applyBoxFromRoi(badgeBox, card.badge_roi_str);
+        el.chessOverlayLayer.appendChild(badgeBox);
+      }
+      if (card.portrait_roi_str) {
+        const pBox = document.createElement("div");
+        pBox.className = "roi roi-chess-portrait";
+        if (!card.name) {
+          pBox.classList.add("unrecognized");
+        } else if (card.would_be_selected_next) {
+          pBox.classList.add("selected");
+        }
+        const pTag = document.createElement("span");
+        pTag.className = "tag";
+        const top1 = Array.isArray(card.top3) && card.top3[0] ? card.top3[0] : null;
+        pTag.textContent = card.name
+          ? `#${card.index} ${card.cn_name} ${Number(card.score || 0).toFixed(3)}`
+          : `#${card.index} 未识别(Top1:${top1 ? `${top1.cn_name} ${Number(top1.score || 0).toFixed(3)}` : "-"})`;
+        pBox.appendChild(pTag);
+        applyBoxFromRoi(pBox, card.portrait_roi_str);
+        el.chessOverlayLayer.appendChild(pBox);
+      }
+    }
+    el.chessOverlayLayer.classList.remove("hidden");
+  }
+
+  function clearChessCandidateOverlays() {
+    state.chessCandidateResult = null;
+    if (el.chessOverlayLayer) {
+      el.chessOverlayLayer.innerHTML = "";
+      el.chessOverlayLayer.classList.add("hidden");
+    }
   }
 
   function setTestOverlay(front, back) {
@@ -888,6 +965,7 @@
     }
     state.currentImageId = imageId;
     clearTestOverlay();
+    clearChessCandidateOverlays();
     setMainImage(`${image.url}?t=${Date.now()}`);
     updateCurrentImageHighlight();
     updateTestButtonVisibility();
@@ -2791,6 +2869,342 @@
     el.saveImageBtn.addEventListener("click", withError(saveImageCrop));
     el.saveRulesBtn.addEventListener("click", withError(saveRules));
     el.clearOutputBtn.addEventListener("click", clearOutput);
+
+    if (el.modeTabRulesBtn) {
+      el.modeTabRulesBtn.addEventListener("click", () => setRightEditorTab("rules"));
+    }
+    if (el.modeTabChessBtn) {
+      el.modeTabChessBtn.addEventListener("click", () => setRightEditorTab("chess"));
+    }
+    if (el.chessResetThresholdsBtn) {
+      el.chessResetThresholdsBtn.addEventListener("click", () => {
+        resetChessTempThresholds();
+        showMessage("已恢复临时阈值为当前已保存运行时值", "ok");
+      });
+    }
+    if (el.chessFillSnapshotTplBtn) {
+      el.chessFillSnapshotTplBtn.addEventListener("click", fillChessSnapshotTemplate);
+    }
+    if (el.chessRunTestBtn) {
+      el.chessRunTestBtn.addEventListener("click", withError(runChessCandidateTest));
+    }
+    if (el.chessClearOverlayBtn) {
+      el.chessClearOverlayBtn.addEventListener("click", () => {
+        clearChessCandidateOverlays();
+        showMessage("已清除候选卡叠加框", "ok");
+      });
+    }
+    if (el.chessSaveThresholdsBtn) {
+      el.chessSaveThresholdsBtn.addEventListener("click", withError(saveChessCandidateThresholds));
+    }
+  }
+
+  function setRightEditorTab(tab) {
+    state.rightEditorTab = tab === "chess" ? "chess" : "rules";
+    const isChess = state.rightEditorTab === "chess";
+    if (el.modeTabRulesBtn) {
+      el.modeTabRulesBtn.classList.toggle("active", !isChess);
+      el.modeTabRulesBtn.setAttribute("aria-selected", String(!isChess));
+    }
+    if (el.modeTabChessBtn) {
+      el.modeTabChessBtn.classList.toggle("active", isChess);
+      el.modeTabChessBtn.setAttribute("aria-selected", String(isChess));
+    }
+    if (el.ruleEditorBody) {
+      el.ruleEditorBody.classList.toggle("hidden", isChess);
+    }
+    if (el.chessCandidateBody) {
+      el.chessCandidateBody.classList.toggle("hidden", !isChess);
+    }
+  }
+
+  function renderChessSavedMeta(meta) {
+    if (!meta || !meta.defaults) {
+      return;
+    }
+    const d = meta.defaults;
+    if (el.chessSavedMetaSummary) {
+      el.chessSavedMetaSummary.innerHTML = "";
+      const items = [
+        ["角标定位阈值", d.badge_threshold],
+        ["头像匹配阈值", d.portrait_threshold],
+        ["上卡筛选阈值", d.deploy_threshold],
+        ["连续确认帧", d.confirm_frames],
+        ["歧义阈值差", d.ambiguity_margin],
+        ["灰度(头像/角标)", `${d.portrait_grayscale} / ${d.badge_grayscale}`],
+      ];
+      for (const [k, v] of items) {
+        const cell = document.createElement("div");
+        cell.textContent = `${k}: ${v}`;
+        el.chessSavedMetaSummary.appendChild(cell);
+      }
+    }
+  }
+
+  function resetChessTempThresholds() {
+    const d = state.chessCandidateMeta && state.chessCandidateMeta.defaults;
+    if (!d) {
+      return;
+    }
+    if (el.chessTempBadgeThreshold) {
+      el.chessTempBadgeThreshold.value = String(d.badge_threshold);
+    }
+    if (el.chessTempPortraitThreshold) {
+      el.chessTempPortraitThreshold.value = String(d.portrait_threshold);
+    }
+    if (el.chessTempDeployThreshold) {
+      el.chessTempDeployThreshold.value = String(d.deploy_threshold);
+    }
+  }
+
+  async function loadChessCandidateMeta(preserveTempInputs = false) {
+    const meta = await api(`${API_PREFIX}/api/chess/candidates/meta`);
+    state.chessCandidateMeta = meta;
+    renderChessSavedMeta(meta);
+    if (el.chessLineupSource) {
+      const prev = el.chessLineupSource.value;
+      el.chessLineupSource.innerHTML = "";
+      for (const item of meta.lineups || []) {
+        createOption(el.chessLineupSource, item.value, item.label);
+      }
+      if (prev && Array.from(el.chessLineupSource.options).some((opt) => opt.value === prev)) {
+        el.chessLineupSource.value = prev;
+      } else if (meta.default_lineup_source) {
+        el.chessLineupSource.value = meta.default_lineup_source;
+      }
+    }
+    if (!preserveTempInputs) {
+      resetChessTempThresholds();
+    }
+  }
+
+  function fillChessSnapshotTemplate() {
+    if (!el.chessRuntimeSnapshotInput) {
+      return;
+    }
+    el.chessRuntimeSnapshotInput.value = JSON.stringify({
+      board_lineup_names: [],
+      pending_deploys: {},
+      deploy_deferred_names: [],
+      deploy_direct_attempted_names: [],
+      deploy_recovery_queue: [],
+      deploy_recovery_attempted_names: [],
+      direct_only: false,
+      capacity: { full: false },
+      goldfish_placed_slot: null,
+      board_occupied_slots: [],
+    }, null, 2);
+  }
+
+  function parseChessTempThresholds() {
+    const readNum = (input, label) => {
+      const num = Number.parseFloat(String(input ? input.value : "").trim());
+      if (!Number.isFinite(num) || num < 0 || num > 1) {
+        throw new Error(`${label} 必须是 0 到 1 之间的数字`);
+      }
+      return Math.round(num * 10000) / 10000;
+    };
+    return {
+      badge_threshold: readNum(el.chessTempBadgeThreshold, "临时角标定位阈值"),
+      portrait_threshold: readNum(el.chessTempPortraitThreshold, "临时头像匹配阈值"),
+      deploy_threshold: readNum(el.chessTempDeployThreshold, "临时上卡筛选阈值"),
+    };
+  }
+
+  function appendChessKvRow(grid, key, val) {
+    const kEl = document.createElement("div");
+    kEl.className = "chess-card-k";
+    kEl.textContent = key;
+    const vEl = document.createElement("div");
+    vEl.className = "chess-card-v";
+    vEl.textContent = val;
+    grid.appendChild(kEl);
+    grid.appendChild(vEl);
+  }
+
+  function renderChessCandidateResults(result) {
+    if (el.chessCandidateSummary) {
+      el.chessCandidateSummary.innerHTML = "";
+      el.chessCandidateSummary.classList.remove("hidden");
+      const title = document.createElement("div");
+      title.className = "chess-section-title";
+      title.textContent = `${result.image_name} | 阵容: ${result.lineup_display_name} (${result.lineup_key})`;
+      el.chessCandidateSummary.appendChild(title);
+
+      const kv = document.createElement("div");
+      kv.className = "chess-card-kv";
+      const s = result.saved_thresholds || {};
+      const e = result.effective_thresholds || {};
+      appendChessKvRow(
+        kv,
+        "阈值模式",
+        result.temp_overrides_active
+          ? `临时测试中 (角标 ${e.badge_threshold} / 头像 ${e.portrait_threshold} / 上卡 ${e.deploy_threshold})，已保存为 (${s.badge_threshold} / ${s.portrait_threshold} / ${s.deploy_threshold})`
+          : `与已保存运行时一致 (角标 ${s.badge_threshold} / 头像 ${s.portrait_threshold} / 上卡 ${s.deploy_threshold})`,
+      );
+      appendChessKvRow(
+        kv,
+        "预处理/帧数",
+        `portrait_grayscale=${e.portrait_grayscale}, badge_grayscale=${e.badge_grayscale}, confirm_frames=${e.confirm_frames}, 歧义差=${e.ambiguity_margin}`,
+      );
+      appendChessKvRow(kv, "运行状态", result.runtime_exclusion_status || "运行时排除状态未知");
+      if (result.comparison_summary) {
+        const cmp = result.comparison_summary;
+        appendChessKvRow(
+          kv,
+          "临时对比已保存",
+          `角标检出 ${cmp.saved_detected_count}->${cmp.temp_detected_count}, 身份识别 ${cmp.saved_recognized_count}->${cmp.temp_recognized_count}, 可上阵筛选 ${cmp.saved_deployable_count}->${cmp.temp_deployable_count}`,
+        );
+      }
+      appendChessKvRow(
+        kv,
+        "当前首选预测",
+        result.selected_candidate
+          ? `#${result.selected_candidate.index} ${result.selected_candidate.cn_name} (weight=${result.selected_candidate.deploy_weight}, 目标格=${result.selected_candidate.target_slot}, score=${result.selected_candidate.score})`
+          : "无满足上阵条件的候选卡",
+      );
+      el.chessCandidateSummary.appendChild(kv);
+    }
+
+    if (!el.chessCandidateResults) {
+      return;
+    }
+    el.chessCandidateResults.innerHTML = "";
+    const cards = Array.isArray(result.cards) ? result.cards : [];
+    if (!cards.length) {
+      const empty = document.createElement("div");
+      empty.className = "rule-list-empty";
+      empty.textContent = "未在 F_HAND_CARD 搜索区域检出达到角标阈值的候选卡";
+      el.chessCandidateResults.appendChild(empty);
+      return;
+    }
+
+    for (const card of cards) {
+      const box = document.createElement("div");
+      box.className = "chess-card-item";
+      if (!card.name) {
+        box.classList.add("is-unknown");
+      } else if (card.would_be_selected_next) {
+        box.classList.add("is-selected");
+      }
+
+      const head = document.createElement("div");
+      head.className = "chess-card-head";
+      if (card.portrait_crop_data_url) {
+        const img = document.createElement("img");
+        img.className = "chess-card-crop";
+        img.src = card.portrait_crop_data_url;
+        img.alt = card.cn_name || "portrait";
+        head.appendChild(img);
+      }
+      const titleWrap = document.createElement("div");
+      const titleEl = document.createElement("div");
+      titleEl.className = "chess-card-title";
+      titleEl.textContent = `#${card.index} ${card.cn_name}${card.name ? ` (${card.name})` : ""} | ${card.star}星 | score=${Number(card.score || 0).toFixed(4)}`;
+      const subEl = document.createElement("div");
+      subEl.className = "chess-card-sub";
+      subEl.textContent = card.in_lineup
+        ? `属于选定阵容 | 权重=${card.deploy_weight} | 目标格=${card.target_slot} | ${card.saved_comparison}`
+        : `非当前选定阵容式神 | ${card.saved_comparison}`;
+      titleWrap.appendChild(titleEl);
+      titleWrap.appendChild(subEl);
+      head.appendChild(titleWrap);
+      box.appendChild(head);
+
+      const top3Wrap = document.createElement("div");
+      top3Wrap.className = "chess-top3-list";
+      for (const item of card.top3 || []) {
+        const chip = document.createElement("span");
+        chip.className = `chess-top3-chip ${item.above_threshold ? "pass" : "fail"}`;
+        chip.textContent = `Top${item.rank}: ${item.cn_name} ${Number(item.score || 0).toFixed(4)}`;
+        top3Wrap.appendChild(chip);
+      }
+      box.appendChild(top3Wrap);
+
+      const kv = document.createElement("div");
+      kv.className = "chess-card-kv";
+      appendChessKvRow(
+        kv,
+        "1. 角标定位",
+        `box=[${(card.badge_bbox || []).join(", ")}], score=${Number(card.badge_score || 0).toFixed(4)} >= ${card.badge_threshold}`,
+      );
+      appendChessKvRow(
+        kv,
+        "   头像裁剪",
+        `crop=[${(card.portrait_bbox || []).join(", ")}], portrait_threshold=${card.portrait_threshold}, gray=${card.portrait_grayscale}`,
+      );
+      const nearTxt = (card.near_candidates || [])
+        .map((n) => `${n.cn_name}:${Number(n.score || 0).toFixed(4)}`)
+        .join(", ");
+      const ambTxt = card.ambiguity_triggered
+        ? `触发(<${card.ambiguity_margin}) [${nearTxt}] -> OCR=${card.bond_ocr_status} (${(card.bond_texts || []).join("/") || "无"})`
+        : `未触发歧义(<${card.ambiguity_margin})`;
+      appendChessKvRow(kv, "2. 歧义与羁绊", ambTxt);
+      appendChessKvRow(
+        kv,
+        "3. 上卡筛选",
+        `threshold=${card.deploy_threshold}, frames=${card.confirm_frames}, pass=${Boolean(card.meets_deploy_threshold)}${card.would_be_selected_next ? " [当前优先选中]" : ""}`,
+      );
+      appendChessKvRow(kv, "4. 运行时状态", card.runtime_exclusion_status || "运行时排除状态未知");
+      box.appendChild(kv);
+      el.chessCandidateResults.appendChild(box);
+    }
+  }
+
+  async function runChessCandidateTest() {
+    if (!state.currentImageId) {
+      throw new Error("请先在左侧选择本地截图");
+    }
+    const thresholds = parseChessTempThresholds();
+    let runtimeSnapshot = null;
+    const rawSnap = el.chessRuntimeSnapshotInput ? el.chessRuntimeSnapshotInput.value.trim() : "";
+    if (rawSnap) {
+      try {
+        runtimeSnapshot = JSON.parse(rawSnap);
+      } catch (err) {
+        throw new Error(`运行时状态快照 JSON 解析失败: ${err.message}`);
+      }
+      if (!runtimeSnapshot || typeof runtimeSnapshot !== "object" || Array.isArray(runtimeSnapshot)) {
+        throw new Error("运行时状态快照必须是 JSON 对象");
+      }
+    }
+    const res = await api(`${API_PREFIX}/api/chess/candidates/test`, {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: state.sessionId,
+        image_id: state.currentImageId,
+        lineup_source: el.chessLineupSource ? el.chessLineupSource.value : "",
+        badge_threshold: thresholds.badge_threshold,
+        portrait_threshold: thresholds.portrait_threshold,
+        deploy_threshold: thresholds.deploy_threshold,
+        runtime_snapshot: runtimeSnapshot,
+      }),
+    });
+    const result = res.result || {};
+    state.chessCandidateResult = result;
+    renderChessCandidateOverlays();
+    renderChessCandidateResults(result);
+    const outputCopy = {
+      ...result,
+      cards: (result.cards || []).map(({ portrait_crop_data_url, ...rest }) => rest),
+    };
+    appendOutput("候选式神识别测试", outputCopy);
+    showMessage(`完成候选式神测试：检出 ${(result.cards || []).length} 张手牌`, "ok");
+  }
+
+  async function saveChessCandidateThresholds() {
+    const thresholds = parseChessTempThresholds();
+    const msg = `确认将当前临时阈值写入运行时配置文件？\n角标=${thresholds.badge_threshold}，头像=${thresholds.portrait_threshold}，上卡=${thresholds.deploy_threshold}\n将更新 c_frame.json / card_index.json / assets.py / settings.py`;
+    if (typeof window.confirm === "function" && !window.confirm(msg)) {
+      return;
+    }
+    const res = await api(`${API_PREFIX}/api/chess/candidates/save-thresholds`, {
+      method: "POST",
+      body: JSON.stringify(thresholds),
+    });
+    await loadChessCandidateMeta(true);
+    appendOutput("保存候选卡阈值", res);
+    showMessage("已保存候选卡阈值并同步更新 assets.py / settings.py", "ok");
   }
 
 
@@ -2821,8 +3235,10 @@
     renderRuleList();
 
     await createSession();
-    await Promise.all([loadConfigs(), rebuildDirSelectors("", "", false)]);
+    await Promise.all([loadConfigs(), rebuildDirSelectors("", "", false), loadChessCandidateMeta()]);
     await refreshImages();
+
+    setRightEditorTab("rules");
 
     updateRuleTypeLockView();
     updateFieldVisibility();

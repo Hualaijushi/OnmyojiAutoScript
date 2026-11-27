@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import random
+from dataclasses import dataclass
 from time import sleep, monotonic
 from datetime import time, datetime, timedelta
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -18,7 +19,7 @@ from tasks.Orochi.config import Orochi, UserStatus, Layer
 from tasks.TrueOrochi.assets import TrueOrochiAssets
 from module.logger import logger
 from module.click_pipeline import execute_single_click, list_click_target
-from module.exception import TaskEnd
+from module.exception import GameStuckError, TaskEnd
 from module.instance_sync.team import get_session
 from module.script.loop_controller import get_step_controller
 from module.base.timer import Timer
@@ -34,6 +35,24 @@ OROCHI_FIRE_TIMEOUT = 10
 OROCHI_FIRE_POST_CLICK_TIMEOUT = 3
 # 队员读队长进度的间隔（秒）：主循环每帧都会走到，不能每帧读文件
 OROCHI_TEAM_POLL_INTERVAL = 2.0
+# 结算内「发现宝藏」宠物奖励弹窗的关闭：点击间隔沿用外层旧分支的 1 秒；点击次数 / 总时长各有独立上限，
+# 超限抛 GameStuckError（与普通结算累计点击数、公共点击记录互不影响）；弹窗连续多少张新帧都不在才算关闭。
+# engineering baseline，非 Level C 标定。
+PET_CLOSE_CLICK_INTERVAL = 1.0
+PET_CLOSE_MAX_CLICKS = 4
+PET_CLOSE_TIMEOUT = 15.0
+PET_CLOSE_CONFIRM_FRAMES = 2
+
+
+@dataclass
+class _PetCloseState:
+    """一次宠物奖励弹窗的处理进度；只存在于本场 `run_general_battle` 的内存里。"""
+
+    first_seen: float
+    clicks: int = 0
+    last_click: float = 0.0
+    # 弹窗标志连续不在场的新帧数；出现一次就清零（单帧漏识别不算关闭）
+    absent_frames: int = 0
 
 
 class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi, SwitchSoul, OrochiAssets, TrueOrochiAssets):
@@ -47,18 +66,68 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
     # 只见到结算页是上一场残留的，不能证明有新战斗
     _battle_seen = False
     _result_seen = False
+    # 结算内宠物奖励弹窗的处理状态；None = 当前没有在处理。run_general_battle 进入 / 退出（含异常）都会清掉
+    _pet: _PetCloseState | None = None
 
     def _may_fire(self) -> bool:
         # 外层检查之后 run_invite 可能等很久，真正点「挑战」之前再确认一次循环还有效；普通运行不受影响
         return self.loop is None or self.loop.check(force=True)
 
+    def run_general_battle(self, *args, **kwargs):
+        # 宠物弹窗处理状态不跨场：进入前清掉上一场残留，退出（正常 / 异常）后也清掉
+        self._pet = None
+        try:
+            return super().run_general_battle(*args, **kwargs)
+        finally:
+            self._pet = None
+
     def _handle_prepare(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         self._battle_seen = True
+        self._pet = None
         return super()._handle_prepare(context, config)
 
     def _handle_in_battle(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         self._battle_seen = True
+        self._pet = None
         return super()._handle_in_battle(context, config)
+
+    def _handle_pet_present(self, context: BattleContext) -> bool:
+        """结算内宠物奖励弹窗（`I_PET_PRESENT`，卷轴边缘模板，不是点击目标）的关闭；返回本帧是否归它处理。
+
+        True 时调用方直接 CONTINUE，不得落入普通结算 / 邀请：弹窗在场（不论本帧点击是否被间隔限流而没发出），
+        或点击后还没有连续 `PET_CLOSE_CONFIRM_FRAMES` 张新帧都看不到弹窗。False = 没有弹窗在处理，或已确认关闭
+        （本帧已是新帧，交回原有流程）。点击接口返回不当作已关闭。超过点击次数 / 总时长上限仍在场 → GameStuckError。
+        不碰普通结算的累计点击数、session 和公共点击记录。
+        """
+        state = self._pet
+        if self.appear(self.I_PET_PRESENT):
+            now = monotonic()
+            if state is None:
+                state = self._pet = _PetCloseState(first_seen=now, last_click=now)
+                logger.info('Pet reward popup detected in battle settlement')
+            state.absent_frames = 0
+            context.reward_no_battle_ts = None
+            if now - state.first_seen >= PET_CLOSE_TIMEOUT or (
+                    state.clicks >= PET_CLOSE_MAX_CLICKS and now - state.last_click >= PET_CLOSE_CLICK_INTERVAL):
+                raise GameStuckError(
+                    f'Pet reward popup not closed: clicks={state.clicks}, elapsed={now - state.first_seen:.1f}s')
+            # 限流没点出去也算归本分支：不落入普通结算
+            if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT,
+                                      interval=PET_CLOSE_CLICK_INTERVAL):
+                state.clicks += 1
+                state.last_click = now
+                logger.info(f'Close pet reward popup: click {state.clicks}/{PET_CLOSE_MAX_CLICKS}')
+            return True
+        if state is None:
+            return False
+        state.absent_frames += 1
+        context.reward_no_battle_ts = None
+        if state.absent_frames < PET_CLOSE_CONFIRM_FRAMES:
+            logger.info(f'Pet reward popup absent, confirming: {state.absent_frames}/{PET_CLOSE_CONFIRM_FRAMES}')
+            return True
+        logger.info(f'Pet reward popup closed (clicks={state.clicks})')
+        self._pet = None
+        return False
 
     def _team_report(self, done: bool = False) -> None:
         if self.team_session is not None:
@@ -118,6 +187,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
     def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         self._result_seen = self._result_seen or self._battle_seen
+        if self._pet is not None and self._handle_pet_present(context):
+            return BattleAction.CONTINUE
         if self._close_orochi_soul_choice_popup():
             context.reward_no_battle_ts = None
             return BattleAction.CONTINUE
@@ -125,6 +196,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
     def _handle_reward(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         self._result_seen = self._result_seen or self._battle_seen
+        # 宠物奖励弹窗优先：page_reward 的识别条件含 I_PET_PRESENT，外层循环的旧关闭分支在
+        # run_general_battle 返回前拿不到控制权，所以必须在这里处理
+        if self._handle_pet_present(context):
+            # 与通用 _handle_reward 一致：page_reward 即视为胜利；否则宠物弹窗直接回准备页会被判成失败
+            context.is_win = True
+            return BattleAction.CONTINUE
         if self._close_orochi_soul_choice_popup():
             context.reward_no_battle_ts = None
             return BattleAction.CONTINUE
@@ -140,6 +217,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         config: GeneralBattleConfig,
         exit_matcher: ExitMatcher | None,
     ) -> BattleAction:
+        # 点击宠物弹窗后底下的页面可能暂时识别不到：确认关闭前不进入战后退出判断
+        if self._pet is not None and self._handle_pet_present(context):
+            return BattleAction.CONTINUE
         # 活动弹窗可能在结算页、奖励页或两者之间直接出现；覆盖页面后
         # 通用识别通常会落入 unknown，因此必须在战后退出判断前关闭。
         if self._close_orochi_soul_choice_popup():

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import cv2
 from module.click_pipeline import FinalPoint, execute_single_click
+import numpy as np
 from module.logger import logger
 from tasks.Chess.strategy.grigri import (
     grigri_category,
@@ -28,7 +29,7 @@ class ChessRoundStateMixin:
     @cached_property
     def grigri_icon_templates(self) -> dict[str, object]:
         """按中文名缓存全部符咒图标，供 OCR 失败时进行图像兜底。"""
-        badge_dir = Path(__file__).resolve().parents[1] / 'badge'
+        badge_dir = Path(__file__).resolve().parents[1] / 'resource' / 'badge'
         templates = {}
         for name in grigri_names_for_quality(None):
             file = badge_dir / grigri_file(name)
@@ -258,6 +259,25 @@ class ChessRoundStateMixin:
             if item['score'] == lowest_score
         ])
 
+    def _recognize_grigri_options_with_retry(self) -> list[dict]:
+        """三个选项全未知时，用下一张截图复核一次。"""
+        options = self._recognize_grigri_options()
+        if len(options) == 3 and all(not item['name'] for item in options):
+            logger.info(
+                'All Chess grigri options unknown; wait for next screenshot '
+                'and recognize once more'
+            )
+            time.sleep(self.ACTION_SETTLE_INTERVAL)
+            self.screenshot()
+            self._grigri_quality_cache = None
+            options = self._recognize_grigri_options()
+            if len(options) == 3 and all(not item['name'] for item in options):
+                logger.warning(
+                    'All Chess grigri options still unknown after recheck; '
+                    'allow random selection'
+                )
+        return options
+
     def select_grigri(self) -> bool:
         """识别、评分并选择符咒；低分时对目标选项刷新一次。"""
         if not self.appear(self.I_SELECT_GRIGRI):
@@ -266,7 +286,7 @@ class ChessRoundStateMixin:
         # 每次进入新的选符咒界面，三个位置各允许刷新一次。
         self._grigri_quality_cache = None
         self._grigri_refresh_remaining = [1, 1, 1]
-        options = self._recognize_grigri_options()
+        options = self._recognize_grigri_options_with_retry()
         for _ in range(self.GRIGRI_REFRESH_MAXIMUM):
             refresh_target = self._next_refreshable_grigri_option(
                 options
@@ -280,7 +300,7 @@ class ChessRoundStateMixin:
                 break
             if not self._refresh_grigri_option(refresh_target):
                 break
-            options = self._recognize_grigri_options()
+            options = self._recognize_grigri_options_with_retry()
 
         selected = self._best_grigri_option(options)
         selected_rule = selected['rule']
@@ -404,8 +424,39 @@ class ChessRoundStateMixin:
             )
         return value
 
+    # 特殊回合标志优先于文字 OCR；后续回合标志在此登记阶段。
+    SPECIAL_STAGE_RULES = (('I_STAGE_HYAKKI', '鬼'),)
+    BOSS_STAGE_RULES = ('I_STAGE_ORCHI', 'I_STAGE_DEMON')
+
+    def _stage_marker_visible(self, rule) -> bool:
+        """回合预告中的灰色图案也会模板命中，只接受金色激活图案。"""
+        x, y, w, h = rule.roi_back
+        region = self.device.image[y:y+h, x:x+w]
+        template = rule.image
+        th, tw = template.shape[:2]
+        if region.shape[0] < th or region.shape[1] < tw:
+            return False
+        scores = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
+        ys, xs = np.where(scores >= rule.threshold)
+        for px, py in zip(xs, ys):
+            hsv = cv2.cvtColor(region[py:py+th, px:px+tw], cv2.COLOR_RGB2HSV)
+            gold = ((hsv[:, :, 0] >= 10) & (hsv[:, :, 0] <= 45)
+                    & (hsv[:, :, 1] >= 100) & (hsv[:, :, 2] >= 150))
+            if float(np.mean(gold)) >= .10:
+                return True
+        return False
+
+    def _special_chess_mode(self) -> str | None:
+        for rule_name, mode in self.SPECIAL_STAGE_RULES:
+            if self._stage_marker_visible(getattr(self, rule_name)):
+                return mode
+        return None
+
     def _read_chess_mode(self) -> str | None:
-        """返回模式文字；只有 OCR 真正无文本时才返回 None。"""
+        """优先识别特殊回合标志，其余阶段读取文字。"""
+        special_mode = self._special_chess_mode()
+        if special_mode is not None:
+            return special_mode
         primary_raw, use_alternate_layout = self._read_primary_round_layout()
         raw = (
             self._normalize_ocr_text(
@@ -414,130 +465,256 @@ class ChessRoundStateMixin:
             if use_alternate_layout
             else primary_raw
         )
-        for mode in ('备', '战', '鬼'):
-            if mode in raw:
-                return mode
+        if raw in ('备', '战'):
+            return raw
         # “待”等过渡文字虽然不触发阶段动作，但必须保留为有文本状态，
         # 不能和真正的 OCR 空结果混为一谈，否则会误累计结算空帧。
-        return raw or None
+        return '待' if raw else None
 
-    def _is_boss_challenge_round(self) -> bool:
-        """当前是否为固定勾玉框会整体失效的首领挑战回合。"""
-        return getattr(self, '_current_round_no', None) in (
-            self.BOSS_CHALLENGE_ROUNDS
+    def _is_boss_challenge_round(self, round_no=None) -> bool:
+        """以大蛇、逢魔激活标志确定首领回合，切换专用棋盘布局。"""
+        key = (self.chess_state.game_number,
+               self._current_round_no if round_no is None else round_no)
+        if any(self._stage_marker_visible(getattr(self, name))
+               for name in self.BOSS_STAGE_RULES):
+            self._boss_challenge_round_key = key
+            return True
+        return getattr(self, '_boss_challenge_round_key', None) == key
+
+    def _board_set_state(self, set_index: int) -> str:
+        """读取指定站位状态：occupied / empty / unknown；锚点缺失记为 unknown。"""
+        index = int(set_index)
+        if not 1 <= index <= 12:
+            raise ValueError(f'Chess board set position is not configured: {set_index}')
+        slots = self._board_frame_scan()
+        return slots[index - 1]['state'] if slots else 'unknown'
+
+    def _board_set_has_shikigami(self, set_index: int) -> bool:
+        """按当前普通或首领棋盘的 Frame 判断占位。"""
+        return self._board_set_has_shikigami_visual(set_index)
+
+    def _board_set_has_shikigami_visual(self, set_index: int) -> bool:
+        """按表情开关定位的 Frame 判断指定站位是否确认有人。"""
+        return self._board_set_state(set_index) == 'occupied'
+
+    def _board_set_is_empty(self, set_index: int) -> bool:
+        """确认原站位为空；未知格、开店遮挡帧与锚点缺失均不算空位。"""
+        return self._board_set_state(set_index) == 'empty'
+
+    def _reconcile_lineup_after_hyakki_round(
+        self,
+        next_round_no: int | None = None,
+    ) -> list[str]:
+        """百鬼夜行结束后仅移除已明确确认变空的式神上阵记录；未知格保留。"""
+        deployed_names = set(
+            getattr(self, '_board_lineup_names', set())
         )
-
-    def _tracked_board_positions(self) -> set[int]:
-        """汇总无需依赖勾玉模板即可确认的本局站位。"""
-        positions = {
-            int(position)
-            for position in getattr(
-                self,
-                '_player_deployed_positions',
-                set(),
-            )
-        }
-        actual_positions = getattr(self, '_board_actual_positions', {})
-        for name in getattr(self, '_board_lineup_names', set()):
-            position = actual_positions.get(
+        actual_positions = dict(
+            getattr(self, '_board_actual_positions', {})
+        )
+        player_positions = set(
+            getattr(self, '_player_deployed_positions', set())
+        )
+        removed = []
+        skipped_unknown = []
+        for name in sorted(deployed_names):
+            set_index = actual_positions.get(
                 name,
                 self.shikigami_deploy_positions.get(name),
             )
-            if position is not None:
-                positions.add(int(position))
-        for unit in getattr(self, '_board_special_units', {}).values():
-            position = unit.get('position')
-            if position is not None:
-                positions.add(int(position))
-        return positions
-
-    def _board_set_has_shikigami(self, set_index: int) -> bool:
-        """判断站位是否有人；首领回合仅采用本局动态站位记录。"""
-        if self._is_boss_challenge_round():
-            occupied = int(set_index) in self._tracked_board_positions()
-            logger.debug(
-                'Chess boss-round board occupancy by runtime state: '
-                f'round={self._current_round_no}, set={set_index}, '
-                f'occupied={occupied}'
-            )
-            return occupied
-
-        x, y, width, height = self._set_jade_area(set_index)
-        image_height, image_width = self.device.image.shape[:2]
-        if (
-            x < 0
-            or y < 0
-            or x >= image_width
-            or y >= image_height
-        ):
+            if set_index is None:
+                continue
+            state = self._board_set_state(int(set_index))
+            if state != 'empty':
+                if state == 'unknown':
+                    skipped_unknown.append((name, int(set_index)))
+                continue
+            deployed_names.discard(name)
+            actual_positions.pop(name, None)
+            player_positions.discard(int(set_index))
+            removed.append(name)
             logger.warning(
-                f'Chess set jade area is outside screenshot: '
-                f'set={set_index}, area={(x, y, width, height)}'
+                'Chess shikigami missing after Hyakki round; '
+                f'mark as undeployed: name={name}, set={set_index}'
             )
-            return False
-        width = min(width, image_width - x)
-        height = min(height, image_height - y)
-        if width <= 0 or height <= 0:
-            logger.warning(
-                f'Chess set jade area is empty after clipping: '
-                f'set={set_index}, area={(x, y, width, height)}'
-            )
-            return False
 
-        roi = [x, y, width, height]
-        return any(
-            bool(rule.match_all_any(
-                self.device.image,
-                roi=roi,
-                threshold=self.BOARD_OCCUPANCY_TEMPLATE_THRESHOLD,
-                nms_threshold=0.3,
-                frame_id=self.device.image_frame_id,
-            ))
-            for rule in self.board_occupancy_rules
+        self._board_lineup_names = deployed_names
+        self._board_actual_positions = actual_positions
+        self._player_deployed_positions = player_positions
+        sync_after_hyakki = getattr(
+            self,
+            '_sync_board_slots_after_hyakki_reconcile',
+            None,
         )
-
-    def _read_board_position_count(self) -> dict:
-        """统计 12 个站位勾玉区域中检测到图标的位置数量。"""
-        if self._is_boss_challenge_round():
-            occupied_positions = sorted(self._tracked_board_positions())
-            count = len(occupied_positions)
-            raw = ','.join(str(index) for index in occupied_positions)
-            logger.debug(
-                'Chess boss-round board position count by runtime state: '
-                f'round={self._current_round_no}, count={count}/12, '
-                f'occupied={occupied_positions}'
+        if callable(sync_after_hyakki):
+            sync_after_hyakki(
+                removed_names=removed,
+                round_no=next_round_no,
             )
-            return {
-                'current': count,
-                'total': 12,
-                'raw': raw,
-                'occupied_positions': occupied_positions,
-            }
+        logger.info(
+            'Chess post-Hyakki lineup check: '
+            f'removed={removed}, skipped_unknown={skipped_unknown}, '
+            f'deployed={sorted(deployed_names)}'
+        )
+        return removed
 
+    def _read_board_position_count(self) -> dict | None:
+        """统计 12 个站位的确认占格、确认空格与未知格；锚点缺失时返回 None。"""
+        slots = self._board_frame_scan()
+        if not slots:
+            logger.debug('Chess board position count unavailable: emoji anchor missing')
+            return None
         occupied_positions = [
-            set_index
-            for set_index in range(1, 13)
-            if self._board_set_has_shikigami(set_index)
+            index for index, slot in enumerate(slots, 1)
+            if slot['state'] == 'occupied'
+        ]
+        empty_positions = [
+            index for index, slot in enumerate(slots, 1)
+            if slot['state'] == 'empty'
+        ]
+        unknown_positions = [
+            index for index, slot in enumerate(slots, 1)
+            if slot['state'] == 'unknown'
         ]
         count = len(occupied_positions)
+        all_empty = len(empty_positions) == len(slots) and not unknown_positions
         raw = ','.join(str(index) for index in occupied_positions)
         logger.debug(
-            'Chess board position count by jade: '
-            f'{count}/12, occupied={occupied_positions}'
+            'Chess board position count: '
+            f'occupied={count}/12 {occupied_positions}, '
+            f'empty={empty_positions}, unknown={unknown_positions}, '
+            f'all_empty={all_empty}'
         )
         return {
             'current': count,
             'total': 12,
             'raw': raw,
             'occupied_positions': occupied_positions,
+            'empty_positions': empty_positions,
+            'unknown_positions': unknown_positions,
+            'all_empty': all_empty,
+            'complete': not unknown_positions,
         }
 
     def _read_shikigami_count(self) -> dict | None:
-        """读取场上人数：统计 12 个站位勾玉区域是否有式神。"""
+        """读取场上人数：统计 12 个站位确认占格与空位状态。"""
         return self._read_board_position_count()
 
+    def _evaluate_visual_lineup_capacity(self, level: int) -> dict:
+        """在普通备战关店帧交叉评估阶数、棋盘占格与左栏荒川数量；任一未知则回退旧判定。"""
+        def _unknown(
+            visual_reason: str,
+            *,
+            arakawa_reason: str,
+            board_occupied: int | None = None,
+            occupied_positions: list[int] | None = None,
+            unknown_positions: list[int] | None = None,
+            board_complete: bool = False,
+            arakawa_state: str = 'unknown',
+            arakawa_count: int | None = None,
+            arakawa_raw_text: str = '',
+            expected_occupied: int | None = None,
+        ) -> dict:
+            return {
+                'visual_state': 'unknown',
+                'visual_reason': visual_reason,
+                'board_occupied': board_occupied,
+                'occupied_positions': occupied_positions or [],
+                'unknown_positions': unknown_positions or [],
+                'board_complete': board_complete,
+                'arakawa_state': arakawa_state,
+                'arakawa_count': arakawa_count,
+                'arakawa_raw_text': arakawa_raw_text,
+                'arakawa_reason': arakawa_reason,
+                'expected_occupied': expected_occupied,
+            }
+
+        if self._is_boss_challenge_round():
+            return _unknown('boss_round', arakawa_reason='skipped')
+        if not self._is_preparation_mode():
+            return _unknown('not_preparation', arakawa_reason='not_preparation')
+        if self._is_shop_open():
+            return _unknown('shop_open', arakawa_reason='shop_open')
+
+        board_count = self._read_board_position_count()
+        check_bond = getattr(self, '_check_arakawa_bond_qualified', None)
+        bond_status = (
+            check_bond()
+            if callable(check_bond)
+            else {
+                'qualified': False,
+                'reason': 'bond_reader_unavailable',
+                'sign_matched': False,
+                'count': None,
+                'raw_text': '',
+            }
+        )
+
+        bond_reason = bond_status.get('reason', 'unknown')
+        arakawa_count = bond_status.get('count')
+        arakawa_raw_text = bond_status.get('raw_text', '')
+        if bond_reason == 'qualified':
+            arakawa_state = 'active'
+            # 荒川激活后会额外占 1 个金鱼格，式神人口上限仍等于阶数。
+            expected_occupied = int(level) + 1
+        elif bond_reason == 'count_below_threshold':
+            arakawa_state = 'inactive'
+            expected_occupied = int(level)
+        else:
+            arakawa_state = 'unknown'
+            expected_occupied = None
+
+        if board_count is None:
+            return _unknown(
+                'board_anchor_missing',
+                arakawa_reason=bond_reason,
+                arakawa_state=arakawa_state,
+                arakawa_count=arakawa_count,
+                arakawa_raw_text=arakawa_raw_text,
+                expected_occupied=expected_occupied,
+            )
+
+        board_occupied = int(board_count['current'])
+        occupied_positions = list(board_count['occupied_positions'])
+        unknown_positions = list(board_count['unknown_positions'])
+        board_complete = bool(board_count['complete'])
+
+        if not board_complete:
+            visual_state = 'unknown'
+            visual_reason = 'board_incomplete'
+        elif arakawa_state == 'unknown':
+            visual_state = 'unknown'
+            visual_reason = f'arakawa_{bond_reason}'
+        elif board_occupied == expected_occupied:
+            visual_state = 'full'
+            visual_reason = 'occupied_reached_expected'
+        elif board_occupied > expected_occupied:
+            visual_state = 'unknown'
+            visual_reason = 'occupied_exceeds_expected'
+        elif board_occupied < int(level):
+            visual_state = 'not_full'
+            visual_reason = 'occupied_below_level'
+        else:
+            # 荒川已激活且实占格恰等于阶数（如 6 阶 6 格）：无法区分 6 式神缺金鱼还是 5 式神加金鱼。
+            visual_state = 'unknown'
+            visual_reason = 'arakawa_active_ambiguous_count'
+
+        return {
+            'visual_state': visual_state,
+            'visual_reason': visual_reason,
+            'board_occupied': board_occupied,
+            'occupied_positions': occupied_positions,
+            'unknown_positions': unknown_positions,
+            'board_complete': board_complete,
+            'arakawa_state': arakawa_state,
+            'arakawa_count': arakawa_count,
+            'arakawa_raw_text': arakawa_raw_text,
+            'arakawa_reason': bond_reason,
+            'expected_occupied': expected_occupied,
+        }
+
     def _read_lineup_capacity_status(self) -> dict | None:
-        """以本局已确认上阵名单统计人口；金鱼等特殊单位不计人口。"""
+        """结合同帧阶数、棋盘占格与左栏荒川计数判断满员；新判定未知时回退脚本登记口径。"""
         level = self._read_level()
         if level is None:
             logger.warning(
@@ -554,21 +731,40 @@ class ChessRoundStateMixin:
         player_positions = set(
             getattr(self, '_player_deployed_positions', set())
         )
-        current = len(deployed_names)
+        runtime_current = len(deployed_names)
         capacity = level
-        full = current >= capacity
-        logger.debug(
-            'Chess lineup capacity by runtime state: '
-            f'population={current}, '
-            f'capacity={capacity}, level={level}, '
-            f'deployed={sorted(deployed_names)}, '
-            f'player_positions={sorted(player_positions)}, '
-            f'arakawa_goldfish='
-            f'{getattr(self, "_arakawa_goldfish_current_position", None)}, '
-            f'full={full}'
+        runtime_full = runtime_current >= capacity
+
+        visual = self._evaluate_visual_lineup_capacity(level)
+        visual_state = visual['visual_state']
+        if visual_state == 'full':
+            full = True
+            source = 'board_visual'
+        elif visual_state == 'not_full':
+            full = False
+            source = 'board_visual'
+        else:
+            full = runtime_full
+            source = 'runtime_state_fallback'
+        fallback_to_runtime = source == 'runtime_state_fallback'
+
+        log_header = (
+            'Chess lineup capacity (board_visual): '
+            if not fallback_to_runtime
+            else 'Chess lineup capacity (runtime_state_fallback，新判定未知，改走旧判断): '
+        )
+        logger.info(
+            log_header
+            + f'level={level}, occupied={visual["board_occupied"]} '
+            f'{visual["occupied_positions"]}, unknown={visual["unknown_positions"]}, '
+            f'arakawa={visual["arakawa_state"]}(count={visual["arakawa_count"]}, '
+            f'raw={visual["arakawa_raw_text"]!r}, reason={visual["arakawa_reason"]}), '
+            f'expected_occupied={visual["expected_occupied"]}, '
+            f'visual_state={visual_state}, visual_reason={visual["visual_reason"]}, '
+            f'full={full}, source={source}, runtime_population={runtime_current}'
         )
         return {
-            'current': current,
+            'current': runtime_current,
             'capacity': capacity,
             'level': level,
             'deployed_names': deployed_names,
@@ -578,6 +774,21 @@ class ChessRoundStateMixin:
                 is not None
             ),
             'full': full,
+            'runtime_current': runtime_current,
+            'runtime_full': runtime_full,
+            'board_occupied': visual['board_occupied'],
+            'board_occupied_positions': visual['occupied_positions'],
+            'board_unknown_positions': visual['unknown_positions'],
+            'board_complete': visual['board_complete'],
+            'arakawa_state': visual['arakawa_state'],
+            'arakawa_count': visual['arakawa_count'],
+            'arakawa_raw_text': visual['arakawa_raw_text'],
+            'arakawa_reason': visual['arakawa_reason'],
+            'expected_occupied': visual['expected_occupied'],
+            'visual_state': visual_state,
+            'visual_reason': visual['visual_reason'],
+            'source': source,
+            'fallback_to_runtime': fallback_to_runtime,
         }
 
     def _read_level(self) -> int | None:
@@ -652,62 +863,3 @@ class ChessRoundStateMixin:
             if character in raw:
                 return rank, raw
         return None, raw
-
-    def _try_last_seconds_deploy(self) -> bool:
-        """第一套布局备阶段倒计时不超过 10 秒时，空闲补做一次上阵。
-
-        Returns:
-            bool: 是否已经进入倒计时补位判定。OCR 未到阈值或不可用时
-                返回 False，允许后续截图继续检查；一旦到达阈值，无论
-                阵容是否已满都返回 True，确保每回目至多触发一次。
-        """
-        if self._is_early_round_layout():
-            return False
-        remaining = self._read_remaining_time()
-        if remaining is None or remaining > 10:
-            return False
-
-        logger.debug(
-            'Chess last-seconds lineup check: '
-            f'remaining={remaining}'
-        )
-        if self._read_chess_mode() != '备':
-            logger.debug('Skip last-seconds deploy: mode is no longer 备')
-            return True
-        if not self._ensure_shop_closed():
-            logger.warning(
-                'Skip last-seconds deploy: shop could not be closed'
-            )
-            return True
-
-        self.screenshot()
-        if self._is_early_round_layout() or not self._is_preparation_mode():
-            logger.debug(
-                'Skip last-seconds deploy: preparation/layout changed '
-                'while closing shop'
-            )
-            return True
-
-        capacity = self._read_lineup_capacity_status()
-        if capacity is None:
-            logger.warning(
-                'Skip last-seconds deploy: lineup capacity is unavailable'
-            )
-            return True
-        if capacity['full']:
-            logger.debug(
-                'Skip last-seconds deploy: lineup is already full '
-                f'({capacity["current"]}/{capacity["capacity"]})'
-            )
-            return True
-
-        logger.debug(
-            'Run last-seconds deploy: '
-            f'{capacity["current"]}/{capacity["capacity"]}'
-        )
-        deployed = self.deploy_shikigami_from_hand()
-        logger.debug(
-            'Chess last-seconds deploy complete: '
-            f'deployed={deployed}'
-        )
-        return True

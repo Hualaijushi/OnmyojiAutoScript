@@ -47,6 +47,8 @@ def _adjust_rule_threshold(rule_data: dict[str, Any]) -> dict[str, Any]:
     adjusted = dict(rule_data)
     if "threshold" in adjusted:
         adjusted["threshold"] = _adjust_threshold(adjusted["threshold"])
+    if adjusted.get("badges"):
+        adjusted["badges"] = [_adjust_rule_threshold(badge) for badge in adjusted["badges"]]
     return adjusted
 
 

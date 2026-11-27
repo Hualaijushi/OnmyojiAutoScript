@@ -20,7 +20,7 @@ from tasks.Component.GeneralBattle.general_battle import GeneralBattle, ExitMatc
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.config_base import Time
 from tasks.Dokan.assets import DokanAssets
-from tasks.Dokan.config import Dokan
+from tasks.Dokan.config import Dokan, WEEKDAY_NAMES
 import tasks.Dokan.page as pages
 from tasks.Dokan.welfare import WelfareDokan
 from tasks.GameUi.game_ui import GameUi
@@ -123,7 +123,17 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
     def run(self):
         self.before_run()
         self.conf = self.config.model.dokan
-        if self.conf.dokan_config.monday_to_thursday and datetime.now().weekday() >= 4:
+        weekday = datetime.now().weekday()
+        if self.conf.dokan_config.welfare_mode:
+            # 福利模式只看自己的「每周允许运行日期」，不受普通模式的 monday_to_thursday 影响；没有任何钟点门槛：
+            # 今天允许就直接进入福利流程（用户把下次运行时间设为现在即可立即执行），不允许则在任何游戏动作之前结束
+            if not self.conf.dokan_config.welfare_runs_on(weekday):
+                allowed = self.conf.dokan_config.welfare_allowed_weekdays()
+                logger.warning(f"Welfare dokan skipped: today is {WEEKDAY_NAMES[weekday]}, allowed days: "
+                               f"{'、'.join(WEEKDAY_NAMES[i] for i in allowed) if allowed else '无（七天都未勾选）'}")
+                self.next_run(True)
+                raise TaskEnd
+        elif self.conf.dokan_config.monday_to_thursday and weekday >= 4:
             logger.warning("weekend, exit")
             self.next_run(True)
             raise TaskEnd
@@ -705,6 +715,29 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
             logger.info('Skip switch soul')
         setattr(self, f'switch_{switch_type}_soul_done', True)
 
+    def _schedule(self, target):
+        """Dokan 所有排期出口的唯一落点。普通模式原样透传；福利模式只在结果上叠加「每周允许运行日期」约束，不改变排期依据。
+
+        - 目标日期已经允许 → 原样保留；
+        - 落在不允许的日期 → 逐天向后推到最近的允许日期，保留原来的钟点：只会往后、不会回到过去，也不会缩短原来的等待；
+        - 七天都未勾选 → 不存在「下一个允许日期」，保持原排期（跳过今天 = 明天的 dokan_run_time，最多约 24 小时后复查，
+          不会立即重跑），不改用户开关、不关任务；复查那天 `run` 仍会因为今天不允许而结束，复查不等于开馆许可。
+        """
+        dokan_config = self.config.model.dokan.dokan_config
+        if dokan_config.welfare_mode:
+            allowed = dokan_config.welfare_allowed_weekdays()
+            if not allowed:
+                logger.warning(f'Welfare dokan has no allowed day (all seven unchecked), keep the schedule {target} as a recheck only')
+            else:
+                original = target
+                for _ in range(7):
+                    if target.weekday() in allowed:
+                        break
+                    target = target + timedelta(days=1)
+                if target != original:
+                    logger.info(f'Welfare dokan: {original} is not an allowed day, moved to {target}')
+        self.set_next_run(task="Dokan", server=False, target=target)
+
     def next_run(self, skip_today=False, is_dokan_activated=False):
         """
             设置下次运行时间
@@ -724,34 +757,34 @@ class ScriptTask(GameUi, SwitchSoul, GeneralBattle, DokanAssets):
         run_time: Time = self.config.model.dokan.dokan_config.dokan_run_time
         run_time_dt = datetime.combine(now.date(), run_time)
         if skip_today:
-            if self.conf.dokan_config.monday_to_thursday and now.weekday() >= 4:  # 直接设置下周一的道馆时间
-                self.set_next_run(task="Dokan", server=False,
-                                  target=datetime.combine(now.date() + timedelta(days=7 - now.weekday()), run_time))
+            # 福利模式不读 monday_to_thursday（它只管普通模式）：下一个允许的日期由 `_schedule` 统一推进
+            if (not self.conf.dokan_config.welfare_mode and self.conf.dokan_config.monday_to_thursday
+                    and now.weekday() >= 4):  # 直接设置下周一的道馆时间
+                self._schedule(datetime.combine(now.date() + timedelta(days=7 - now.weekday()), run_time))
                 return
-            self.set_next_run(task="Dokan", server=False, target=datetime.combine(now.date() + timedelta(days=1), run_time))
+            self._schedule(datetime.combine(now.date() + timedelta(days=1), run_time))
             return
         # 道馆没有开启
         if not is_dokan_activated:
             # 在服务器时间之前,设置为服务器时间
             if now < run_time_dt:
-                self.set_next_run(task="Dokan", server=False, target=run_time_dt)
+                self._schedule(run_time_dt)
                 return
             # 在服务器时间之后,如超过1小时,则直接当作成功;未超过则当作失败
             if now - run_time_dt > timedelta(hours=1):
-                self.set_next_run(task="Dokan", server=False,
-                                  target=datetime.combine(now.date() + timedelta(days=1), run_time))
+                self._schedule(datetime.combine(now.date() + timedelta(days=1), run_time))
                 return
             # 时间在道馆开启时间附近，failure_interval后执行
-            self.set_next_run(task="Dokan", server=False, target=now + self.config.dokan.scheduler.failure_interval)
+            self._schedule(now + self.config.dokan.scheduler.failure_interval)
             return
         # 道馆已开启
         # 如果打两次,当前是第一次,设置为failure_interval后运行
         if self.config.dokan.attack_count_config.remain_attack_count == 1 and \
                 self.config.dokan.attack_count_config.daily_attack_count == 2:
-            self.set_next_run(task="Dokan", server=False, target=now + self.config.dokan.scheduler.failure_interval)
+            self._schedule(now + self.config.dokan.scheduler.failure_interval)
             return
         # 其余情况当作成功
-        self.set_next_run(task="Dokan", server=False, target=datetime.combine(now.date() + timedelta(days=1), run_time))
+        self._schedule(datetime.combine(now.date() + timedelta(days=1), run_time))
 
 
 if __name__ == '__main__':

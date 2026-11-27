@@ -727,7 +727,7 @@ class Script:
         with _log_switch_lock:
             logger.set_file_logger(self.config_name, do_cleanup=True)
         start_day = date.today()
-        logger.info(f'Start scheduler loop: {self.config_name}')
+        logger.info(f'启动任务调度：{self.config_name}')
         self.config.model.running_task = ''
         self._active_seconds_today = 0
         self._active_date = date.today()
@@ -758,7 +758,7 @@ class Script:
                 task = self.get_next_task()
                 # Skip first restart
                 if self.is_first_task and task == 'Restart':
-                    logger.info('Skip task `Restart` at scheduler start')
+                    logger.info('调度启动时跳过重启任务 `Restart`')
                     self.config.task_delay(task='Restart', success=True, server=True)
                     del_cached_property(self, 'config')
                     continue
@@ -776,11 +776,11 @@ class Script:
                 continue
 
             if decision == ScriptRuntimeDecision.RESCHEDULE:
-                logger.info(f'Runtime preparation for `{task}` requested reschedule, reload config and retry scheduling')
+                logger.info(f'任务 `{task}` 需要重新调度，将重新加载配置后重试')
                 del_cached_property(self, 'config')
                 continue
             if decision == ScriptRuntimeDecision.FAILED:
-                logger.warning(f'Runtime preparation for `{task}` failed, reload config and retry scheduling')
+                logger.warning(f'任务 `{task}` 运行准备失败，将重新加载配置并重试调度')
                 del_cached_property(self, 'config')
                 continue
 
@@ -811,7 +811,7 @@ class Script:
                 continue
 
             # Run
-            logger.info(f'Scheduler: Start task `{task}`')
+            logger.info(f'调度器开始执行任务 `{task}`')
             self.device.stuck_record_clear()
             self.device.click_record_clear()
             logger.hr(task, level=0)
@@ -823,7 +823,7 @@ class Script:
                 self.team_sync.end_task()
             self.config.model.running_task = ''
             self._loop_after_run(task)
-            logger.info(f'Scheduler: End task `{task}`')
+            logger.info(f'调度器结束执行任务 `{task}`')
             self.is_first_task = False
             self._add_active_seconds(_task_start)
 
@@ -890,6 +890,7 @@ class Script:
                 task, ended=self._run_ended,
                 delay_success=delay.get(convert_to_underscore(task)),
                 restart_status=outcome.get('status'),
+                task_outcome=outcome if outcome.get('task') == task else None,
             )
         except Exception as e:
             logger.exception(f'Loop after-run settle failed: {e}')

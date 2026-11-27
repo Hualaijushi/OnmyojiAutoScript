@@ -1,8 +1,8 @@
 [
   {
     "itemName": "wq_number",
-    "roiFront": "523,12,97,41",
-    "roiBack": "523,12,97,41",
+    "roiFront": "538,12,97,41",
+    "roiBack": "538,12,97,41",
     "mode": "Digit",
     "method": "Default",
     "keyword": "",

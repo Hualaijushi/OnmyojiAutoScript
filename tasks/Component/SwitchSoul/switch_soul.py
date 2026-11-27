@@ -4,8 +4,6 @@
 from dataclasses import dataclass
 from time import sleep, monotonic
 
-import copy
-
 import numpy as np
 
 from module.atom.click import RuleClick
@@ -22,7 +20,7 @@ from module.interaction_policy import InteractionPolicy
 from tasks.base_task import BaseTask
 from tasks.Component.SwitchSoul.assets import SwitchSoulAssets
 from tasks.Component.SwitchSoul.name_search import (
-    SwitchSoulNameError, SwitchSoulPageError, exact_matches, is_complete, normalize_target, parse_lines, parse_matches)
+    SwitchSoulNameError, SwitchSoulPageError, exact_matches, is_complete, normalize_target, parse_lines)
 from module.logger import logger
 
 
@@ -102,22 +100,20 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
     NAME_STABLE = 0.01
     NAME_STABLE_FRAMES = 2
     NAME_SETTLE_TIMEOUT = 4.0
-    NAME_SETTLE_RETRIES = 2
+    NAME_SETTLE_RETRIES = 3
     NAME_SETTLE_RETRY_TIMEOUT = 2.0
+    # 「滑动是否让列表真的推进」只看**最终稳定落点相对滑动前**在列表区域里不同像素的比例，不看过程里变没变过
+    # （`FrameWaitResult.changed` 是锁存的：到顶 / 到底后拖动再回弹回原位，过程里变过、最终没动）。
+    # 3%：真实推进（哪怕半行）会让文字 / 行边框大面积错位，远高于它；回弹回原位、到底最后几像素、局部闪烁都远低于它。
+    # 依据是帧差本身的比例，不是道馆列表的 0.65（两个界面密度与布局不同）；合成帧测试只证明逻辑，真机阈值待验证。
+    NAME_MOVED = 0.03
+    # 判定稳定之后再观察这么久（秒）：回弹中途可能暂停一下再继续回位，暂停不能当最终落点。
+    NAME_RECHECK_TIMEOUT = 0.8
     # 连续几次「滑了但画面没有变化」才算到边界（一次可能只是滑动没生效）。
     NAME_EDGE_CONFIRMS = 2
     # 点击前连续两帧里目标 y 的最大偏差（像素）、最多重试几轮：列表还在惯性滑动时不点。
     NAME_LOCATE_TRIES = 4
     NAME_POS_TOL = 6
-    # 点分组后确认选中生效的最多点击次数：分组没有可识别的选中标志，只能看列表区域是否变化。
-    NAME_GROUP_CLICK_TRIES = 2
-    # 分组「选中」标志：复用数字模式的选中高亮模板（金色竖条，`I_SOU_CHECK_GROUP_*`，随皮肤替换），只在名称模式里把搜索范围放宽到
-    # 整条左边缘（x 1080~1120、列表可视区高度），按「标志中心 y 与目标行中心 y 相差不超过 NAME_MARKER_TOL」判断选中的是不是目标行
-    # （行距约 66px，取 25px 保证不会把相邻行当成目标行）。这些模板来自数字模式的旧页面，当前页面是否能识别待真机验证。
-    NAME_MARKER_COLUMN = (1080, 94, 40, 533)
-    NAME_MARKER_TOL = 25
-    # 点分组确认选中之后，中央队伍列表「变化并稳定」的最多观察轮数（每轮 `NAME_SETTLE_TIMEOUT` 秒）。
-    NAME_TEAM_READY_ROUNDS = 3
     # 回顶 / 找目标 / 选分组每个阶段的总时限（秒）。
     NAME_STAGE_TIMEOUT = 150.0
 
@@ -159,7 +155,7 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
     def switch_soul_one(self, group: int, team: int) -> None:
         """
         设置一个队伍的预设御魂
-        :param group: 只能是[1-7]
+        :param group: 只能是[1-8]
         :param team: 只能是[1-4]
         :return:
         """
@@ -173,6 +169,7 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
                 5: tuple([self.C_SOU_GROUP_5, self.I_SOU_CHECK_GROUP_5]),
                 6: tuple([self.C_SOU_GROUP_6, self.I_SOU_CHECK_GROUP_6]),
                 7: tuple([self.C_SOU_GROUP_7, self.I_SOU_CHECK_GROUP_7]),
+                8: (self.C_SOU_GROUP_8, None),
             }
             return match[group]
 
@@ -188,8 +185,8 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
         # 滑动至分组最上层(分組過多, 导致第一个分组显示不全)
         self._swipe_group_list_to_top()
 
-        if group < 1 or group > 7:
-            raise ValueError('Switch soul_one group must be in [1-7]')
+        if group < 1 or group > 8:
+            raise ValueError('Switch soul_one group must be in [1-8]')
         if team < 1 or team > 4:
             raise ValueError('Switch soul_one team must be in [1-4]')
         # 这一步是选择组
@@ -375,7 +372,7 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
             self.switch_soul_by_name(groupName, teamName)
 
     def switch_soul_by_name(self, groupName, teamName):
-        """按名称切换预设：分组回顶 → 从上到下找 → 重新定位并点击 → 确认选中、队伍列表就绪
+        """按名称切换预设：分组回顶 → 从上到下找 → 重新定位并点击两次 → 队伍列表稳定可读
         → 队伍回顶 → 从上到下找 → 重新定位 → 点击预设切换按钮并处理确认框。
 
         名称只做首尾去空白后的精确相等；找不到 / 同屏重名 / 画面不稳定都抛 `SwitchSoulNameError`
@@ -457,33 +454,59 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
             baseline, frame, roi=roi, changed_threshold=self.NAME_CHANGED, stable_threshold=self.NAME_STABLE,
             stable_frames=self.NAME_STABLE_FRAMES, timeout=timeout, clock=lambda: monotonic())
 
-    def _name_settle(self, spec: _NameList, target: str, stage: str, baseline, roi: tuple) -> str:
-        """动作（滑动 / 点分组）之后等画面稳定，返回 'moved'（变化且已稳定）或 'static'（明确稳定且没有变化）。
+    def _name_settle(self, spec: _NameList, target: str, stage: str, baseline, roi: tuple) -> tuple:
+        """动作（滑动 / 点分组）之后等画面落到最终稳定位置，返回 `('moved' | 'static', 与动作前的差异比例)`。
 
-        `FrameWaitResult.success` = 变化且稳定且没超时；超时不抛异常。变化了但一直不稳定的情况不能算正常完成、
-        也不能当作到边界：换基准帧有界重观察，稳定后按「相对动作前是否真的变了」归类，仍不稳定就报错。
+        `FrameWaitResult.changed` 是锁存的（变过就一直是 True），`success` 因此不等于「最终真的推进了」：回弹回原位也是 success。
+        所以只用它判断「画面是否稳定下来」，是否推进一律比较**动作前的基准帧**和**最终稳定帧**（`NAME_MOVED`）。
+        - 过程中变过：稳定后再多观察 `NAME_RECHECK_TIMEOUT` 秒，复查必须**明确稳定**（`stable` 且没有再变）才算最终落点；
+          仍有变化是回弹中途的停顿，没偏离起点 2% 但相邻帧仍在变（`changed=False, stable=False`）也不是落点，继续等；
+        - 一直变化 / 迟迟不稳定：有界重观察，仍不行抛 `SwitchSoulPageError`（不当作到边界，也不在运动中点击）；
+        - 整个窗口里画面都没变：static（差异比例按最终帧如实记录）。
         """
         result = self._name_observe(baseline, roi, self.NAME_SETTLE_TIMEOUT)
-        if result.success:
-            return 'moved'
-        if result.stable and not result.changed:
-            return 'static'
-        for _ in range(self.NAME_SETTLE_RETRIES):
-            settled = self._name_observe(np.array(self.device.image), roi, self.NAME_SETTLE_RETRY_TIMEOUT)
-            if settled.stable:
-                moved = frame_difference(baseline, self.device.image, roi=roi) >= self.NAME_CHANGED
-                return 'moved' if moved else 'static'
-        raise self._name_error(spec, target, stage, '画面一直在变化、没有稳定下来，无法可靠识别（不当作到边界）')
+        stable = result.success or (result.stable and not result.changed)
+        changed = result.changed
+        retries = 0
+        while True:
+            if not stable:
+                if retries >= self.NAME_SETTLE_RETRIES:
+                    raise self._name_error(spec, target, stage, '画面一直在变化、没有稳定下来，无法可靠识别（不当作到边界）')
+                retries += 1
+                result = self._name_observe(np.array(self.device.image), roi, self.NAME_SETTLE_RETRY_TIMEOUT)
+                stable, changed = result.stable, True
+                continue
+            if not changed:
+                break
+            recheck = self._name_observe(np.array(self.device.image), roi, self.NAME_RECHECK_TIMEOUT)
+            # 复查必须**明确稳定**才算最终落点：`changed=False` 只说明没偏离复查起点 2% 以上，相邻帧仍可能持续变化超过 1%
+            # （`changed=False, stable=False`），那不是落点。
+            if recheck.stable and not recheck.changed:
+                break
+            if retries >= self.NAME_SETTLE_RETRIES:
+                raise self._name_error(spec, target, stage, '稳定之后画面又在变化（回弹 / 滚动没有结束），无法可靠识别（不当作到边界）')
+            retries += 1
+            stable = recheck.success
+        diff = frame_difference(baseline, self.device.image, roi=roi)
+        return ('moved' if diff >= self.NAME_MOVED else 'static'), diff
 
     def _name_swipe(self, spec: _NameList, target: str, stage: str, attr: str) -> str:
-        """用 `BaseTask.swipe(RuleSwipe)` 滑一次（端点采样 + 轨迹模型都在里面），再等稳定。
+        """用 `BaseTask.swipe(RuleSwipe)` 滑一次（端点采样 + 轨迹模型都在里面），再等最终落点稳定，返回 'moved' / 'static'。
 
         没有发出的滑动（`swipe()` 返回 False，例如被 interval 限流）不算一次有效滑动，直接报错。
+        公共操作记录（`Device.handle_control_check`）在发出滑动**之前**登记并检查，同名累计 10 次抛 `GameTooManyClickError`；
+        所以这里只在「已发出且最终稳定落点确实推进了」之后，定向释放这个资源名的记录（`click_record_remove`）：
+        真实长列表连续推进不会被误拦；static / 未稳定 / 异常都不释放，重复无效拖动仍会被公共保护拦住。
         """
+        rule = getattr(self, attr)
         baseline = np.array(self.device.image)
-        if not self.swipe(getattr(self, attr)):
+        if not self.swipe(rule):
             raise self._name_error(spec, target, stage, '滑动没有发出')
-        return self._name_settle(spec, target, stage, baseline, self._name_roi(spec))
+        outcome, diff = self._name_settle(spec, target, stage, baseline, self._name_roi(spec))
+        released = self.device.click_record_remove(rule.name) if outcome == 'moved' else 0
+        logger.info(f'Name swipe {spec.kind} [{stage}] {rule.name}: sent, final diff {diff:.3f} '
+                    f'(moved >= {self.NAME_MOVED}) -> {outcome}, released {released} record(s)')
+        return outcome
 
     def _name_guard(self, timer, spec: _NameList, target: str, stage: str) -> None:
         if timer.reached():
@@ -506,7 +529,7 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
             outcome = self._name_swipe(spec, target, stage, spec.to_top)
             moved = moved or outcome == 'moved'
             edge = edge + 1 if outcome == 'static' else 0
-            logger.debug(f'{spec.kind} top swipe {index + 1}/{spec.max_top}: {outcome}')
+            logger.info(f'{spec.kind} top swipe {index + 1}/{spec.max_top}: {outcome}, static streak {edge}/{self.NAME_EDGE_CONFIRMS}')
             if edge >= self.NAME_EDGE_CONFIRMS:
                 if not self._name_read(spec):
                     raise self._name_error(spec, target, stage, '到顶时 OCR 连续读不到文字，不能确认列表内容')
@@ -564,6 +587,7 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
             outcome = self._name_swipe(spec, target, stage, spec.forward)
             moved_any = moved_any or outcome == 'moved'
             edge = edge + 1 if outcome == 'static' else 0
+            logger.info(f'{spec.kind} forward swipe {index + 1}/{spec.max_pages}: {outcome}, static streak {edge}/{self.NAME_EDGE_CONFIRMS}')
         raise self._name_error(spec, target, stage, f'翻了 {spec.max_pages} 屏仍没有找到，也没有确认到底（达到保护上限，不是名称不存在）')
 
     def _name_locate(self, spec: _NameList, target: str, stage: str):
@@ -577,75 +601,27 @@ class SwitchSoul(BaseTask, SwitchSoulAssets):
                 return second
         raise self._name_error(spec, target, stage, '点击前连续两帧都无法稳定定位到目标（可能列表仍在滚动，或目标被遮挡）')
 
-    def _group_selection_state(self, line) -> str:
-        """当前帧里分组列表的「选中标志」与目标行的关系：'target'（标志只有一个且落在目标行）/ 'other'（只有一个，在别的行）/
-        'none'（没有任何标志：选中的分组可能滚到了可视区外，也可能模板识别不到）/ 'ambiguous'（多个标志，无法判断）。
-
-        用 `copy.copy` 临时放宽搜索范围，不改共享资源（含被皮肤替换过的 file / 阈值）。
-        """
-        rule = copy.copy(self.I_SOU_CHECK_GROUP_2)
-        matches = rule.match_all_any(self.device.image, roi=list(self.NAME_MARKER_COLUMN))
-        boxes = parse_matches(rule, matches)
-        if not boxes:
-            return 'none'
-        if len(boxes) > 1:
-            return 'ambiguous'
-        _, y, _, h = boxes[0]
-        if abs((y + h / 2) - (line.y + line.h / 2)) <= self.NAME_MARKER_TOL:
-            return 'target'
-        return 'other'
-
-    def _name_team_ready(self, group: str, baseline, require_change: bool) -> None:
-        """分组确认之后单独检查中央队伍列表就绪：先前不是目标分组时，列表必须相对点击前「变化并稳定」（读到旧内容 = 还没刷新）；
-        本来就是目标分组时只要求稳定。变化后一直不稳定是临时问题，多轮观察仍无变化则无法排除读到旧分组，转人工。
-        """
-        stage = '等待中央队伍列表刷新'
-        roi = self._name_roi(TEAM_LIST)
-        for _ in range(self.NAME_TEAM_READY_ROUNDS):
-            outcome = self._name_settle(TEAM_LIST, group, stage, baseline, roi)
-            if outcome == 'moved' or not require_change:
-                return
-        raise self._name_error(TEAM_LIST, group, stage, '分组已显示选中，但中央队伍列表一直没有变化，无法排除读到的是旧分组的队伍，不继续选队伍', human=True)
-
     def _name_select_group(self, group: str) -> None:
-        """点击分组并确认选中，再单独确认中央队伍列表就绪。
+        """点击分组并等中央队伍列表稳定可读。
 
-        选中的依据是「选中标志落在目标行」这个状态证据（数字模式的选中高亮模板，见 `NAME_MARKER_COLUMN`），而不是
-        「区域变了」或「队伍列表读得到文字」：动画 / 无关区域变化、旧分组的列表都不能算选组成功。
-        - 点击前标志已在目标行：本来就是目标分组，不点击，只确认中央列表稳定；
-        - 否则点击（最多 `NAME_GROUP_CLICK_TRIES` 次，每次点击前都重新定位）→ 等分组区域稳定 → 再检查标志；
-        - 始终确认不了（标志在别的行 / 没有标志 / 多个标志）：转人工，不继续找队伍，避免点到旧分组里的同名队伍。
+        用户 2026-11-02 决定取消「分组选中标志」模板确认，分组点击与数字模式一致：固定点两次，两次之间 `GROUP_CLICK_GAP`、
+        第二次之后 `GROUP_SETTLE`（同一套 `random_delay`）。目标分组本来就选中也照样点两次，不再靠标志决定跳过。
+        - 每次点击前都用新截图和 OCR 重新定位目标（连续两帧 y 一致，旧坐标不复用）；第二次定位失败 / 同屏重名直接报错，不盲点；
+        - 点完等中央队伍列表稳定，并且 OCR 读得到内容；**不要求**它相对点击前变化（分组本来已选中、或两个分组队伍内容相同时不变）。
+        只证明「点击已经发出、队伍列表稳定可读」，不证明游戏接受了选择：点击没生效而旧分组里有同名队伍时仍可能选错（已接受的边界）。
         """
-        stage = '点击分组并确认选中'
         rule = getattr(self, GROUP_LIST.rule)
-        group_roi = self._name_roi(GROUP_LIST)
-        selected_before = False
         team_baseline = None
-        state = 'none'
-        for attempt in range(self.NAME_GROUP_CLICK_TRIES + 1):
+        for attempt in range(2):
             line = self._name_locate(GROUP_LIST, group, '点击前重新定位分组')
-            state = self._group_selection_state(line)
-            if attempt == 0:
-                selected_before = state == 'target'
+            if team_baseline is None:
                 team_baseline = np.array(self.device.image)
-            if state == 'target':
-                break
-            if attempt == self.NAME_GROUP_CLICK_TRIES:
-                break
-            baseline = np.array(self.device.image)
             self._click_line(_LineTarget(rule.name, line))
-            self._name_settle(GROUP_LIST, group, stage, baseline, group_roi)
-        if state != 'target':
-            reason = {
-                'other': '点击后选中标志仍在别的分组上（点击没有生效）',
-                'none': '没有识别到任何分组选中标志（缺：选中某个分组时右侧分组列表的整屏截图，用来核对 ss_sou_check_group_* 模板在当前页面能否识别）',
-                'ambiguous': '同时识别到多个分组选中标志，无法判断选中了哪个',
-            }[state]
-            raise self._name_error(GROUP_LIST, group, stage, f'无法确认目标分组已选中：{reason}。不继续选队伍，避免点到旧分组里的同名队伍', human=True)
-        self._name_team_ready(group, team_baseline, require_change=not selected_before)
+            sleep(random_delay(*(self.GROUP_CLICK_GAP if attempt == 0 else self.GROUP_SETTLE)))
+        self._name_settle(TEAM_LIST, group, '等待中央队伍列表稳定', team_baseline, self._name_roi(TEAM_LIST))
         if not self._name_read(TEAM_LIST):
-            raise self._name_error(TEAM_LIST, group, '读取中央队伍列表', '分组已确认选中，但队伍列表读不到任何文字')
-        logger.info(f'Group {group} selection confirmed (marker on target row, already_selected={selected_before}), team list ready')
+            raise self._name_error(TEAM_LIST, group, '读取中央队伍列表', '分组点击已发出，但队伍列表读不到任何文字')
+        logger.info(f'Group {group} clicked twice, team list stable and readable (selection acceptance not verified)')
 
     def _click_team_by_name(self, team: str, interval: float) -> bool:
         """确认循环里的一次队伍点击：按 `interval` 限流 → 对当前帧 OCR → 只命中一个完整的精确同名行才点（预设按钮列）。"""

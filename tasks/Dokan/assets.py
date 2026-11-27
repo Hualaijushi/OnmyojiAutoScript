@@ -160,8 +160,8 @@ class DokanAssets:
 	I_RYOU_DOKAN_CHEERING = RuleImage(roi_front=(65,601,71,33), roi_back=(44,568,112,100), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_cheering.png")
 	# 助威灰色不可点击 
 	I_RYOU_DOKAN_CHEERING_GRAY = RuleImage(roi_front=(65,601,71,33), roi_back=(44,568,112,100), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_cheering_gray.png")
-	#  
-	I_RYOU_DOKAN_HAVE_DOKAN = RuleImage(roi_front=(240,600,94,90), roi_back=(240,600,94,90), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_have_dokan.png")
+	# 道馆已经建立 
+	I_RYOU_DOKAN_HAVE_DOKAN = RuleImage(roi_front=(252,601,72,66), roi_back=(240,600,94,90), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_have_dokan.png")
 	# 找鑫鑫子道馆 
 	I_FIND_XIN = RuleImage(roi_front=(1153,351,19,34), roi_back=(1077,0,171,602), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_find_xin.png")
 	# 道馆阵容御魂一键预设 
@@ -199,6 +199,6 @@ class DokanAssets:
 	# 道馆选择界面 右侧侧边栏 手指向上滑动 
 	S_DOKAN_LIST_UP = RuleSwipe(roi_front=(1100,420,30,21), roi_back=(1240,240,30,21), mode="default", name="dokan_list_up")
 	# 福利道馆 右侧候选列表 手指竖直向上滑动（起终点都在列表内） 
-	S_DOKAN_WELFARE_LIST_UP = RuleSwipe(roi_front=(1110,450,70,20), roi_back=(1110,270,70,20), mode="default", name="dokan_welfare_list_up")
+	S_DOKAN_WELFARE_LIST_UP = RuleSwipe(roi_front=(1110,450,70,20), roi_back=(1110,330,70,20), mode="default", name="dokan_welfare_list_up")
 
 

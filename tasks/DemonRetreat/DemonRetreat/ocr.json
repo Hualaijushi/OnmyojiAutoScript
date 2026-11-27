@@ -7,5 +7,32 @@
     "method": "Default",
     "keyword": "",
     "description": "检查是否迟到"
+  },
+  {
+    "itemName": "retreat_open_cost",
+    "roiFront": "451,263,378,37",
+    "roiBack": "451,263,378,37",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "确认框第一行的寮勋章消耗"
+  },
+  {
+    "itemName": "retreat_open_prompt",
+    "roiFront": "451,299,378,37",
+    "roiBack": "451,299,378,37",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "确认框第二行的活动名称"
+  },
+  {
+    "itemName": "retreat_open_confirm",
+    "roiFront": "700,402,82,42",
+    "roiBack": "700,402,82,42",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "确认",
+    "description": "首领退治开启弹窗的确认按钮"
   }
 ]

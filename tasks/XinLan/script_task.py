@@ -5,6 +5,11 @@ from typing import Optional
 from module.instance_sync import NEXT_DONE, NEXT_RETRY, SyncAdapter, SyncCoordinator, SyncResult
 from module.logger import logger
 from tasks.GameUi.game_ui import GameUi
+from tasks.GameUi.assets import GameUiAssets
+from tasks.DailyTrifles.assets import DailyTriflesAssets
+from tasks.GlobalGame.assets import GlobalGameAssets
+from module.interaction_policy import InteractionPolicy
+from tasks.Exploration.assets import ExplorationAssets
 from tasks.XinLan.adapter import make_adapter
 from tasks.XinLan.business import next_business_day_start
 from tasks.XinLan.config import SyncConfig, XinLan
@@ -26,7 +31,41 @@ def check_pair(sync: SyncConfig, config_name: str) -> Optional[str]:
 
 
 class ScriptTask(GameUi):
-    """ 同心之兰双实例互赠：只做任务编排，游戏操作在 tasks/XinLan/adapter.py 的 SyncAdapter 里 """
+    """同心之兰任务编排及导航恢复桥接；互赠时序在适配器里。"""
+
+    # 复用公共关闭机制，但互赠期间不使用可能提交业务的通用确认按钮。
+    DEFAULT_UNKNOWN_CLOSERS = [DailyTriflesAssets.I_FRIENDSHIP_UP] + [
+        action for action in GameUi.DEFAULT_UNKNOWN_CLOSERS
+        if action not in (GlobalGameAssets.I_UI_CONFIRM_SAMLL,
+                          GlobalGameAssets.I_UI_CONFIRM,
+                          ExplorationAssets.I_E_EXIT_CONFIRM)
+    ]
+
+    def _execute_action(self, action, *, interval=None, skip_first_screenshot=True):
+        # 每个导航动作重新看邀请，避免关闭前后换帧时误操作绑定邀请。
+        self.screenshot()
+        if self.appear(GameUiAssets.I_ACC_TONGXIN):
+            return False
+        return super()._execute_action(action, interval=interval, skip_first_screenshot=True)
+
+    def close_unknown_pages(self, skip_first_screenshot=True):
+        self.maybe_screenshot(skip_first_screenshot)
+        if self.appear(GameUiAssets.I_ACC_TONGXIN):
+            return False
+        # 福袋是业务页，交给适配器按原流程关闭，不能被通用返回动作打断。
+        if self.appear(GameUiAssets.I_INVITE_TONGXIN):
+            return False
+        return super().close_unknown_pages(skip_first_screenshot=True)
+
+    def recover_xin_lan_navigation(self, unknown=False):
+        """处理一个遮挡；由适配器重新截图并在总时限内连续处理。"""
+        self.screenshot()
+        if self.appear(GameUiAssets.I_ACC_TONGXIN):
+            return False
+        if self.appear_then_click(DailyTriflesAssets.I_FRIENDSHIP_UP, interval=1.5,
+                                  policy=InteractionPolicy.NAVIGATION):
+            return True
+        return bool(unknown and self.close_unknown_pages(skip_first_screenshot=True))
 
     def run(self):
         conf: XinLan = self.config.xin_lan

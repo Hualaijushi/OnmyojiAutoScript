@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 from typing_extensions import Annotated
 
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -18,6 +18,13 @@ from tasks.Component.config_scheduler import Scheduler
 
 # 福利模式人数门槛：严格正整数，拒绝 1.5、'100'、True 这类会被宽松转换悄悄接受的值
 _WELFARE_MIN_PEOPLE = TypeAdapter(Annotated[int, Field(ge=1, strict=True)])
+
+# 福利模式每周允许运行的日期：下标 = datetime.weekday()（周一 = 0）。普通模式不读这几项，仍只看 monday_to_thursday
+WELFARE_WEEKDAY_FIELDS = (
+    'welfare_run_monday', 'welfare_run_tuesday', 'welfare_run_wednesday', 'welfare_run_thursday',
+    'welfare_run_friday', 'welfare_run_saturday', 'welfare_run_sunday',
+)
+WEEKDAY_NAMES = ('周一', '周二', '周三', '周四', '周五', '周六', '周日')
 
 
 class AttackDokanMasterType(str, Enum):
@@ -146,6 +153,36 @@ class DokanConfig(BaseModel):
     # 福利道馆模式（默认关闭）：只找「鑫」馆，防守人数 >= 门槛才开，开馆后点准备立即关游戏
     welfare_mode: bool = Field(default=False, description='welfare_mode_help')
     welfare_min_people: int = Field(default=100, ge=1, description='welfare_min_people_help')
+    # 福利模式每周允许运行的日期（只限制哪天可以执行，不是开始时间；运行时机仍由调度器决定）。默认值 = 旧限制「只在周一到周四」。
+    # 旧配置文件里没有这七项时按 monday_to_thursday 推导，见 `_derive_missing_welfare_weekdays`。
+    # 说明文案只挂在第一项上（description 七项相同会让旧配置页重复七遍长说明）；展示分组见 tasks/Dokan/args_layout.py
+    welfare_run_monday: bool = Field(default=True, description='welfare_run_days_help')
+    welfare_run_tuesday: bool = True
+    welfare_run_wednesday: bool = True
+    welfare_run_thursday: bool = True
+    welfare_run_friday: bool = False
+    welfare_run_saturday: bool = False
+    welfare_run_sunday: bool = False
+
+    @model_validator(mode='after')
+    def _derive_missing_welfare_weekdays(self):
+        """键缺失（旧配置）≠ 显式 False：只有「文件里没有这个键」才按旧开关推导，保存过的值（含全 False）原样保留。
+
+        推导结果直接写进实例（不进 model_fields_set），所以逐字段 PUT 只改一项时，其余六项带着推导出的值一起被
+        `model_dump` 写回文件，不会因为只保存第一项而丢掉兼容值；读取本身不写文件。
+        monday_to_thursday = True → 周一到周四允许；False → 七天都允许。
+        """
+        legacy_limited = self.monday_to_thursday
+        for index, name in enumerate(WELFARE_WEEKDAY_FIELDS):
+            if name not in self.model_fields_set:
+                self.__dict__[name] = (index < 4) if legacy_limited else True
+        return self
+
+    def welfare_runs_on(self, weekday: int) -> bool:
+        return bool(getattr(self, WELFARE_WEEKDAY_FIELDS[weekday]))
+
+    def welfare_allowed_weekdays(self) -> tuple:
+        return tuple(i for i in range(7) if self.welfare_runs_on(i))
 
     def __setattr__(self, name, value):
         # DokanConfig 没开 validate_assignment（不改变其他字段的保存行为），

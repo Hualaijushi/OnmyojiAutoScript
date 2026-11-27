@@ -8,7 +8,7 @@ from tasks.SixRealms.page import page_moon_sea, page_sr_prepare_exit, page_sr_op
 
 # 月之海准备界面
 page_ms_prepare = Page(any_of(SixRealmsAssets.I_MSTART_CONFIRM, SixRealmsAssets.I_MSTART_CONFIRM2,
-                              SixRealmsAssets.I_MFIRST_SKILL))
+                              SixRealmsAssets.I_MFIRST_SKILL), category="moon_sea")
 # 月之海主界面
 page_ms_main = Page(any_of(SixRealmsAssets.I_MS_CHECK_MAIN, SixRealmsAssets.I_BOSS_FIRE_PREPARE),
                     category="moon_sea", priority=25)

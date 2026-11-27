@@ -533,6 +533,10 @@ class LoopController:
             self.counts[idx] = self.counts.get(idx, 0) + 1
             self.loop['batch'] = self._batch(idx, done=False, ok=False)
             self._publish()
+            if self.loop['role'] == 'leader' and idx in self.targets:
+                count = self.counts[idx]
+                target = self.targets[idx]
+                logger.info(f'御魂轮换第 {idx // 2 + 1} 轮：已完成 {count} / {target} 把，剩余 {max(target - count, 0)} 把')
 
     def _batch(self, idx: int, done: bool, ok: bool) -> dict:
         return {'idx': idx, 'count': self.counts.get(idx, 0), 'target': self.targets.get(idx),
@@ -590,11 +594,12 @@ class LoopController:
             return True
 
     def after_run(self, command: str, *, ended: bool, delay_success: Optional[bool],
-                  restart_status: Optional[str] = None) -> None:
+                  restart_status: Optional[str] = None, task_outcome: Optional[dict] = None) -> None:
         """每个任务跑完后由 Script.loop 调用。
 
         ended：任务正常走到自己的结束出口（TaskEnd）；delay_success：任务自己通过 task_delay 记下的
-        success（None 表示没有记）。Script.run 的布尔返回值和「下次运行时间排到了未来」都不算业务成功。
+        success（None 表示没有记）；task_outcome 是任务主动报告并核对排期的独立结果。
+        Script.run 的布尔返回值和「下次运行时间排到了未来」都不算业务成功。
         """
         with self._lock:
             needs_recovery, self.run_recovery = self.run_recovery, False
@@ -609,7 +614,7 @@ class LoopController:
             if was_step and command == self.current_step():
                 self._settle_step(command, ended, needs_recovery)
             else:
-                self._settle_inserted(command, ended, delay_success, needs_recovery)
+                self._settle_inserted(command, ended, delay_success, needs_recovery, task_outcome)
 
     def _settle_step(self, command: str, ended: bool, needs_recovery: bool) -> None:
         idx = self.idx
@@ -632,7 +637,12 @@ class LoopController:
             self.loop['ready'] = False
             self._publish()
 
-    def _settle_inserted(self, command: str, ended: bool, delay_success: Optional[bool], needs_recovery: bool) -> None:
+    def _settle_inserted(self, command: str, ended: bool, delay_success: Optional[bool], needs_recovery: bool,
+                         task_outcome: Optional[dict] = None) -> None:
+        if (ended and delay_success is None and isinstance(task_outcome, dict) and task_outcome.get('task') == command
+                and command in ('KekkaiUtilize', 'KekkaiActivation')
+                and task_outcome.get('status') in ('completed', 'retry_scheduled')):
+            delay_success = True
         if needs_recovery:
             if delay_success is True:
                 self.unrecovered.discard(command)

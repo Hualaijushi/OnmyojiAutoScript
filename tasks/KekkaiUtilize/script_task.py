@@ -28,6 +28,7 @@ from module.base.utils import point2str
 from module.base.utils.random import random_delay, random_int
 from module.base.frame_wait import wait_for_changed_and_stable
 from module.click_pipeline import FinalPoint, execute_single_click
+from module.script.task_outcome import report_scheduled_outcome
 from module.device.touch_swipe_model import TouchSwipeModel
 from tasks.KekkaiUtilize.selected_anchor import detect_selected_anchor
 from tasks.KekkaiUtilize.frame_projection import actual_scroll_dy_px, dedup_by_projection
@@ -176,12 +177,14 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         # Scheduler v1 入口守卫：当前处于静默窗口则直接重排 next_run 并结束，不进入任何
         # 页面 / OCR / 业务动作——即使 scheduler 意外在静默窗口内唤醒本任务也能立即拒绝。
         if self._guard_quiet_window():
+            report_scheduled_outcome(self.config, 'KekkaiUtilize', 'kekkai_utilize', 'retry_scheduled')
             raise TaskEnd
         con = self.config.kekkai_utilize.utilize_config
         self.utilize_add_count = 0
         self.utilize_failed_count = 0
         self.utilize_terminal_failure = False
         self.utilize_retry_scheduled = False
+        self._loop_utilize_outcome = None
         self.utilize_total_attempts = 0
         self.utilize_started_at = None
         self.utilize_found_eligible_card = False
@@ -209,6 +212,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 # 直接 return 会被 `Script.run` 记为失败，连续 3 次 `Script.loop` 会 `exit(1)` 终止
                 # 整个调度线程（与「5 次尝试用尽」出口同样是业务重试，结果却不一致）。
                 if self.utilize_retry_scheduled:
+                    report_scheduled_outcome(self.config, 'KekkaiUtilize', 'kekkai_utilize', 'retry_scheduled')
                     raise TaskEnd
                 # 没有可靠的下一次执行时间：不冒充正常结束，保持失败返回，让调度器如实计数。
                 logger.error('KekkaiUtilize 短期重试没有确认写入 next_run，本轮按失败返回')
@@ -227,6 +231,8 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         if not con.utilize_enable:
             self.set_next_run(task='KekkaiUtilize', finish=True, success=True)
         self.goto_page(page_main)
+        if con.utilize_enable and self._loop_utilize_outcome:
+            report_scheduled_outcome(self.config, 'KekkaiUtilize', 'kekkai_utilize', self._loop_utilize_outcome)
         raise TaskEnd
 
     # ------------------------------------------------------------------------------------
@@ -313,6 +319,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         candidate = self._build_retry_target()
         final = self._schedule_target(candidate)
         self.utilize_retry_scheduled = self._is_next_run_persisted(final)
+        self._loop_utilize_outcome = 'retry_scheduled' if self.utilize_retry_scheduled else None
         logger.info(
             f'KekkaiUtilize 短期重试: {reason}, '
             f'final_next_run={final.strftime("%Y-%m-%d %H:%M:%S")}'
@@ -446,6 +453,7 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
                 if remaining_time_valid:
                     next_time += self._success_jitter_delta()
                 self._schedule_target(next_time)
+                self._loop_utilize_outcome = 'completed' if remaining_time_valid else 'retry_scheduled'
                 return True
             # 收敛保护：走到这里说明育成页 `I_UTILIZE_ADD` 还在（还要再寄养一次）。总次数 / 总耗时用尽
             # 就不再进入寄养业务；放在导航之前：不做多余的页面操作，且已用尽次数但这一圈按钮已消失的正常成功不受影响。

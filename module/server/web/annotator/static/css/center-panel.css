@@ -218,6 +218,44 @@ html[data-theme="light"] .roi .tag {
   pointer-events: none;
 }
 
+.chess-overlay-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.chess-overlay-layer.hidden {
+  display: none;
+}
+
+.roi-chess-badge {
+  border-width: 2px;
+  border-color: #f0b429;
+  color: #f0b429;
+  border-style: dashed;
+  pointer-events: none;
+}
+
+.roi-chess-portrait {
+  border-width: 2px;
+  border-color: #a970ff;
+  color: #a970ff;
+  border-style: solid;
+  pointer-events: none;
+}
+
+.roi-chess-portrait.unrecognized {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+  border-style: dashed;
+}
+
+.roi-chess-portrait.selected {
+  border-color: #52d17c;
+  color: #52d17c;
+}
+
 .roi-values {
   display: grid;
   grid-template-columns: 1fr 1fr;

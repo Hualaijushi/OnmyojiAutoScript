@@ -29,6 +29,8 @@ class EternitySeaConfig(ConfigBase):
     limit_time: Time = Field(default=Time(minute=30), description='limit_time_help')
     # 限制次数
     limit_count: int = Field(default=30, description='limit_count_help')
+    buff_gold_50_click: bool = Field(default=False)
+    buff_gold_100_click: bool = Field(default=False)
 
 class EternitySeaBattleConfig(GeneralBattleConfig):
     continuous_battle: bool = True

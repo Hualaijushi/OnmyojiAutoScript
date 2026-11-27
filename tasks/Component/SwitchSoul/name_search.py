@@ -14,7 +14,7 @@ EDGE_PAD = 3
 
 
 class SwitchSoulNameError(RequestHumanTakeover):
-    """确定需要人工修正配置或判断的情况：空名称、完整搜索后确认目标不存在、同屏精确同名、无法确认分组已选中。
+    """确定需要人工修正配置或判断的情况：空名称、完整搜索后确认目标不存在、同屏精确同名。
 
     继承 `RequestHumanTakeover`：走调度器已有的人工处理分支（通知后进程退出），不会通过反复重启游戏去「解决」写错的名字，
     也不会在没有把握的情况下继续操作（可能选错分组 / 队伍）。消息里带目标名、阶段和原因。
@@ -76,22 +76,6 @@ def parse_lines(results, roi) -> list:
                               max(1, int(round(x1 - x0))), max(1, int(round(y2 - y0)))))
     lines.sort(key=lambda line: (line.y, line.x))
     return lines
-
-
-def parse_matches(rule, matches) -> list:
-    """`RuleImage.match_all_any()` 的真实结果 `[(score, x, y, w, h), ...]` → 内部统一的 `[(x, y, w, h), ...]`。
-
-    格式不符直接抛 `ValueError`（带规则名），不静默截取：把 score 当成 x 会让所有位置错位。
-    """
-    boxes = []
-    for item in matches:
-        try:
-            score, x, y, w, h = item
-            float(score)
-            boxes.append((int(x), int(y), int(w), int(h)))
-        except (TypeError, ValueError) as e:
-            raise ValueError(f'{getattr(rule, "name", rule)} 匹配结果不是 (score, x, y, w, h)：{item!r}') from e
-    return boxes
 
 
 def exact_matches(lines, name: str) -> list:

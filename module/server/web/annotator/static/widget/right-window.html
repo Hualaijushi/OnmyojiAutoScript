@@ -18,8 +18,14 @@
       <div class="panel-height-splitter" id="rightPanelSplitter" aria-hidden="true"></div>
 
       <section class="panel panel-fill rule-editor-panel" id="ruleEditorPanel">
-        <h2>规则</h2>
-        <div class="rule-editor-scroll">
+        <div class="panel-mode-header">
+          <h2>规则与测试</h2>
+          <div class="mode-tabs" role="tablist">
+            <button id="modeTabRulesBtn" type="button" class="mode-tab-btn active" role="tab" aria-selected="true">规则编辑</button>
+            <button id="modeTabChessBtn" type="button" class="mode-tab-btn" role="tab" aria-selected="false">候选式神识别测试</button>
+          </div>
+        </div>
+        <div id="ruleEditorBody" class="rule-editor-scroll">
           <label>规则类型
             <select id="ruleType"></select>
           </label>
@@ -49,6 +55,54 @@
               <button id="testRuleBtn" type="button" class="hidden">测试</button>
             </div>
           </div>
+        </div>
+
+        <div id="chessCandidateBody" class="rule-editor-scroll chess-candidate-body hidden">
+          <div class="tip">使用左侧当前选中的本地截图，直接调用运行时 Frame 角标定位、头像裁剪/灰度模板匹配与阵容权重筛选逻辑（不操作设备）。</div>
+
+          <label>评估阵容配置
+            <select id="chessLineupSource"></select>
+          </label>
+
+          <div class="chess-section-card">
+            <div class="chess-section-title">已保存运行时配置（只读基准）</div>
+            <div id="chessSavedMetaSummary" class="chess-meta-grid"></div>
+          </div>
+
+          <div class="chess-section-card">
+            <div class="chess-section-header">
+              <span class="chess-section-title">临时测试阈值（仅作用于当前测试）</span>
+              <button id="chessResetThresholdsBtn" type="button" class="mini-btn">重置为已保存</button>
+            </div>
+            <div class="form-grid">
+              <label>角标定位阈值 (F_HAND_CARD)
+                <input id="chessTempBadgeThreshold" type="number" min="0" max="1" step="0.01" value="0.8">
+              </label>
+              <label>头像匹配阈值 (Image op)
+                <input id="chessTempPortraitThreshold" type="number" min="0" max="1" step="0.01" value="0.8">
+              </label>
+              <label>上卡筛选阈值 (HAND_DEPLOY)
+                <input id="chessTempDeployThreshold" type="number" min="0" max="1" step="0.01" value="0.75">
+              </label>
+            </div>
+          </div>
+
+          <div class="chess-section-card">
+            <div class="chess-section-header">
+              <span class="chess-section-title">运行时状态快照（可选 JSON）</span>
+              <button id="chessFillSnapshotTplBtn" type="button" class="mini-btn">填入模板</button>
+            </div>
+            <textarea id="chessRuntimeSnapshotInput" class="chess-snapshot-input" rows="4" placeholder='留空表示离线截图无运行状态（明确显示"运行时排除状态未知"）；可粘贴对应时刻状态 JSON'></textarea>
+          </div>
+
+          <div class="row action-row chess-actions">
+            <button id="chessRunTestBtn" type="button" class="primary-btn">运行候选卡测试</button>
+            <button id="chessClearOverlayBtn" type="button">清除叠加框</button>
+            <button id="chessSaveThresholdsBtn" type="button" class="danger-btn">明确保存阈值到配置</button>
+          </div>
+
+          <div id="chessCandidateSummary" class="chess-section-card hidden"></div>
+          <div id="chessCandidateResults" class="chess-candidate-results"></div>
         </div>
       </section>
     </aside>

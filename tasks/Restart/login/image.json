@@ -45,9 +45,9 @@
     "description": "description"
   },
   {
-    "itemName": "login_8",
-    "imageName": "login_login_8.png",
-    "roiFront": "178,572,53,60",
+    "itemName": "login_16",
+    "imageName": "login_login_16.png",
+    "roiFront": "16,564,47,57",
     "roiBack": "1,547,241,105",
     "method": "Template matching",
     "threshold": 0.8,

@@ -13,6 +13,8 @@ from typing import List, Optional
 class BasePeacockKingdom(GeneralBattle, SixRealmsCommon):
     coin_num: int = 0
     skill_roaring_thunder: int = 0
+    thunder_state_known: bool = False
+    _boss_giveup_requested: bool = False
 
     def get_pk_skill_select(self, skill_rule_list: List[RuleImage]) -> Optional[RuleImage]:
         """
@@ -44,6 +46,8 @@ class BasePeacockKingdom(GeneralBattle, SixRealmsCommon):
         self.coin_num = 0
         self.skill_roaring_thunder = 0
         self.breath_failed = False
+        self.thunder_state_known = False
+        self._boss_giveup_requested = False
         pages.page_battle = self.navigator.resolve_page(pages.page_battle)
         pages.page_battle.recognizer = pages.any_of(self.I_BOSS_SKIP, pages.page_battle.recognizer)
         pages.page_battle_result = self.navigator.resolve_page(pages.page_battle_result)
@@ -57,8 +61,12 @@ class BasePeacockKingdom(GeneralBattle, SixRealmsCommon):
                                                     pages.page_reward.recognizer)
 
     def _handle_in_battle(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        self._boss_giveup_requested = False
+        if context.battle_key != 'boss':
+            self.thunder_state_known = True
         if self.appear(self.I_PK_BATTLE_THUNDER):
             self.skill_roaring_thunder = 1  # 战斗中出现了六道轰雷, 标记已获取
+            self.thunder_state_known = True
         if context.battle_key == 'boss':
             self._run_battle_behavior_once(
                 behavior_name='peacock_boss_green',
@@ -78,16 +86,36 @@ class BasePeacockKingdom(GeneralBattle, SixRealmsCommon):
         x, y = self.C_PK_GREEN_MAIN.coord()
         execute_single_click(self.device, FinalPoint(x, y), control_name=self.C_PK_GREEN_MAIN.name)
 
+    def _confirm_boss_giveup_dialog(self, context: BattleContext) -> bool:
+        """孔雀国首领战败放弃后的新版公共确认弹窗（限定在已点击放弃且非唤息弹窗时确认）。"""
+        if not self._boss_giveup_requested or context.is_win:
+            return False
+        if self.appear(self.I_UI_CONFIRM) and self.appear(self.I_UI_CANCEL) and \
+                not self.appear(self.I_MS_CHECK_OPEN_STORE):
+            context.reward_no_battle_ts = None
+            self.appear_then_click(self.I_UI_CONFIRM, interval=0.8)
+            return True
+        return False
+
+    def _handle_missing_battle_page(self, context: BattleContext, config: GeneralBattleConfig,
+                                    exit_matcher) -> BattleAction:
+        if self._confirm_boss_giveup_dialog(context):
+            return BattleAction.CONTINUE
+        return super()._handle_missing_battle_page(context, config, exit_matcher)
+
     def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         context.reward_no_battle_ts = None
         # 打输了, 直接放弃
         if self.appear(self.I_BOSS_BATTLE_GIVEUP):
             context.is_win = False
+            self._boss_giveup_requested = True
             self.click(self.I_BOSS_BATTLE_GIVEUP, interval=0.8)
             return BattleAction.CONTINUE
         # 放弃之后的2次弹窗确认
         if self.appear(self.I_UI_CONFIRM_SAMLL):
             self.click(self.I_UI_CONFIRM_SAMLL, interval=0.8)
+            return BattleAction.CONTINUE
+        if self._confirm_boss_giveup_dialog(context):
             return BattleAction.CONTINUE
         # 力量或魅力强化
         if self.appear(self.I_PK_SELECT_0, interval=1.5) or self.appear(self.I_PK_SELECT_3, interval=1.5):
@@ -109,6 +137,7 @@ class BasePeacockKingdom(GeneralBattle, SixRealmsCommon):
 
     def _handle_reward(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         context.reward_no_battle_ts = None
+        self._boss_giveup_requested = False
         if self.appear(self.I_BOSS_SHUTU):  # 极表示boss战赢了
             context.is_win = True
         if context.is_win and self.appear_then_click(self.I_SR_DOUBLE_REWARD_USE, interval=1.5):

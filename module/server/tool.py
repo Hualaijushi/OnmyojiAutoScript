@@ -1,8 +1,10 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import hashlib
 import json
 import multiprocessing
+import os
 import re
 import shutil
 import threading
@@ -12,6 +14,7 @@ import base64
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty as QueueEmpty
+from types import SimpleNamespace
 from typing import Any
 
 import cv2
@@ -401,6 +404,8 @@ class AnnotatorManager:
         self._sessions: dict[str, AnnotatorSession] = {}
         self._lock = threading.Lock()
         self._cleanup_lock = threading.Lock()
+        self._chess_save_lock = threading.Lock()
+        self._chess_image_runtime = None
         self._last_cleanup_at = 0.0
         self._session_idle_timeout = SESSION_IDLE_TIMEOUT_SECONDS
         self._session_sweep_interval = SESSION_SWEEP_INTERVAL_SECONDS
@@ -1479,6 +1484,453 @@ class AnnotatorManager:
             "save_status": "success",
             "target_image": str(target_image.relative_to(PROJECT_ROOT).as_posix()),
             "roi": roi_text,
+        }
+
+    def _get_chess_image_runtime(self):
+        """按需初始化并与运行时共用的本地 ImageRuntime 实例（不启远程 RPC 服务）。"""
+        with self._lock:
+            if self._chess_image_runtime is None:
+                from module.image.runtime import ImageRuntime
+
+                self._chess_image_runtime = ImageRuntime()
+            return self._chess_image_runtime
+
+    @staticmethod
+    def _validate_unit_threshold(value: Any, label: str) -> float:
+        try:
+            num = float(value)
+        except (TypeError, ValueError) as exc:
+            raise AnnotatorError("invalid_threshold", f"{label} 必须是数字", 400) from exc
+        if not np.isfinite(num) or not 0.0 <= num <= 1.0:
+            raise AnnotatorError("invalid_threshold", f"{label} 必须在 0 到 1 之间", 400)
+        return round(num, 4)
+
+    @staticmethod
+    def _read_chess_settings_thresholds(settings_file: Path) -> tuple[float, int]:
+        """直接读取 settings.py 当前保存的 HAND_DEPLOY 阈值与确认帧数。"""
+        text = settings_file.read_text(encoding="utf-8")
+        thresh_match = re.search(
+            r"^\s*HAND_DEPLOY_TEMPLATE_THRESHOLD\s*=\s*([0-9]+(?:\.[0-9]+)?)",
+            text,
+            re.MULTILINE,
+        )
+        frames_match = re.search(
+            r"^\s*HAND_DEPLOY_CONFIRM_FRAMES\s*=\s*([0-9]+)",
+            text,
+            re.MULTILINE,
+        )
+        from tasks.Chess.runtime.settings import ChessRuntimeSettings
+
+        deploy_threshold = (
+            float(thresh_match.group(1))
+            if thresh_match
+            else float(ChessRuntimeSettings.HAND_DEPLOY_TEMPLATE_THRESHOLD)
+        )
+        confirm_frames = (
+            int(frames_match.group(1))
+            if frames_match
+            else int(ChessRuntimeSettings.HAND_DEPLOY_CONFIRM_FRAMES)
+        )
+        return deploy_threshold, confirm_frames
+
+    @staticmethod
+    def _encode_rgb_png_data_url(image_rgb: np.ndarray) -> str:
+        bgr = cv2.cvtColor(np.asarray(image_rgb), cv2.COLOR_RGB2BGR)
+        ok, buf = cv2.imencode(".png", bgr)
+        if not ok:
+            return ""
+        return "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode("ascii")
+
+    @staticmethod
+    def _build_chess_harness_class():
+        from tasks.Chess.assets import ChessAssets
+        from tasks.Chess.runtime.frame_compat import ChessFrameCompatMixin
+        from tasks.Chess.runtime.hand_operations import ChessHandOperationsMixin
+        from tasks.Chess.runtime.recognition import ChessRecognitionMixin
+        from tasks.Chess.runtime.settings import ChessRuntimeSettings
+
+        class _AnnotatorChessHarness(
+            ChessFrameCompatMixin,
+            ChessHandOperationsMixin,
+            ChessRecognitionMixin,
+            ChessRuntimeSettings,
+            ChessAssets,
+        ):
+            def __init__(self, image_rgb: np.ndarray, image_runtime: Any, lineup_key: str) -> None:
+                self.device = SimpleNamespace(image=image_rgb, image_frame_id="annotator-local")
+                self._image_runtime = image_runtime
+                self.select_lineup_strategy(lineup_key)
+
+            def appear(self, target, interval=None, threshold=None):
+                result = self._image_runtime._match_rule_payload(
+                    image=self.device.image,
+                    rule_data=target.to_service_payload(),
+                    threshold=threshold,
+                )
+                return target._apply_match_result(result)
+
+        return _AnnotatorChessHarness
+
+    def _resolve_chess_lineup_key(self, lineup_source: str | None) -> tuple[str, str]:
+        """将 annotator 下拉选择的配置脚本/内置/自定义阵容映射为运行时 select_lineup_strategy 键。"""
+        from tasks.Chess.strategy.lineup import CUSTOM_LINEUP_VALUE, DEFAULT_LINEUP_KEY
+
+        source = str(lineup_source or "").strip()
+        if not source:
+            configs = self.list_configs()
+            preferred = "oas2" if "oas2" in configs else (configs[0] if configs else "")
+            source = f"config:{preferred}" if preferred else f"builtin:{DEFAULT_LINEUP_KEY}"
+
+        if source.startswith("config:"):
+            script_name = source.removeprefix("config:")
+            if script_name not in self.list_configs():
+                raise AnnotatorError("invalid_config", f"脚本配置不存在: {script_name}", 400)
+            cfg_path = PROJECT_ROOT / "config" / f"{script_name}.json"
+            try:
+                raw = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError) as exc:
+                raise AnnotatorError("invalid_config", f"读取脚本配置失败: {script_name}", 400) from exc
+            chess_cfg = raw.get("chess", {}).get("chess_config", {})
+            bond_val = str(chess_cfg.get("lineup_bond", DEFAULT_LINEUP_KEY) or DEFAULT_LINEUP_KEY)
+            if bond_val == CUSTOM_LINEUP_VALUE:
+                custom_key = str(chess_cfg.get("custom_lineup", "") or "").strip()
+                if not custom_key:
+                    raise AnnotatorError("invalid_config", f"脚本配置 {script_name} 未指定自定义阵容", 400)
+                if not custom_key.startswith(("builtin:", "custom:")):
+                    custom_key = f"custom:{custom_key}"
+                return custom_key, f"脚本配置 {script_name}"
+            if not bond_val.startswith(("builtin:", "custom:")):
+                return bond_val, f"脚本配置 {script_name}"
+            return bond_val, f"脚本配置 {script_name}"
+
+        if source.startswith(("builtin:", "custom:")):
+            return source, source
+        raise AnnotatorError("invalid_lineup", f"不支持的阵容来源: {source}", 400)
+
+    def get_chess_candidate_meta(self) -> dict[str, Any]:
+        """读取候选式神识别真实运行时阈值、灰度和可选阵容列表。"""
+        from tasks.Chess.assets import ChessAssets
+        from tasks.Chess.runtime.frame_cards import ChessFrameCardsMixin
+        from tasks.Chess.strategy.custom_lineups import read_lineups
+        from tasks.Chess.strategy.lineup import LINEUP_REGISTRY
+
+        c_frame_path = PROJECT_ROOT / "tasks" / "Chess" / "resource" / "c_frame.json"
+        settings_path = PROJECT_ROOT / "tasks" / "Chess" / "runtime" / "settings.py"
+        if not c_frame_path.is_file() or not settings_path.is_file():
+            raise AnnotatorError("chess_config_missing", "缺少 Chess c_frame.json 或 settings.py", 500)
+
+        frame_rules = json.loads(c_frame_path.read_text(encoding="utf-8"))
+        hand_rule = next((r for r in frame_rules if r.get("itemName") == "hand_card"), None)
+        if hand_rule is None:
+            raise AnnotatorError("chess_config_missing", "c_frame.json 缺少 hand_card 规则", 500)
+        ops = hand_rule.get("rangeOperations", [])
+        portrait_op = ops[-2] if len(ops) >= 2 and isinstance(ops[-2], dict) else {}
+        deploy_threshold, confirm_frames = self._read_chess_settings_thresholds(settings_path)
+
+        defaults = {
+            "badge_threshold": float(hand_rule.get("threshold", ChessAssets.F_HAND_CARD.threshold)),
+            "portrait_threshold": float(
+                portrait_op.get("threshold", ChessAssets.F_HAND_CARD.operations[-2].get("threshold", 0.8))
+            ),
+            "deploy_threshold": float(deploy_threshold),
+            "confirm_frames": int(confirm_frames),
+            "ambiguity_margin": float(ChessFrameCardsMixin.FRAME_PORTRAIT_AMBIGUITY_MARGIN),
+            "portrait_grayscale": bool(ChessFrameCardsMixin.FRAME_PORTRAIT_GRAYSCALE),
+            "badge_grayscale": bool(hand_rule.get("badgeGrayscale", ChessAssets.F_HAND_CARD.badge_grayscale)),
+            "hand_roi_back": str(hand_rule.get("roiBack", "")),
+            "portrait_roi_ref": str((hand_rule.get("roiRange") or ["", "", "", ""])[3]),
+        }
+
+        lineups: list[dict[str, str]] = []
+        configs = self.list_configs()
+        default_source = ""
+        Harness = self._build_chess_harness_class()
+        for cfg_name in configs:
+            try:
+                lkey, _ = self._resolve_chess_lineup_key(f"config:{cfg_name}")
+                strategy = Harness.get_lineup_strategy(SimpleNamespace(), lkey)
+                label = f"脚本 {cfg_name} -> {strategy['display_name']} ({strategy['key']})"
+            except Exception:
+                label = f"脚本 {cfg_name}"
+            val = f"config:{cfg_name}"
+            lineups.append({"value": val, "label": label})
+            if cfg_name == "oas2" or not default_source:
+                default_source = val
+
+        for ckey, cdoc in read_lineups().items():
+            lineups.append({
+                "value": f"custom:{ckey}",
+                "label": f"自定义 -> {cdoc.get('display_name', ckey)} (custom:{ckey})",
+            })
+        for bkey, bentry in LINEUP_REGISTRY.items():
+            bname = bentry["strategy"].get("display_name", bkey)
+            lineups.append({
+                "value": f"builtin:{bkey}",
+                "label": f"内置 -> {bname} (builtin:{bkey})",
+            })
+        if not default_source and lineups:
+            default_source = lineups[0]["value"]
+
+        return {
+            "defaults": defaults,
+            "lineups": lineups,
+            "default_lineup_source": default_source,
+        }
+
+    def test_chess_candidate_cards(
+        self,
+        *,
+        session_id: str,
+        image_id: str,
+        lineup_source: str | None = None,
+        badge_threshold: float | None = None,
+        portrait_threshold: float | None = None,
+        deploy_threshold: float | None = None,
+        runtime_snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """在当前选中的本地截图上，使用真实 Frame 识别与上卡筛选逻辑执行候选式神诊断（不改生产配置、不操作设备）。"""
+        session = self._get_session(session_id)
+        raw_bgr, source_path = self._load_session_bgr_image(session, image_id)
+        image_rgb = cv2.cvtColor(raw_bgr, cv2.COLOR_BGR2RGB)
+
+        meta = self.get_chess_candidate_meta()
+        saved_defaults = meta["defaults"]
+        eff_badge = (
+            saved_defaults["badge_threshold"]
+            if badge_threshold is None
+            else self._validate_unit_threshold(badge_threshold, "角标定位阈值")
+        )
+        eff_portrait = (
+            saved_defaults["portrait_threshold"]
+            if portrait_threshold is None
+            else self._validate_unit_threshold(portrait_threshold, "头像匹配阈值")
+        )
+        eff_deploy = (
+            saved_defaults["deploy_threshold"]
+            if deploy_threshold is None
+            else self._validate_unit_threshold(deploy_threshold, "上卡筛选阈值")
+        )
+
+        if runtime_snapshot is not None and not isinstance(runtime_snapshot, dict):
+            raise AnnotatorError("invalid_snapshot", "运行时状态快照必须是 JSON 对象", 400)
+
+        lineup_key, lineup_label = self._resolve_chess_lineup_key(lineup_source)
+        Harness = self._build_chess_harness_class()
+        try:
+            harness = Harness(image_rgb, self._get_chess_image_runtime(), lineup_key)
+        except (OSError, ValueError) as exc:
+            raise AnnotatorError("invalid_lineup", f"加载阵容策略失败: {exc}", 400) from exc
+
+        from module.ocr.rpc import _is_port_in_use, _split_host_port
+        from module.server.setting import State
+
+        ocr_addr = str(getattr(State.deploy_config, "OcrClientAddress", "") or "127.0.0.1:22268")
+        ocr_host, ocr_port = _split_host_port(ocr_addr)
+        bond_ocr_available = _is_port_in_use("127.0.0.1" if ocr_host in ("0.0.0.0", "") else ocr_host, ocr_port)
+
+        raw_cards = harness.diagnose_hand_card_candidates(
+            badge_threshold=eff_badge,
+            portrait_threshold=eff_portrait,
+            bond_ocr_available=bond_ocr_available,
+        )
+        evaluation = harness.evaluate_hand_card_deploy_candidates(
+            raw_cards,
+            deploy_threshold=eff_deploy,
+            runtime_snapshot=runtime_snapshot,
+        )
+
+        temp_overrides_active = (
+            abs(eff_badge - saved_defaults["badge_threshold"]) > 1e-6
+            or abs(eff_portrait - saved_defaults["portrait_threshold"]) > 1e-6
+            or abs(eff_deploy - saved_defaults["deploy_threshold"]) > 1e-6
+        )
+
+        baseline_by_pos = {}
+        if temp_overrides_active:
+            saved_raw = harness.diagnose_hand_card_candidates(
+                badge_threshold=saved_defaults["badge_threshold"],
+                portrait_threshold=saved_defaults["portrait_threshold"],
+                bond_ocr_available=bond_ocr_available,
+            )
+            saved_eval = harness.evaluate_hand_card_deploy_candidates(
+                saved_raw,
+                deploy_threshold=saved_defaults["deploy_threshold"],
+                runtime_snapshot=runtime_snapshot,
+            )
+            for sc in saved_eval["cards"]:
+                baseline_by_pos[tuple(sc["position"])] = sc
+
+        formatted_cards = []
+        for card in evaluation["cards"]:
+            crop_rgb = card.pop("portrait_crop_rgb", None)
+            crop_url = self._encode_rgb_png_data_url(crop_rgb) if crop_rgb is not None else ""
+            item = {
+                **card,
+                "portrait_crop_data_url": crop_url,
+                "badge_roi_str": ",".join(str(v) for v in card["badge_bbox"]),
+                "portrait_roi_str": ",".join(str(v) for v in card["portrait_bbox"]),
+                "card_roi_str": ",".join(str(v) for v in card["card_bbox"]),
+            }
+            if temp_overrides_active:
+                base = baseline_by_pos.get(tuple(card["position"]))
+                if base is None:
+                    item["saved_comparison"] = "临时阈值新增定位（已保存角标阈值下未检出）"
+                else:
+                    changes = []
+                    if base.get("name") != item.get("name"):
+                        changes.append(f"身份 {base.get('cn_name')} -> {item.get('cn_name')}")
+                    if bool(base.get("meets_deploy_threshold")) != bool(item.get("meets_deploy_threshold")):
+                        changes.append(
+                            f"上卡筛选 {bool(base.get('meets_deploy_threshold'))} -> {bool(item.get('meets_deploy_threshold'))}"
+                        )
+                    item["saved_comparison"] = "；".join(changes) if changes else "与已保存配置结果一致"
+            else:
+                item["saved_comparison"] = "当前使用已保存运行时阈值"
+            formatted_cards.append(item)
+
+        comparison_summary = None
+        if temp_overrides_active:
+            saved_names = [
+                (c["index"], c["cn_name"], c.get("meets_deploy_threshold"))
+                for c in baseline_by_pos.values()
+            ]
+            temp_names = [
+                (c["index"], c["cn_name"], c.get("meets_deploy_threshold"))
+                for c in formatted_cards
+            ]
+            comparison_summary = {
+                "saved_detected_count": len(baseline_by_pos),
+                "temp_detected_count": len(formatted_cards),
+                "saved_recognized_count": sum(1 for c in baseline_by_pos.values() if c.get("name")),
+                "temp_recognized_count": sum(1 for c in formatted_cards if c.get("name")),
+                "saved_deployable_count": sum(1 for c in baseline_by_pos.values() if c.get("meets_deploy_threshold")),
+                "temp_deployable_count": sum(1 for c in formatted_cards if c.get("meets_deploy_threshold")),
+                "changed": saved_names != temp_names,
+            }
+
+        return {
+            "image_id": image_id,
+            "image_name": source_path.name,
+            "image_size": [int(image_rgb.shape[1]), int(image_rgb.shape[0])],
+            "lineup_source": lineup_label,
+            "lineup_key": evaluation["lineup_key"],
+            "lineup_display_name": evaluation["lineup_display_name"],
+            "temp_overrides_active": temp_overrides_active,
+            "saved_thresholds": saved_defaults,
+            "effective_thresholds": {
+                "badge_threshold": eff_badge,
+                "portrait_threshold": eff_portrait,
+                "deploy_threshold": eff_deploy,
+                "confirm_frames": saved_defaults["confirm_frames"],
+                "ambiguity_margin": saved_defaults["ambiguity_margin"],
+                "portrait_grayscale": saved_defaults["portrait_grayscale"],
+                "badge_grayscale": saved_defaults["badge_grayscale"],
+            },
+            "runtime_state_known": evaluation["runtime_state_known"],
+            "runtime_exclusion_status": evaluation["runtime_exclusion_status"],
+            "selected_candidate": evaluation["selected_candidate"],
+            "comparison_summary": comparison_summary,
+            "cards": formatted_cards,
+        }
+
+    def save_chess_candidate_thresholds(
+        self,
+        *,
+        badge_threshold: float,
+        portrait_threshold: float,
+        deploy_threshold: float,
+        chess_dir: Path | None = None,
+    ) -> dict[str, Any]:
+        """仅在用户显式点击保存时，将候选式神阈值写入 c_frame.json / card_index.json / assets.py / settings.py。"""
+        from tasks.Chess.runtime.frame_cards import layout_bytes
+
+        new_badge = self._validate_unit_threshold(badge_threshold, "角标定位阈值")
+        new_portrait = self._validate_unit_threshold(portrait_threshold, "头像匹配阈值")
+        new_deploy = self._validate_unit_threshold(deploy_threshold, "上卡筛选阈值")
+
+        chess_root = (chess_dir or (TASKS_ROOT / "Chess")).resolve()
+        c_frame_path = chess_root / "resource" / "c_frame.json"
+        card_index_path = chess_root / "resource" / "card_index.json"
+        settings_path = chess_root / "runtime" / "settings.py"
+        if not c_frame_path.is_file() or not card_index_path.is_file() or not settings_path.is_file():
+            raise AnnotatorError("chess_config_missing", "缺少 Chess 配置文件，无法保存阈值", 500)
+
+        with self._lock:
+            save_lock = getattr(self, "_chess_save_lock", None)
+            if save_lock is None:
+                save_lock = threading.Lock()
+                self._chess_save_lock = save_lock
+
+        extract_root = chess_root
+        # 线程池并发请求下串行化四份产物的写入、资产重提取与内存热更新，防止交叉覆盖。
+        with save_lock:
+            with FileLock(f"{c_frame_path}.lock"):
+                frame_rules = json.loads(c_frame_path.read_text(encoding="utf-8"))
+                hand_rule = next((r for r in frame_rules if r.get("itemName") == "hand_card"), None)
+                if hand_rule is None or len(hand_rule.get("rangeOperations", [])) < 2:
+                    raise AnnotatorError("chess_config_missing", "c_frame.json 中的 hand_card 配置无效", 500)
+                hand_rule["threshold"] = new_badge
+                hand_rule["rangeOperations"][-2]["threshold"] = new_portrait
+                with atomic_write(c_frame_path, overwrite=True, encoding="utf-8") as f:
+                    json.dump(frame_rules, f, ensure_ascii=False, indent=2)
+                    f.write("\n")
+
+                card_index = json.loads(card_index_path.read_text(encoding="utf-8"))
+                card_index.setdefault("layouts", {})["card"] = hashlib.sha256(layout_bytes(hand_rule)).hexdigest()
+                with atomic_write(card_index_path, overwrite=True, encoding="utf-8") as f:
+                    json.dump(card_index, f, ensure_ascii=False, indent=2)
+                    f.write("\n")
+
+            with FileLock(f"{settings_path}.lock"):
+                settings_text = settings_path.read_text(encoding="utf-8")
+                updated_text, replaced = re.subn(
+                    r"^(\s*HAND_DEPLOY_TEMPLATE_THRESHOLD\s*=\s*)[0-9]+(?:\.[0-9]+)?",
+                    rf"\g<1>{new_deploy}",
+                    settings_text,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+                if replaced != 1:
+                    raise AnnotatorError("chess_config_missing", "settings.py 未找到 HAND_DEPLOY_TEMPLATE_THRESHOLD", 500)
+                with atomic_write(settings_path, overwrite=True, encoding="utf-8") as f:
+                    f.write(updated_text)
+
+            # 显式传入项目根目录，避免调用 os.chdir() 污染进程级工作目录。
+            AssetsExtractor(str(chess_root), root_path=chess_root.parents[1]).extract()
+
+            if chess_dir is None:
+                from tasks.Chess.assets import ChessAssets
+                from tasks.Chess.runtime.settings import ChessRuntimeSettings
+
+                ChessAssets.F_HAND_CARD.threshold = new_badge
+                ChessAssets.F_HAND_CARD.operations[-2]["threshold"] = new_portrait
+                ChessRuntimeSettings.HAND_DEPLOY_TEMPLATE_THRESHOLD = new_deploy
+
+        logger.info(
+            f"[annotator] save chess candidate thresholds: "
+            f"badge={new_badge}, portrait={new_portrait}, deploy={new_deploy}, root={extract_root}"
+        )
+        return {
+            "save_status": "success",
+            "saved_thresholds": {
+                "badge_threshold": new_badge,
+                "portrait_threshold": new_portrait,
+                "deploy_threshold": new_deploy,
+            },
+            "updated_files": [
+                str(c_frame_path.relative_to(PROJECT_ROOT).as_posix())
+                if c_frame_path.is_relative_to(PROJECT_ROOT)
+                else str(c_frame_path),
+                str(card_index_path.relative_to(PROJECT_ROOT).as_posix())
+                if card_index_path.is_relative_to(PROJECT_ROOT)
+                else str(card_index_path),
+                str((chess_root / "assets.py").relative_to(PROJECT_ROOT).as_posix())
+                if (chess_root / "assets.py").is_relative_to(PROJECT_ROOT)
+                else str(chess_root / "assets.py"),
+                str(settings_path.relative_to(PROJECT_ROOT).as_posix())
+                if settings_path.is_relative_to(PROJECT_ROOT)
+                else str(settings_path),
+            ],
         }
 
 

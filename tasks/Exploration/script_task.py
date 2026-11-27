@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from module.logger import logger
 from module.interaction_policy import InteractionPolicy
-from tasks.Exploration.base import BaseExploration
+from tasks.Exploration.base import BaseExploration, BOSS_EXIT_EXITING, BOSS_EXIT_EXITED
 from tasks.Exploration.config import AutoRotate, UserStatus, ExplorationLevel
 import tasks.Exploration.page as pages
 from tasks.GameUi.page_definition import Page
@@ -54,27 +54,21 @@ class ScriptTask(BaseExploration):
         self.post_process()
 
     def _maybe_boss_cycle_fatigue(self) -> bool:
-        """一个完整探索业务循环（进图 → 打怪 / Boss → 地图宝箱 → 小纸人 policy → 原生退出）
-        结束、已回到探索外层稳定页面后的疲劳安全节点。
+        """Boss 胜利直退完成、已观察到合法外层页后的疲劳安全节点。
 
         调用点在 `run_on_exp_entrance` / `run_on_exp` 顶部——这两个 handler 只在
-        `exec_exp_page` 的 `get_current_page()` 正向命中 `page_exp_entrance` /
-        `page_exploration` 时才分发，所以进来即代表「已在合法外层稳定页」。仅 solo；仅当刚
-        完成的是一个已打过 Boss 的循环（`fire_monster_type == 'boss'`，外层 handler 稍后才把
-        它重置）。触发后消费掉 Boss 标记避免重复，并让调用方 `return`，交 `exec_exp_page`
-        下一轮 fresh screenshot + 重新分发 = fatigue 后的 fresh revalidate。
+        `exec_exp_page` 的 `get_current_page()` 正向命中外层页时才分发。标记在这里一次性消费
+        （所有角色都消费，避免残留到下一轮重复休息），仅 solo 真正休息；命中后调用方 `return`，
+        交 `exec_exp_page` 下一轮 fresh screenshot + 重新分发 = 休息后的新截图确认。
+        不在 `page_exp_main` 触发。
 
-        **不在 `page_exp_main` 触发**（地图宝箱 / 小纸人 policy / 退出都还没处理完）——
-        `run_on_exp_main` 不调用本方法。
-
-        :return: 本轮是否命中安全节点（命中则调用方应 return，交下一轮 fresh dispatch）
+        :return: 本轮是否命中安全节点（命中则调用方应 return）
         """
+        if not self._boss_cycle_fatigue_due:
+            return False
+        self._boss_cycle_fatigue_due = False
         if self.user_status != UserStatus.ALONE:
             return False
-        if self.fire_monster_type != 'boss':
-            return False
-        # 消费本轮 Boss 标记，避免下一轮外层 dispatch 重复进入安全节点
-        self.fire_monster_type = ''
         self.try_fatigue_break(
             safe=True,
             repeat_completed=True,
@@ -82,20 +76,32 @@ class ScriptTask(BaseExploration):
         )
         return True
 
+    def _collect_outer_treasure_box(self) -> bool:
+        """外层补领宝箱；Boss 直退交接期内不补领刚才跳过的宝箱。"""
+        if self._boss_exit_phase == BOSS_EXIT_EXITED:
+            return False
+        return self.collect_treasure_box()
+
     def exec_exp_page(self):
         pages.page_battle_team_exit = self.navigator.resolve_page(pages.page_battle_team_exit)
         pages.page_battle_team_exit.connect(pages.page_exp_entrance, self.I_UI_CONFIRM, key="page_battle_team_exit->page_exp_entrance")
         while True:
             self.screenshot()
+            self.guard_boss_exit_deadline()
             current_page = self.get_current_page()
+            self.observe_boss_exit_outer(current_page)
             if current_page is None:
                 time.sleep(0.5)
                 continue
-            if self.check_exit(current_page):
+            # Boss 直退进行中先完成本轮退出（有 guard_boss_exit_deadline 兜底），不在中途收尾
+            if self.check_exit(current_page) and self._boss_exit_phase != BOSS_EXIT_EXITING:
                 self.appear_then_click(self.I_UI_CANCEL, interval=0.8)  # 处理队长结束的邀请弹窗
                 break
             handle = self.exp_page_handle_dict.get(current_page, None)
             if handle is None:
+                if self._boss_exit_phase == BOSS_EXIT_EXITING:
+                    time.sleep(0.5)  # 退出途中的未知页面只观察，不盲点
+                    continue
                 self.goto_page(pages.page_exploration)
                 continue
             try:
@@ -109,8 +115,11 @@ class ScriptTask(BaseExploration):
         if self.pre_page and self.pre_page != pages.page_exp_main:
             # 防止因延迟过大, 一直在主界面和奖励页面切换导致too many click
             self.device.click_record_clear()
-        # 原生 reward 链：先查地图宝箱（有则领取），无宝箱再走小纸人 policy
-        # （collect_paper_man_reward 在「Boss 且不领小纸人」时会执行原生 quit_exp_main）。
+        if self._boss_exit_phase == BOSS_EXIT_EXITING:
+            # Boss 已确认胜利：跳过地图宝箱 / 小纸人（与 collect_paper_reward 开关无关），直接退出
+            self.quit_exp_main()
+            return
+        self.end_boss_exit_handoff()
         if self.collect_reward():
             return
         if self.user_status != UserStatus.ALONE:
@@ -132,7 +141,7 @@ class ScriptTask(BaseExploration):
         # 回到外层稳定页：完整业务循环结束，先走 solo Boss 疲劳安全节点（命中则交下一轮 fresh dispatch）
         if self._maybe_boss_cycle_fatigue():
             return
-        self.collect_treasure_box()
+        self._collect_outer_treasure_box()
         self.fire_monster_type = ''  # 入口处重置怪物类型
         self.need_exit = False
         match self.user_status:
@@ -161,19 +170,26 @@ class ScriptTask(BaseExploration):
                 if datetime.now() - self.wait_start_time >= timedelta(seconds=10) or self.current_count == 0:
                     self.goto_page(pages.page_exp_entrance)
             case UserStatus.ALONE:
-                self.collect_treasure_box()
+                self._collect_outer_treasure_box()
                 self.goto_page(pages.page_exp_main)
             case UserStatus.MEMBER:
-                self.collect_treasure_box()
+                self._collect_outer_treasure_box()
                 self.check_then_accept()
                 self.device.stuck_record_clear()
 
     def run_on_battle(self):
-        self.run_general_battle(self._config.general_battle_config, exit_matcher=pages.page_exp_main)
+        # 归属只消费一次，上一场的 Boss 标记不会污染后续战斗
+        target, self._battle_target = self._battle_target, ''
+        self.end_boss_exit_handoff()
+        won = self.run_general_battle(self._config.general_battle_config, exit_matcher=pages.page_exp_main)
         self._match_end.refresh()  # 防止同一张图多次打怪导致误以为探索结束
         self.wait_start_time = datetime.now()  # 队友等待时间重置
+        # 通用战斗确认胜利且本场归属 Boss 才直退；战败 / 主动退出 / 未能开战都不算
+        if won is True and target == 'boss':
+            self.begin_boss_exit()
 
     def run_on_battle_team(self):
+        self.end_boss_exit_handoff()
         self.need_exit = False
         match self.user_status:
             case UserStatus.LEADER:

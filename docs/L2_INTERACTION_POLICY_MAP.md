@@ -1,9 +1,9 @@
 # L2 Interaction Policy Map（L2-2 审计与迁移清单）
 
 > 2026-09-15 在 worktree `feature/l2-interaction-reaction-layer` 形成；**2026-09-21 已集成进 master 工作区**（未提交，见 `docs/AI_CONTEXT.md` §4.82）。
-> 全仓（`tasks/` + `module/`）逐点登记册见 `docs/L2_CALLSITE_REGISTER.md`（`dev_tools/click_callsite_register.py` 生成、
-> `tests/test_l1_l2_integration.py` 对账）：本表是其中 basis=human 的 179 个点，其余为保守规则分类。
-> **统计范围说明**：本文件 §1～§3 是 **L2-2 最初的 179 点人工审计**（历史结论，保持不变；§2 的 NEEDS_C = 7 只是这 179 点里的数字，不是全仓完整数据）；全仓 24 个原 NEEDS_C 的 C0 复核与 C1-A1 实施状态见 **§4**。四个口径不可混用：全仓 1092 点 / 最初人工审计 179 点 / C0 复核 24 点 / C1-A1 实施 4 点。
+> 全仓（`tasks/` + `module/`）逐点登记册见 [L2_CALLSITE_REGISTER.md](L2_CALLSITE_REGISTER.md)（`dev_tools/click_callsite_register.py` 生成、
+> `tests/test_l1_l2_integration.py` 对账）；本表对应其中 `basis=human` 的审计口径与历史记录，其余点位见生成登记册的保守规则分类。
+> **统计范围说明**：本文件 §1～§3 源于 **L2-2 最初的 179 点人工审计**（历史结论保持不变；§2 的 `NEEDS_C = 7` 仅指这组人工审计里的 7 点，不是全仓实时统计）；此后 `2026-10-29` `chess_battle` 增量（+4 行 `KEEP_IMMEDIATE`）与 `2026-10-31` `Orochi._handle_pet_present` 增补（+1 行 `L2M-077a KEEP_SPECIAL`）使 §3 逐点表现共 **184 行**；全仓原 24 个 NEEDS_C 的 C0 复核与 C1-A1 实施状态见 **§4**；全仓实时生成登记总数与最新规则增量见 [L2_CALLSITE_REGISTER.md](L2_CALLSITE_REGISTER.md)。各口径统计范围不同，不可混用或强行令不同范围数字相等。
 > 设计依据：`docs/DECISIONS.md` D001「L2-1」「L2-2」补记；护栏：`tests/test_l2_policy_migration.py`
 > （本表的「文件 / 函数 / 调用 / 目标 / 当前 timing」逐行锁定，改动点击 timing 必须同步改本表与测试清单）。
 
@@ -32,16 +32,20 @@ MultiAccountEvo（synevo 小号业务）。
 | --- | --- |
 | ALREADY_L2 | 33 |
 | MIGRATE | 7 |
-| KEEP_IMMEDIATE | 94 |
-| KEEP_SPECIAL | 38 |
+| KEEP_IMMEDIATE | 98 |
+| KEEP_SPECIAL | 39 |
 | NEEDS_C | 7 |
-| **合计** | **179** |
+| **合计** | **184** |
+
+> 表内实算口径说明：最初 L2-2 审计 179 点（`ALREADY_L2 33 / MIGRATE 7 / KEEP_IMMEDIATE 94 / KEEP_SPECIAL 38 / NEEDS_C 7`）；`2026-10-29` `chess_battle` 增补 `L2M-066a~c` / `L2M-073a`（`KEEP_IMMEDIATE` 94 → 98，合计 183）；`2026-10-31` `Orochi._handle_pet_present` 增补 `L2M-077a`（`KEEP_SPECIAL` 38 → 39，表内合计 **184**）。全仓实时扫描另有规则分类点与部分未在 §3 单列的新增 `human` 行，以 `docs/L2_CALLSITE_REGISTER.md` 实扫为准。
 
 迁移（7）：GeneralInvite `_open_invite_panel_if_needed` 的 `I_ADD_1 / I_ADD_2 / I_ADD_5_4 / I_ADD_SEA` → NORMAL；
 GeneralBattle `switch_preset_team` 的 `I_PRESET / I_PRESET_WIT_NUMBER` → NORMAL、`I_PRESET_ENSURE` → CONFIRM。
 
 L2-3B FIRE Batch A（2026-09-18）：worktree 里曾把 Orochi `run_wild` 的 `I_OROCHI_WILD_FIRE` 移入 FIRE owner `_fire_orochi_wild`；
-**master 集成时按项目决定不带入野队**（`run_wild` 保持内联点击，仍是 KEEP_SPECIAL，故 ALREADY_L2 33 / KEEP_SPECIAL 38）。EternitySea /
+**master 集成时按项目决定不带入野队**（`run_wild` 保持内联点击，仍是 KEEP_SPECIAL；截至该时点为 ALREADY_L2 33 / KEEP_SPECIAL 38，后续 `L2M-077a` 增补后 §3 现为 KEEP_SPECIAL 39）。
+
+2026-10-29 棋局完整吸收（AI_CONTEXT §4.161）：`GameUi/chess_battle.py` 换成上游 `73d4ae84` 版本，该文件的审计行由 8 行变为 12 行（新增 `select_chess_sixrealms_if_visible` 1 行、`_advance_chess_result_stage` 2 行、`Chess_Exit` 取代原 `exit_chess_battle` 的 2 行并多 1 行；`return_to_chess_lobby` 末行目标改为 `random_click()`），全部仍是 KEEP_IMMEDIATE（KEEP_IMMEDIATE 94 → 98，合计 179 → 183）；新增行用 `L2M-066a~c` / `L2M-073a` 编号，不重排后续编号。EternitySea /
 FallenSun / Sougenbi 的 FIRE 在本清单审计范围外，见 `docs/AI_CONTEXT.md` §4.74。
 
 NEEDS_C（7）：GeneralInvite `check_then_accept` 5 处（队员接受邀请：邀请时效、队长秒开 issue #230、多开协作节奏）；
@@ -120,17 +124,22 @@ SixRealms 70、WantedQuests 38、AbyssShadows 32、BondlingFairyland 30、Dokan 
 | L2M-063 | `GameUi/default_pages.py` | `exploration_to_six_gates` | `appear_then_click` | `GameUiAssets.I_EXPLORATION_TO_MANTRA_TOWER` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 低频入口（六道之门，6 个互斥图标串联探测）；本轮不为冷门入口改 |
 | L2M-064 | `GameUi/default_pages.py` | `exploration_to_six_gates` | `appear_then_click` | `GameUiAssets.I_EXPLORATION_TO_PEACOCK_KINGDOM` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 低频入口（六道之门，6 个互斥图标串联探测）；本轮不为冷门入口改 |
 | L2M-065 | `GameUi/default_pages.py` | `handle_battle_reward_page` | `appear_then_click` | `GeneralBattleAssets.I_OVER_GHOST` | IMMEDIATE | **KEEP_SPECIAL** | - | 奖励页弹窗属 Settlement 阶段 |
+| L2M-066a | `GameUi/chess_battle.py` | `select_chess_sixrealms_if_visible` | `click` | `target` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 六艺选择页恢复点击（上游 73d4ae84 新增函数），目标由调用方给定；Chess 自有 Timer |
+| L2M-066b | `GameUi/chess_battle.py` | `_advance_chess_result_stage` | `click` | `random_click()` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 结算页推进（上游 73d4ae84 新增函数），随机安全区点击；Chess 自有 Timer |
+| L2M-066c | `GameUi/chess_battle.py` | `_advance_chess_result_stage` | `click` | `random_click()` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 结算页推进（上游 73d4ae84 新增函数），随机安全区点击；Chess 自有 Timer |
 | L2M-066 | `GameUi/chess_battle.py` | `return_to_chess_lobby` | `appear_then_click` | `self.I_CHESS_RANK_GOTO_LOBBY` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
 | L2M-067 | `GameUi/chess_battle.py` | `return_to_chess_lobby` | `click` | `GeneralBattleAssets.C_RANDOM_LEFT` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
 | L2M-068 | `GameUi/chess_battle.py` | `return_to_chess_lobby` | `appear_then_click` | `self.I_CHESS_EXIT_TO_LOBBY` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
 | L2M-069 | `GameUi/chess_battle.py` | `return_to_chess_lobby` | `appear_then_click` | `self.I_CHESS_EXIT_TO_LOBBY_2` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
 | L2M-070 | `GameUi/chess_battle.py` | `return_to_chess_lobby` | `click` | `self.I_CHESS_EXIT_TO_LOBBY` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
-| L2M-071 | `GameUi/chess_battle.py` | `return_to_chess_lobby` | `click` | `GeneralBattleAssets.C_RANDOM_LEFT` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
-| L2M-072 | `GameUi/chess_battle.py` | `exit_chess_battle` | `click` | `self.I_CHESS_EXIT_CONFIRM` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
-| L2M-073 | `GameUi/chess_battle.py` | `exit_chess_battle` | `click` | `self.I_CHESS_EXIT` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
+| L2M-071 | `GameUi/chess_battle.py` | `return_to_chess_lobby` | `click` | `random_click()` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
+| L2M-072 | `GameUi/chess_battle.py` | `Chess_Exit` | `appear_then_click` | `GeneralBattleAssets.I_EXIT_ENSURE` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
+| L2M-073 | `GameUi/chess_battle.py` | `Chess_Exit` | `ui_click_until_disappear` | `GeneralBattleAssets.I_EXIT_ENSURE` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
+| L2M-073a | `GameUi/chess_battle.py` | `Chess_Exit` | `appear_then_click` | `self.I_CHESS_EXIT` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 棋盘退出 / 回大厅恢复序列，Chess 自有 Timer / FAST_OPERATION_INTERVAL |
 | L2M-074 | `EvoZone/script_task.py` | `evozone_enter` | `appear_then_click` | `kirintype` | DELIBERATE | **ALREADY_L2** | DELIBERATE | L2-1 已迁（麒麟类型选择） |
 | L2M-075 | `EvoZone/script_task.py` | `run_leader` | `appear_then_click` | `self.I_FORM_TEAM` | NORMAL | **ALREADY_L2** | NORMAL | L2-1 已迁 |
 | L2M-076 | `EvoZone/script_task.py` | `_fire_evozone_alone` | `appear_then_click` | `self.I_EVOZONE_FIRE` | IMMEDIATE | **ALREADY_L2** | FIRE_SPECIAL | FIRE owner |
+| L2M-077a | `Orochi/script_task.py` | `_handle_pet_present` | `appear_then_click` | `self.I_PET_PRESENT` | IMMEDIATE | **KEEP_SPECIAL** | - | 结算内「发现宝藏」宠物弹窗（2026-10-31，AI_CONTEXT §4.168）：在 `_handle_reward` / `_handle_result` / missing-page 分支调用，属战后结算生命周期，自带 1 秒点击间隔 + 点击次数 / 总时长上限；外层 `run_member` / `run_alone` / `run_wild` 的旧分支（L2M-079/081/083）保留，处理结算之外的残留弹窗 |
 | L2M-077 | `Orochi/script_task.py` | `_close_orochi_soul_choice_popup` | `appear_then_click` | `self.I_GB_CLOSE_RED` | IMMEDIATE | **KEEP_SPECIAL** | - | 在 `_handle_result` / `_handle_reward` / missing-page 分支调用，属战后结算生命周期 |
 | L2M-078 | `Orochi/script_task.py` | `run_leader` | `appear_then_click` | `self.I_FORM_TEAM` | NORMAL | **ALREADY_L2** | NORMAL | L2-1 已迁 |
 | L2M-079 | `Orochi/script_task.py` | `run_member` | `appear_then_click` | `self.I_PET_PRESENT` | IMMEDIATE | **KEEP_IMMEDIATE** | - | 偶发猫咪奖励弹窗，点安全区关闭；与 ui_reward_appear_click 同族，未单独立项 |
@@ -347,3 +356,13 @@ basis：human 179 / c0 17 / rule 896（互斥、可加总；`c0_reviewed` = 24 �
 | 换一个 `I_CM_SWITCH`、进任务 `C_CM_1`（三处）、长按提交 `L_SL_LONG`、捐赠 / 提交按钮 | NORMAL |
 | 返回 `I_UI_BACK_RED`、关「获得奖励」（两处） | NAVIGATION |
 | 加号 `I_CM_ADD_*`（window_message 时代替滑动）、N 卡 `L_FEED_CLICK_*` | FAST |
+
+## 6. 超鬼王独立庭院直达入口（2026-11-11，MD-ENTRY-01）
+
+用户批准仅重构超鬼王入口。`MetaDemon/page.py::goto_activity_entry` 的 `MetaDemonAssets.I_MAIN_GOTO_ACT_2` / `I_MAIN_GOTO_ACT` 两处点击使用 NAVIGATION，按 POST_C1_CONSUMERS 精确登记，basis=rule、decision=ALREADY_L2；`find_activity_entry` 的 `RightActivityAssets.I_TOGGLE_BUTTON` 是即时栏目查找，basis=rule、decision=KEEP_IMMEDIATE。此前人工审计范围及历史数字不扩写。新增总计3点、policy 2点，不修改共享导航或策略核心；目标消失零点击，进入成功由目的页面正向确认。
+
+## 7. 超鬼王当前队列循环（2026-11-12，D068 —— 已撤回作废）
+
+> **状态说明（D068 已撤回，下述旧描述已作废，仅保留历史来源）**：`2026-11-12` 用户已明确纠正并撤回 `D068` 的纯循环替换方案（见 [DECISIONS.md](DECISIONS.md) `D068 【Withdrawn：误删功能已恢复】`）。当前源码 [script_task.py](../tasks/MetaDemon/script_task.py) 已完整恢复选星、合成、换魂、喝茶及 `start_battle()` 原功能，不存在 `_enter_battle`（`use_current_queue` 仅作默认关闭的可选项）；下述旧日口径中的“全仓净减 15、policy 仍 104”仅对应当时快照，现行全仓逐点统计以 [L2_CALLSITE_REGISTER.md](L2_CALLSITE_REGISTER.md) 实时生成结果为准。
+
+- *（历史记录原文，已作废）*：入口两处NAVIGATION保留。主脚本移除选星、合成、换魂和私有结算点击，新召唤/确认/喝茶沿用即时事务点击；挑战由`MetaDemon/script_task.py::_enter_battle`统一拥有FIRE反应、新帧确认与有界重试，精确加入FIRE_OWNERS，不向共享导航注入策略。全仓点击净减15，规则分类KEEP_IMMEDIATE净减15，policy仍104，既有C0与人工审计不变。

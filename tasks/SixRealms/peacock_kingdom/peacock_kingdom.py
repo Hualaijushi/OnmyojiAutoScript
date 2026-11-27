@@ -2,7 +2,7 @@ import time
 
 from module.atom.image import RuleImage
 from module.base.timer import Timer
-from module.exception import TaskEnd
+from module.exception import GameStuckError, TaskEnd
 from module.logger import logger
 from tasks.SixRealms.peacock_kingdom.base_peacock_kingdom import BasePeacockKingdom
 import tasks.SixRealms.peacock_kingdom.page as pages
@@ -14,6 +14,8 @@ class PeacockKingdom(BasePeacockKingdom):
     breath_failed = False
     # 轰雷实际扣费，只用于购买后验证；买入门槛仍是 run_on_pk_store 里的 300（真机 6 次购买 5 次扣 200）
     PK_SKILL_THUNDER_COST = 200
+    # 首领战前无轰雷主动放弃试炼的总超时（秒），避免异常界面下无界死等
+    GIVEUP_TIMEOUT = 30.0
 
     def _default_detect_categories(self) -> set[str]:
         categories = super()._default_detect_categories()
@@ -21,11 +23,17 @@ class PeacockKingdom(BasePeacockKingdom):
         categories.add("peacock_kingdom")
         return categories
 
+    def _navigation_detect_categories(self, destination: pages.Page) -> set[str]:
+        """导航识别当前页时保留孔雀国分类，避免跨副本回退误命中月之海准备页。"""
+        categories = super()._navigation_detect_categories(destination)
+        categories.add("peacock_kingdom")
+        return categories
+
     @property
     def pk_page_handle_dict(self) -> dict[pages.Page, Callable]:
         return {
             pages.page_peacock_kingdom: self.run_on_pk,
-            pages.page_pk_prepare: lambda : self.goto_page(pages.page_pk_main),
+            pages.page_pk_prepare: self._enter_pk_main_from_prepare,
             pages.page_pk_main: self.run_on_pk_main,
             pages.page_pk_shop_land: self.run_on_pk_store,
             pages.page_pk_mistery_land: lambda : self.goto_page(pages.page_pk_main),
@@ -67,7 +75,13 @@ class PeacockKingdom(BasePeacockKingdom):
         if self.appear_then_click(self.I_PK_CONTINUE, interval=1):
             return
         if self.appear_then_click(self.I_PK_START, interval=1):
+            self.thunder_state_known = True
             return
+
+    def _enter_pk_main_from_prepare(self):
+        """从孔雀国准备界面进入主界面，标记本局为完整新开局。"""
+        self.thunder_state_known = True
+        self.goto_page(pages.page_pk_main)
 
     def run_on_pk_prepare(self):
         """进入孔雀国主界面前的准备界面"""
@@ -164,20 +178,84 @@ class PeacockKingdom(BasePeacockKingdom):
             if timer.reached():
                 return False
 
+    def _should_give_up_boss(self) -> bool:
+        """仅当本局已确认过轰雷状态且仍无轰雷时，Boss 战前主动放弃试炼。"""
+        return self.thunder_state_known and self.skill_roaring_thunder == 0
+
+    def _give_up_trial(self) -> bool:
+        """Boss 战前无轰雷主动放弃试炼：点返回 -> 放弃试炼 -> 确认 -> 失败结算不点双倍直到回入口页。"""
+        logger.info('No roaring thunder before boss battle, give up trial')
+        if getattr(self, 'device', None) is not None:
+            self.device.stuck_record_clear()
+        timeout_timer = Timer(self.GIVEUP_TIMEOUT).start()
+        confirmed_giveup = False
+        left_pk_main = False
+        current_page = None
+        while not timeout_timer.reached():
+            self.screenshot()
+            current_page = self.get_current_page()
+            if current_page == pages.page_peacock_kingdom:
+                logger.info('Give up trial done, arrived page_peacock_kingdom')
+                return True
+            if not confirmed_giveup:
+                if self.appear(self.I_UI_CONFIRM) and self.appear(self.I_UI_CANCEL) and \
+                        not self.appear(self.I_MS_CHECK_OPEN_STORE):
+                    if self.appear_then_click(self.I_UI_CONFIRM, interval=1.5):
+                        confirmed_giveup = True
+                        logger.info('Confirmed give up trial')
+                    continue
+                if self.appear_then_click(self.I_PK_GIVEUP, interval=1.0):
+                    continue
+                if current_page == pages.page_pk_main and \
+                        self.appear_then_click(self.I_UI_BACK_BLUE, interval=1.2):
+                    continue
+                continue
+            if not left_pk_main and current_page != pages.page_pk_main and \
+                    not self.appear(self.I_PK_CHECK_MAIN) and not self.appear(self.I_PK_BOSS_PREPARE):
+                left_pk_main = True
+            if not left_pk_main:
+                if self.appear(self.I_UI_CONFIRM) and self.appear(self.I_UI_CANCEL) and \
+                        not self.appear(self.I_MS_CHECK_OPEN_STORE):
+                    self.appear_then_click(self.I_UI_CONFIRM, interval=1.5)
+                continue
+            if self.appear_then_click(self.I_SR_DOUBLE_REWARD_CANCEL, interval=1.5):
+                continue
+            if self.appear(self.I_SR_CHECK_BUY_BOX):
+                if self.appear_then_click(self.I_SR_NOT_TIP, interval=1.5) and \
+                        self.appear_then_click(self.I_UI_CANCEL):
+                    continue
+            if self.appear(self.I_UI_CANCEL) and not self.appear(self.I_MS_CHECK_OPEN_STORE):
+                self.appear_then_click(self.I_UI_CANCEL, interval=1.5)
+                continue
+            if current_page == pages.page_reward:
+                self.click(pages.random_click(), interval=1.2)
+                continue
+        page_name = getattr(current_page, 'name', None)
+        msg = (
+            f'孔雀国放弃试炼超时（{self.GIVEUP_TIMEOUT}s 内未回到入口页：'
+            f'confirmed_giveup={confirmed_giveup}, left_pk_main={left_pk_main}, current_page={page_name}）'
+        )
+        logger.warning(msg)
+        raise GameStuckError(msg)
+
     def run_on_pk_main(self):
         """孔雀国主界面 执行策略选岛屿"""
         # 商店确认弹窗可能被识别为主页面，优先处理进入按钮
         if self.appear(self.I_PK_STORE_STILLIN):
             self.run_on_pk_store_confirm()
             return
-        if self.appear(self.I_PK_BOSS_PREPARE) and \
-                self.enter_battle(self.I_PK_BOSS_FIRE, boss_unlock=self.I_PK_BOSS_UNLOCK, boss_lock=self.I_PK_BOSS_LOCK):
-            logger.info('Start boss battle')
-            self.run_general_battle(
-                battle_key='boss',
-                exit_matcher=pages.page_peacock_kingdom,
-            )
-            raise TaskEnd
+        if self.appear(self.I_PK_BOSS_PREPARE):
+            if self._should_give_up_boss():
+                if self._give_up_trial():
+                    raise TaskEnd
+                raise GameStuckError('孔雀国放弃试炼未完成')
+            if self.enter_battle(self.I_PK_BOSS_FIRE, boss_unlock=self.I_PK_BOSS_UNLOCK, boss_lock=self.I_PK_BOSS_LOCK):
+                logger.info('Start boss battle')
+                self.run_general_battle(
+                    battle_key='boss',
+                    exit_matcher=pages.page_peacock_kingdom,
+                )
+                raise TaskEnd
         # 优先级：商店 > 神秘 > 绽放之屿 > 战斗 > 混沌
         islands = [self.I_PK_LAND_STORE, self.I_PK_LAND_MYSTERY, self.I_PK_LAND_BLOOM, self.I_PK_LAND_FIRE,
                  self.I_PK_LAND_CHAOS]

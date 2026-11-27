@@ -602,6 +602,7 @@ class ImageRuntime:
             "roi_back": roi_back,
             "scale_range": scale_range,
             "scale_step": float(rule_data.get("scale_step", 0.1)),
+            "grayscale": bool(rule_data.get("grayscale", False)),
         }
 
     def _match_rule_payload(
@@ -611,6 +612,15 @@ class ImageRuntime:
         threshold: float | None = None,
     ) -> dict[str, Any]:
         """执行单规则匹配并把结果转换为可直接返回给 RPC 层的字典。"""
+        if rule_data.get('badges'):
+            best = {'matched': False, 'score': 0.0, 'roi_front': None}
+            for index, badge in enumerate(rule_data['badges']):
+                result = self._match_rule_payload(image, badge, threshold)
+                if result.get('matched'):
+                    return {**result, 'badge_index': index}
+                if result.get('score', 0) > best.get('score', 0):
+                    best = result
+            return best
         rule = self._normalize_rule(rule_data=rule_data, threshold=threshold)
         matched, score, roi_front = self._match_rule(image=image, rule=rule)
         return {
@@ -642,6 +652,7 @@ class ImageRuntime:
                 roi_back=rule["roi_back"],
                 threshold=rule["threshold"],
                 log_name=rule["name"],
+                grayscale=rule.get("grayscale", False),
             )
         if method == "Multi-scale template matching":
             template = self._get_template_entry(rule["file"]).image_rgb
@@ -691,6 +702,7 @@ class ImageRuntime:
         roi_back: list[int],
         threshold: float,
         log_name: str,
+        grayscale: bool = False,
     ) -> tuple[bool, float, list[int] | None]:
         """
         执行普通模板匹配，并在命中时回传前景 ROI。
@@ -698,6 +710,9 @@ class ImageRuntime:
         `roi_back` 表示在原图上的搜索区域，命中结果会被换算回原图坐标系。
         """
         source = self._crop(image, roi_back)
+        if grayscale:
+            source = self._to_gray(source)
+            template = self._to_gray(template)
         if self._template_image_invalid(template):
             logger.error(f"Template image is invalid: {None if template is None else template.shape}")
             return True, 1.0, [int(v) for v in roi_back]

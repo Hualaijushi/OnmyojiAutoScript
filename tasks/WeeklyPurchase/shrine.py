@@ -14,9 +14,9 @@ from tasks.WeeklyPurchase.config import Shrine as ConfigShrine
 class Shrine(GameUi, WeeklyPurchaseAssets):
 
     def execute_shrine(self, con: ConfigShrine):
-        logger.hr('Start Shrine')
+        logger.hr('开始处理神龛购买')
         if not con.enable:
-            logger.info('Shrine is disabled')
+            logger.info('神龛购买未启用')
             return
         self.goto_page(page_summon)
 
@@ -26,7 +26,7 @@ class Shrine(GameUi, WeeklyPurchaseAssets):
                 break
             if self.appear_then_click(self.I_S_SUMMON_TO_SHRINE, interval=2):
                 continue
-        logger.info('Enter Shrine')
+        logger.info('已进入神龛')
         time.sleep(0.5)
         if con.black_daruma:
             self.shrine_black_daruma()
@@ -39,12 +39,12 @@ class Shrine(GameUi, WeeklyPurchaseAssets):
         self.screenshot()
         current = self.O_TT_TOTOL.ocr(self.device.image)
         if not isinstance(current, int):
-            logger.warning('OCR current money failed')
+            logger.warning('未能识别神龛货币余额')
             return False
         if current >= mix:
-            logger.info('Money is enough')
+            logger.info('神龛货币余额充足')
             return True
-        logger.info('Money is not enough')
+        logger.info('神龛货币余额不足')
         return False
 
     def _check_bought(self, target) -> bool:
@@ -61,7 +61,7 @@ class Shrine(GameUi, WeeklyPurchaseAssets):
         return False
 
     def shrine_black_daruma(self):
-        logger.hr('Shrine black daruma', 2)
+        logger.hr('神龛：御行达摩', 2)
         self.screenshot()
         if not self.shrine_check_money(1500):
             return

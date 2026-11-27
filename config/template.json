@@ -862,7 +862,9 @@
       "user_status": "leader",
       "layer": "肆层",
       "limit_time": "00:30:00",
-      "limit_count": 30
+      "limit_count": 30,
+      "buff_gold_50_click": false,
+      "buff_gold_100_click": false
     },
     "invite_config": {
       "friend_list": "",
@@ -1885,7 +1887,8 @@
       "run_count": 1,
       "limit_time": "00:30:00",
       "matchmaking_timeout_seconds": 60,
-      "coin_full_exit": false
+      "coin_full_exit": false,
+      "custom_lineup": ""
     }
   },
   "collective_missions": {
@@ -1977,7 +1980,14 @@
       "min_bounty": 0,
       "find_dokan_refresh_count": 7,
       "welfare_mode": false,
-      "welfare_min_people": 100
+      "welfare_min_people": 100,
+      "welfare_run_monday": true,
+      "welfare_run_tuesday": true,
+      "welfare_run_wednesday": true,
+      "welfare_run_thursday": true,
+      "welfare_run_friday": false,
+      "welfare_run_saturday": false,
+      "welfare_run_sunday": false
     },
     "dokan_member_battle_conf": {
       "lock_team_enable": false,
@@ -2098,7 +2108,8 @@
       "float_time": "00:00:00"
     },
     "demon_retreat_time": {
-      "custom_run_time": "10:00:00"
+      "custom_run_time": "10:00:00",
+      "try_start_demon_retreat": false
     },
     "general_battle": {
       "lock_team_enable": false,

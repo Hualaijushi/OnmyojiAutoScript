@@ -42,13 +42,14 @@ def name_transform(name: str) -> str:
 
 class ImageExtractor:
 
-    def __init__(self, file: str, data: list) -> None:
+    def __init__(self, file: str, data: list, root_path: str | Path | None = None) -> None:
         """
         image rule 提取
         :param data:  json解析后的数据
         """
-        # 这个时候的路径分隔符变成了 /
-        self.file = str(Path(file).resolve().relative_to((Path.cwd()).resolve()).as_posix())
+        # 显式传入 root_path 时按该根目录计算相对路径，未传时保持按 Path.cwd() 兼容旧调用方。
+        base_root = Path(root_path).resolve() if root_path is not None else Path.cwd().resolve()
+        self.file = str(Path(file).resolve().relative_to(base_root).as_posix())
         self.image_path = Path(self.file).parent.as_posix()
 
         self._result = '\n\n\t# Image Rule Assets\n'
@@ -73,6 +74,36 @@ class ImageExtractor:
                     f'method="{item["method"]}", ' \
                     f'file="./{self.image_path}/{item["imageName"]}")\n'
         return description + name
+
+
+class FrameExtractor(ImageExtractor):
+    def extract_item(self, item) -> str:
+        from module.atom.frame import normalize_operations
+        badges = item.get('badges') or [{'imageName': item['imageName'], 'roiBadge': item['roiBadge']}]
+        ranges = item['roiRange'] if isinstance(item['roiRange'], list) else [item['roiRange']]
+        operations = normalize_operations(item.get('rangeOperations'), len(ranges), allow_missing_image=True)
+        handlers = []
+        for spec in operations:
+            if spec['type'] == 'image':
+                # Templates are positional runframe arguments; saved crops are preview samples only.
+                spec.pop('imageName', None)
+                spec.pop('file', None)
+            kind = spec.pop('type')
+            cls = {'image':'Image', 'ocr':'Ocr', 'click':'Click'}[kind]
+            handlers.append(cls + '(' + ', '.join(f'{k}={v!r}' for k,v in spec.items()) + ')')
+        parse = lambda text: tuple(float(v) if '.' in v else int(v) for v in text.split(','))
+        arguments = dict(
+            name=item['itemName'],
+            roi_badge=parse(item['roiBadge']),
+            roi_range=[parse(r) for r in ranges], roi_back=parse(item['roiBack']),
+            threshold=item['threshold'], method=item['method'], profile=item.get('profile', 'High'),
+            badgefile=[f"./{self.image_path}/{b['imageName']}" for b in badges])
+        name = name_transform(item['itemName'])
+        if item.get('badgeGrayscale', False):
+            arguments['badge_grayscale'] = True
+        return (f"\tF_{name} = RuleFrame(" + ', '.join(f'{k}={v!r}' for k,v in arguments.items()) +
+                ', range=[' + ', '.join(handlers) + '])\n' + f'\tI_{name} = F_{name}  # compatibility\n')
+
 
 
 class ClickExtractor:
@@ -197,12 +228,13 @@ class OcrExtractor:
 
 
 class ListExtractor:
-    def __init__(self, file: str, data: dict) -> None:
+    def __init__(self, file: str, data: dict, root_path: str | Path | None = None) -> None:
         """
         List rule 提取
         :param data:  json解析后的数据
         """
-        self.file = str(Path(file).resolve().relative_to((Path.cwd()).resolve()).as_posix())
+        base_root = Path(root_path).resolve() if root_path is not None else Path.cwd().resolve()
+        self.file = str(Path(file).resolve().relative_to(base_root).as_posix())
         self.image_path = Path(self.file).parent.as_posix()
         self._result = ''
 
@@ -251,13 +283,14 @@ class ListExtractor:
 
 class AssetsExtractor:
 
-    def __init__(self, task_path: str) -> None:
+    def __init__(self, task_path: str | Path, root_path: str | Path | None = None) -> None:
         """
         assets 提取某个任务文件夹下的所以的资源
         :param task_name: 任务名
         """
 
         self.task_path = Path(task_path)
+        self.root_path = Path(root_path).resolve() if root_path is not None else None
         self.task_name = self.task_path.name
         self.assets_file = self.task_path / ASSETS_FILE
 
@@ -308,12 +341,17 @@ class AssetsExtractor:
     @classmethod
     def is_click_file(cls, data: list) -> bool:
         """
-        判断是不是clickrule 文件, 我这样的判断是有点不合规的
+        按 Click 的必要字段判断，允许 description/profile 等扩展字段。
         :param data: 解析后的json数据，是list
         :return:
         """
         item = data[0]
-        return len(item) == 4
+        return (
+            all(key in item for key in ('itemName', 'roiFront', 'roiBack'))
+            and not any(key in item for key in (
+                'imageName', 'polygon', 'duration', 'mode', 'keyword',
+            ))
+        )
 
     @classmethod
     def is_long_click_file(cls, data: list) -> bool:
@@ -382,10 +420,15 @@ class AssetsExtractor:
                 continue
 
             if self.is_list_file(data):
-                result += ListExtractor(file, data).result
+                result += ListExtractor(file, data, root_path=self.root_path).result
                 continue
-            if self.is_image_file(data):
-                result += ImageExtractor(file, data).result
+            # 任务目录里还有卡牌库索引之类的元数据 json，只有规则数组才能交给规则提取器
+            if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+                continue
+            if 'roiBadge' in data[0] and 'roiRange' in data[0]:
+                result += FrameExtractor(file, data, root_path=self.root_path).result
+            elif self.is_image_file(data):
+                result += ImageExtractor(file, data, root_path=self.root_path).result
             elif self.is_click_file(data):
                 result += ClickExtractor(file, data).result
             elif self.is_long_click_file(data):
@@ -399,6 +442,11 @@ class AssetsExtractor:
             logger.error(f'There are no resource files under the {self.task_name} task')
             self._result += '\tpass'
         else:
+            # 只有含 Frame 规则的任务才导入 RuleFrame，其余任务的 assets.py 与改造前逐字一致
+            if 'RuleFrame(' in result:
+                self._result = self._result.replace(
+                    'from module.atom.image import RuleImage\n',
+                    'from module.atom.image import RuleImage\nfrom module.atom.frame import RuleFrame, Image, Ocr, Click\n', 1)
             self._result += result
         self._result += '\n\n'
         self.write_file()

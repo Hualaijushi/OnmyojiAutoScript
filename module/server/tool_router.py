@@ -88,6 +88,22 @@ class RuleTestBody(BaseModel):
     rule: dict[str, Any]
     list_meta: dict[str, Any] | None = None
 
+
+class ChessCandidateTestBody(BaseModel):
+    session_id: str
+    image_id: str
+    lineup_source: str | None = None
+    badge_threshold: float | None = None
+    portrait_threshold: float | None = None
+    deploy_threshold: float | None = None
+    runtime_snapshot: dict[str, Any] | None = None
+
+
+class ChessCandidateSaveBody(BaseModel):
+    badge_threshold: float
+    portrait_threshold: float
+    deploy_threshold: float
+
 def _raise_annotator_error(e: AnnotatorError) -> None:
     raise HTTPException(
         status_code=e.status_code,
@@ -362,6 +378,47 @@ async def annotator_crop_save(data: CropSaveBody):
             json_relpath=data.json_relpath,
             image_name=data.image_name,
             roi=data.roi,
+        )
+        return {"code": "ok", **result}
+    except AnnotatorError as e:
+        _raise_annotator_error(e)
+
+
+@tool_app.get('/annotator/api/chess/candidates/meta')
+async def annotator_chess_candidate_meta():
+    try:
+        meta = annotator_manager.get_chess_candidate_meta()
+        return {"code": "ok", **meta}
+    except AnnotatorError as e:
+        _raise_annotator_error(e)
+
+
+@tool_app.post('/annotator/api/chess/candidates/test')
+async def annotator_chess_candidate_test(data: ChessCandidateTestBody):
+    try:
+        result = annotator_manager.test_chess_candidate_cards(
+            session_id=data.session_id,
+            image_id=data.image_id,
+            lineup_source=data.lineup_source,
+            badge_threshold=data.badge_threshold,
+            portrait_threshold=data.portrait_threshold,
+            deploy_threshold=data.deploy_threshold,
+            runtime_snapshot=data.runtime_snapshot,
+        )
+        return {"code": "ok", "result": result}
+    except AnnotatorError as e:
+        _raise_annotator_error(e)
+
+
+@tool_app.post('/annotator/api/chess/candidates/save-thresholds')
+async def annotator_chess_candidate_save_thresholds(data: ChessCandidateSaveBody):
+    try:
+        # 阈值写盘与资产提取均属同步 IO，移出事件循环线程执行并保留 AnnotatorError 映射。
+        result = await asyncio.to_thread(
+            annotator_manager.save_chess_candidate_thresholds,
+            badge_threshold=data.badge_threshold,
+            portrait_threshold=data.portrait_threshold,
+            deploy_threshold=data.deploy_threshold,
         )
         return {"code": "ok", **result}
     except AnnotatorError as e:

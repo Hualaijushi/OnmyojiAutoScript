@@ -38,6 +38,9 @@ ExitMatcher = Union[Matcher | RecognizerLike | Page]
 BattleInspectionAction = Callable[["BattleContext"], None]
 PREPARE_CLICK_DELAY = 3.0
 QUICK_EXIT_WAIT_TIMEOUT = 5.0
+# 奖励页布局证据：命中奖励宝袋标志 / 未命中。只是 page_reward 内部的布局分类，不是页面识别。
+REWARD_LAYOUT_BAG = "reward_bag"
+REWARD_LAYOUT_OTHER = "other"
 
 # --- 通用结算推进（GENERALBATTLE SETTLEMENT CONTRACT V3，2026-09-03）---
 # 三个大安全点击区（assets，均为 Large Safe Region，不是 Point Target）：
@@ -187,6 +190,11 @@ class BattleContext:
     settlement_stage_name: str | None = None
     # 本 session 内已发生的「主动换点」次数；上限 1 次，安全 fallback 强制换点不计入。
     settlement_anchor_switches: int = 0
+    # 当前 anchor 所依据的奖励布局证据（见 `_read_reward_layout`）；非奖励阶段为 None。
+    settlement_layout: str | None = None
+    # 与已确认布局不一致、尚待连续帧确认的候选布局及其连续出现帧数。
+    settlement_layout_pending: str | None = None
+    settlement_layout_pending_frames: int = 0
 
 
 class BattleBehaviorScope(str, Enum):
@@ -234,6 +242,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
     # Settlement lifecycle 的固定故障安全帽。9 与 Device.click_record 对同一 target 第 10 次
     # 调用前抛错的现有有效上限对齐，让本层先停止续段；不是正常节奏目标，PROVISIONAL，Level C 待验。
     SETTLEMENT_MAX_TOTAL_CLICKS: int = 9
+    # page_reward 内部奖励布局变化需要连续多少帧观察一致才算确认（含点击后的 fresh 观察帧）。
+    # 用来吸收单帧标志漏识别 / 奖励动画过渡；确认前不在旧落点继续点击。PROVISIONAL，Level C 待标定。
+    SETTLEMENT_LAYOUT_CONFIRM_FRAMES: int = 2
 
     def __init__(self, config, device) -> None:
         """初始化通用战斗运行时缓存。
@@ -758,6 +769,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.settlement_region_name = None
         context.settlement_stage_name = None
         context.settlement_anchor_switches = 0
+        context.settlement_layout = None
+        context.settlement_layout_pending = None
+        context.settlement_layout_pending_frames = 0
 
     def _start_settlement_segment(self, context: BattleContext, stage_name: str, *, renewed: bool) -> None:
         """为已确认的 settlement semantic state 建立一个新的 2~4 点击节奏 segment。"""
@@ -809,6 +823,79 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.settlement_stage_name = stage_name
         logger.info(f'Settlement state advanced: {previous_stage} -> {stage_name}, anchor=resample')
 
+    def _commit_settlement_layout(self, context: BattleContext,
+                                  layout_probe: Callable[[], str] | None) -> None:
+        """把当前帧的布局证据记为 anchor 所依据的已确认布局，并清掉待确认候选。"""
+        context.settlement_layout = layout_probe() if layout_probe is not None else None
+        context.settlement_layout_pending = None
+        context.settlement_layout_pending_frames = 0
+
+    def _note_settlement_layout(self, context: BattleContext, observed: str) -> bool:
+        """记录一帧布局观察；返回该帧是否与已确认布局一致。
+
+        不一致时只累计候选的连续帧数（候选换了就从 1 重数），不改 anchor；是否已达到确认帧数由
+        调用方看 ``settlement_layout_pending_frames``。一致的帧会清掉候选，所以单帧标志漏识别
+        之后布局恢复，不会留下半截状态。
+        """
+        committed = context.settlement_layout
+        if committed is None:
+            context.settlement_layout = observed
+            return True
+        if observed == committed:
+            context.settlement_layout_pending = None
+            context.settlement_layout_pending_frames = 0
+            return True
+        if context.settlement_layout_pending == observed:
+            context.settlement_layout_pending_frames += 1
+        else:
+            context.settlement_layout_pending = observed
+            context.settlement_layout_pending_frames = 1
+        return False
+
+    def _rehome_settlement_anchor(self, context: BattleContext, region: RuleClick,
+                                  stage_name: str, layout: str) -> None:
+        """奖励布局变化已确认：旧 anchor 是按旧布局选的，只在新区域就是同一个区域且 anchor 仍在内时保留。
+
+        任务覆盖了 ``_select_reward_region``（如秘闻固定底部区）时新旧区域同名，anchor 照旧；通用逻辑下
+        布局一变区域就变，必须重采。强制重采不计入「主动换点」次数，也不动累计点击数 / segment。
+        """
+        old_anchor = context.settlement_anchor
+        previous = context.settlement_layout
+        keep = (old_anchor is not None and region.name == context.settlement_region_name
+                and self._point_in_roi(old_anchor, region.roi_front))
+        if not keep:
+            context.settlement_anchor = self._sample_settlement_point(region)
+        context.settlement_region_name = region.name
+        context.settlement_stage_name = stage_name
+        context.settlement_layout = layout
+        context.settlement_layout_pending = None
+        context.settlement_layout_pending_frames = 0
+        logger.info(
+            f'Settlement layout changed: {previous} -> {layout}, region={region.name}, '
+            f'anchor={"keep" if keep else "resample"}'
+        )
+
+    def _reconcile_settlement_layout(self, context: BattleContext, stage_name: str,
+                                     region_provider: Callable[[], RuleClick],
+                                     layout_probe: Callable[[], str]) -> bool:
+        """同一结算页内核对奖励布局；返回本帧是否允许继续点击。
+
+        布局与已确认布局一致 → 放行。不一致但连续帧数不足 → 本帧不点（旧落点可能已失效，又无法
+        确认新布局），最多只会等到再观察一帧；候选消失则自动恢复。连续帧数达到确认值 → 重新选区、
+        重采 anchor 后放行。
+        """
+        observed = layout_probe()
+        if self._note_settlement_layout(context, observed):
+            return True
+        if context.settlement_layout_pending_frames < self.SETTLEMENT_LAYOUT_CONFIRM_FRAMES:
+            logger.info(
+                f'Settlement layout unconfirmed: {context.settlement_layout} -> {observed}, '
+                f'frames={context.settlement_layout_pending_frames}/{self.SETTLEMENT_LAYOUT_CONFIRM_FRAMES}, click=held'
+            )
+            return False
+        self._rehome_settlement_anchor(context, region_provider(), stage_name, observed)
+        return True
+
     def _classify_general_battle_page(self) -> Page | None:
         """在结算相关的 4 个已知战斗页面范围内做一次识别，供 Micro-Burst 的「点击后先
         观察再决定」步骤复用——与 ``run_general_battle()`` 主循环用的是**同一个**
@@ -818,7 +905,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         return GameUi.detect_page_in(self, page_battle_prepare, page_battle, page_battle_result,
                                      page_reward, include_global=False)
 
-    def _fire_settlement_burst(self, context: BattleContext, current_page: Page) -> None:
+    def _fire_settlement_burst(self, context: BattleContext, current_page: Page,
+                               layout_probe: Callable[[], str] | None = None) -> None:
         """Observed Micro-Burst v1.2：点击 → 短间隔 → fresh 语义观察 → 决定是否补第二下。
 
         第一次点击**一定执行**（调用方已确认 segment 与总安全帽都至少剩 1）。是否补第二下必须由
@@ -826,6 +914,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         点第二下」：
 
         - 观察后仍是同一个 ``current_page`` → 允许用同一个 anchor 补第二下。
+        - 观察仍是同一页但奖励布局与已确认布局不一致（``layout_probe`` 给出）→ 旧 anchor 可能已失效，
+          取消第二下；这一帧计入布局确认帧数，由下一帧 ``_settlement_burst_step`` 决定是否换点。
         - 观察到已经推进到另一个结算页（result↔reward）→ 当前 burst 立即结束，不在旧
           state 上补点；新 state 由下一次 ``_settlement_burst_step`` 调用重新决定 anchor。
         - 观察到已经明确离开 settlement（prepare/battle 等 Challenge/FIRE 相关页面）→
@@ -863,7 +953,10 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             time.sleep(self._sample_interval(self.SETTLEMENT_BURST_CLICK_INTERVAL_RANGE))
             self.screenshot()
             observed_page = self._classify_general_battle_page()
-            if observed_page == current_page:
+            if (observed_page == current_page and layout_probe is not None
+                    and not self._note_settlement_layout(context, layout_probe())):
+                logger.info(f'Settlement observe: {stage_name} -> layout changed, second_click=cancelled')
+            elif observed_page == current_page:
                 self._click_settlement_point(anchor, control_name)
                 context.settlement_clicks_used += 1
                 context.settlement_total_clicks += 1
@@ -893,7 +986,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             )
 
     def _settlement_burst_step(self, context: BattleContext, *, current_page: Page,
-                               stage_name: str, region_provider: Callable[[], RuleClick]) -> None:
+                               stage_name: str, region_provider: Callable[[], RuleClick],
+                               layout_probe: Callable[[], str] | None = None) -> None:
         """结算 Micro-Burst Session 单步推进——由 ``_handle_result`` / ``_handle_reward`` 每帧调用。
 
         ``region_provider`` 惰性获取「本帧适用的安全区域」，只在 session 初始化或页面刚从
@@ -905,9 +999,13 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             current_page: 本次调用对应的结算页（``page_battle_result`` / ``page_reward``）。
             stage_name: 当前阶段的可读标识，仅用于日志。
             region_provider: 惰性返回当前帧适用安全区域的可调用对象。
+            layout_probe: 可选；只读取当前帧的页内布局证据，不选区、不随机。给出时，同一结算页内
+                布局证据与已确认布局连续多帧不一致才重新调用 ``region_provider`` 并重采 anchor，
+                未确认期间不点击；布局不变时 anchor 复用、不调 ``region_provider``。
         """
         if not context.settlement_session_active:
             self._start_settlement_session(context, region_provider(), stage_name)
+            self._commit_settlement_layout(context, layout_probe)
         elif context.last_page != current_page:
             if context.settlement_total_clicks >= self.SETTLEMENT_MAX_TOTAL_CLICKS:
                 context.settlement_stage_name = stage_name
@@ -915,6 +1013,10 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             self._advance_settlement_anchor(context, region_provider(), stage_name)
             # 方案 B：semantic state advance 结束旧 segment；新 state 获得独立 2~4 预算。
             self._start_settlement_segment(context, stage_name, renewed=False)
+            self._commit_settlement_layout(context, layout_probe)
+        elif layout_probe is not None and context.settlement_total_clicks < self.SETTLEMENT_MAX_TOTAL_CLICKS:
+            if not self._reconcile_settlement_layout(context, stage_name, region_provider, layout_probe):
+                return
 
         if context.settlement_total_clicks >= self.SETTLEMENT_MAX_TOTAL_CLICKS:
             return
@@ -924,18 +1026,30 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 f'used={context.settlement_clicks_used}/{context.settlement_click_budget}, renew=true'
             )
             self._start_settlement_segment(context, stage_name, renewed=True)
-        self._fire_settlement_burst(context, current_page)
+        self._fire_settlement_burst(context, current_page, layout_probe)
 
-    def _select_reward_region(self) -> RuleClick:
-        """普通奖励页按「奖励宝袋」布局判别标志选结算推进安全区域。
+    def _read_reward_layout(self) -> str:
+        """读取当前帧的奖励布局证据：命中「奖励宝袋」标志 → ``REWARD_LAYOUT_BAG``，否则 ``REWARD_LAYOUT_OTHER``。
 
-        ``I_GET_BATTLE_REWARD`` / ``I_GET_BATTLE_REWARD_2`` 只用于「已确认 page_reward 之后
-        判断当前奖励布局应点哪个安全区」——不是 page recognizer、不是点击目标。命中任一 →
-        默认区 ``C_RANDOM_DEFAULT``；都没命中说明是别的布局 → 80% 右侧安全区、20% 底部安全区。
+        ``I_GET_BATTLE_REWARD`` / ``I_GET_BATTLE_REWARD_2`` 只用于「已确认 page_reward 之后判断当前奖励布局」
+        ——不是 page recognizer、不是点击目标。本方法只读证据，不选区、不掷随机。
         """
         if self.appear(self.I_GET_BATTLE_REWARD) or self.appear(self.I_GET_BATTLE_REWARD_2):
+            return REWARD_LAYOUT_BAG
+        return REWARD_LAYOUT_OTHER
+
+    def _reward_region_for_layout(self, layout: str) -> RuleClick:
+        """按奖励布局选结算推进安全区：宝袋布局 → 默认区；其余布局 → 80% 右侧、20% 底部（会掷随机）。"""
+        if layout == REWARD_LAYOUT_BAG:
             return self.C_RANDOM_DEFAULT
         return self._pick_save_region()
+
+    def _select_reward_region(self) -> RuleClick:
+        """普通奖励页按当前帧的奖励布局证据选结算推进安全区域（读证据与选区见上面两个方法）。
+
+        任务可整体覆盖本方法（如秘闻固定底部区）；覆盖后不受布局证据影响，布局变化时区域不变。
+        """
+        return self._reward_region_for_layout(self._read_reward_layout())
 
     def _select_result_region(self) -> RuleClick:
         """通用胜利结果页的结算推进区域，默认 ``C_RANDOM_DEFAULT``。
@@ -1145,12 +1259,13 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             return BattleAction.CONTINUE
         if self.appear_then_click(self.I_GB_SKIN_CONFIRM, interval=0.8):
             return BattleAction.CONTINUE
-        # 普通奖励布局：纳入同一个 Settlement Micro-Burst Session；region_provider
-        # 只在 session 初始化 / 刚从结果页切过来时才调用一次 `_select_reward_region`
-        # （见 `_settlement_burst_step` 说明，避免 80/20 随机分支被每帧重新掷骰子）。
+        # 普通奖励布局：纳入同一个 Settlement Micro-Burst Session；region_provider 只在
+        # session 初始化 / 刚从结果页切过来 / 同页内奖励布局变化被连续帧确认时才调用
+        # `_select_reward_region`；layout_probe 每帧只读证据（见 `_settlement_burst_step`）。
         self._settlement_burst_step(
             context, current_page=page_reward, stage_name='reward',
             region_provider=self._select_reward_region,
+            layout_probe=self._read_reward_layout,
         )
         return BattleAction.CONTINUE
 

@@ -29,6 +29,9 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
     LAYER_CARD_HEIGHT = 121
     LAYER_TITLE_TOP_OFFSET = 10
     LAYER_STATUS_OFFSET = (240, 40, 100, 50)
+    LAYER_UNPASSED_TEXT = ('未通关', '未通过')
+    LAYER_STATUS_TOP_OFFSET = 45
+    LAYER_JADE_ROI_OFFSET = (130, 30, 32, 38)
 
     def _exit_matcher(self) -> ExitMatcher:
         return self.I_SE_FIRE
@@ -63,7 +66,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
 
     @cached_property
     def layer_title_ocr(self) -> RuleOcr:
-        """识别列表内“壹·标题”至“拾·标题”的完整关卡名。"""
+        """识别左侧列表中的关卡标题和状态。"""
         return RuleOcr(
             roi=self.LAYER_TITLE_AREA,
             area=self.LAYER_TITLE_AREA,
@@ -181,98 +184,76 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
         raise TaskEnd('Secret')
 
     def find_battle(self, screenshot: bool = False) -> int or None:
-        """按关卡标题定位卡片，只选择状态为“未通关”的关卡。"""
+        """只选择未通关的卡片，优先用标题判层，再按同一行的勾玉补判。"""
         if screenshot:
             self.screenshot()
         if self.appear(self.I_CHAT_CLOSE_BUTTON):
             self.ui_click_until_disappear(self.I_CHAT_CLOSE_BUTTON, interval=2)
 
-        roi_x, roi_y, _, _ = self.LAYER_TITLE_AREA
+        roi_x, roi_y, _, roi_height = self.LAYER_TITLE_AREA
+        card_x = self.LAYER_CARD_LEFT
+        status_x, status_y, status_width, status_height = self.LAYER_STATUS_OFFSET
         candidates = []
-        for result in self.layer_title_ocr.detect_and_ocr(
-            self.device.image
-        ):
+        unpassed_rows = []
+        for result in self.layer_title_ocr.detect_and_ocr(self.device.image):
             text = ''.join(str(result.ocr_text or '').split())
-            if not text:
+            if text in self.LAYER_UNPASSED_TEXT:
+                left = roi_x + min(int(point[0]) for point in result.box)
+                if card_x + status_x <= left < card_x + status_x + status_width:
+                    top = roi_y + min(int(point[1]) for point in result.box)
+                    unpassed_rows.append((top, text))
+            if not any(char in self.match_layer for char in text):
                 continue
-            layer_text = next(
-                (char for char in text if char in self.match_layer),
-                None,
-            )
-            if layer_text is None:
-                continue
-            layer = self.match_layer[layer_text]
 
-            points = result.box
-            title_left = roi_x + min(int(point[0]) for point in points)
-            title_top = roi_y + min(int(point[1]) for point in points)
+            title_top = roi_y + min(int(point[1]) for point in result.box)
             card_top = max(0, title_top - self.LAYER_TITLE_TOP_OFFSET)
-            card_top = min(
-                self.device.image.shape[0] - self.LAYER_CARD_HEIGHT,
-                card_top,
-            )
             candidates.append({
-                'layer': layer,
                 'title': text,
-                'title_position': (title_left, title_top),
-                'card_roi': (
-                    self.LAYER_CARD_LEFT,
-                    card_top,
-                    self.LAYER_CARD_WIDTH,
-                    self.LAYER_CARD_HEIGHT,
-                ),
+                'top': min(self.device.image.shape[0] - self.LAYER_CARD_HEIGHT, card_top),
+                'status': '',
+                'status_top': None,
             })
 
-        # OCR 偶尔会为同一标题返回重叠文本，只保留每个卡片位置的
-        # 第一条结果，并按照画面从上到下检查。
+        # OCR 有时会为同一标题返回重叠文本，只保留每张卡片的一条标题。
         distinct = []
-        for candidate in sorted(
-            candidates,
-            key=lambda item: item['card_roi'][1],
-        ):
-            if any(
-                abs(
-                    candidate['card_roi'][1]
-                    - kept['card_roi'][1]
-                ) <= 12
-                for kept in distinct
-            ):
-                continue
-            distinct.append(candidate)
+        for candidate in sorted(candidates, key=lambda item: item['top']):
+            if not distinct or candidate['top'] - distinct[-1]['top'] > 12:
+                distinct.append(candidate)
 
-        for candidate in distinct:
-            card_x, card_y, _, _ = candidate['card_roi']
-            offset_x, offset_y, status_width, status_height = (
-                self.LAYER_STATUS_OFFSET
-            )
-            status_roi = (
-                card_x + offset_x,
-                card_y + offset_y,
-                status_width,
-                status_height,
-            )
-            status_rule = RuleOcr(
-                roi=status_roi,
-                area=status_roi,
-                mode='Single',
-                method='Default',
-                keyword='',
-                name=f'secret_layer_{candidate["layer"]}_status',
-            )
-            status = ''.join(
-                str(status_rule.ocr(self.device.image) or '').split()
-            )
+        for top, status in unpassed_rows:
+            # 状态的纵坐标只和同一卡片的标题配对。无编号卡片通过状态定位。
+            candidate = next((card for card in distinct if (
+                card['top'] + status_y <= top < card['top'] + status_y + status_height
+            )), None)
+            if candidate is None:
+                candidate = {'title': '', 'top': top - self.LAYER_STATUS_TOP_OFFSET}
+                distinct.append(candidate)
+            candidate['status'] = status
+            candidate['status_top'] = top
+
+        for candidate in sorted(distinct, key=lambda item: item['top']):
+            card_y = candidate['top']
+            status = candidate['status']
+            if not status:
+                status_roi = (card_x + status_x, card_y + status_y, status_width, status_height)
+                status_rule = RuleOcr(
+                    roi=status_roi, area=status_roi, mode='Single', method='Default',
+                    keyword='', name='secret_layer_status',
+                )
+                status = ''.join(str(status_rule.ocr(self.device.image) or '').split())
+            if '未解锁' in status or not any(label in status for label in self.LAYER_UNPASSED_TEXT):
+                continue
+
+            title = candidate['title']
+            layer = next((self.match_layer[char] for char in title if char in self.match_layer), None)
+            if layer is None:
+                layer = self._layer_from_jade(card_x, candidate['status_top'])
+                if layer is None:
+                    continue
             logger.info(
-                f'Secret layer candidate: '
-                f'layer={candidate["layer"]}, '
-                f'title=[{candidate["title"]}], '
-                f'status=[{status}], card={candidate["card_roi"]}'
+                f'Secret layer candidate: layer={layer}, title=[{title}], status=[{status}], '
+                f'card={(card_x, card_y, self.LAYER_CARD_WIDTH, self.LAYER_CARD_HEIGHT)}'
             )
-            if '未解锁' in status:
-                continue
-            if '未通关' not in status:
-                # 时间或其他完成信息都表示该层已经挑战过。
-                continue
 
             # 点击卡片左侧内容区，避开右侧状态文字；按需求连续点击两次。
             # click_roi 是已避让右侧状态文字的安全点击区；T7-5 Stage 2：不再固定点几何中心，
@@ -284,10 +265,18 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
                 216,
                 self.LAYER_CARD_HEIGHT - 16,
             )
+            if not title:
+                # 无编号卡片滚动后可能只露出一部分，点击区限制在列表内。
+                click_x, click_y, width, height = click_roi
+                top = max(roi_y, click_y)
+                bottom = min(roi_y + roi_height, click_y + height)
+                if bottom <= top:
+                    continue
+                click_roi = (click_x, top, width, bottom - top)
             click_rule = RuleClick(
                 roi_front=click_roi,
                 roi_back=click_roi,
-                name=f'secret_layer_{candidate["layer"]}_card',
+                name=f'secret_layer_{layer}_card',
             )
             for click_index in range(1, 3):
                 click_x, click_y = click_rule.coord()
@@ -295,16 +284,29 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
                     self.device,
                     FinalPoint(click_x, click_y),
                     control_name=(
-                        f'SECRET_LAYER_{candidate["layer"]}'
+                        f'SECRET_LAYER_{layer}'
                         f'_SELECT_{click_index}'
                     ),
                 )
                 time.sleep(0.4)
-            return candidate['layer']
+            return layer
 
         # 当前画面没有可挑战关卡时继续向下滚动，外层循环会重新 OCR。
         self.swipe(self.S_SE_DOWN_SEIPE, interval=3)
         time.sleep(2)
+        return None
+
+    def _layer_from_jade(self, card_x: int, status_top: int) -> int | None:
+        offset_x, offset_y, width, height = self.LAYER_JADE_ROI_OFFSET
+        roi = (card_x + offset_x, status_top + offset_y, width, height)
+        jade_rule = RuleOcr(
+            roi=roi, area=roi, mode='Digit', method='Default', keyword='', name='secret_layer_jade',
+        )
+        jade = jade_rule.ocr(self.device.image)
+        if isinstance(jade, int) and 7 <= jade <= 70 and jade % 7 == 0:
+            logger.info(f'秘闻勾玉补判层数：勾玉={jade}，层数={jade // 7}')
+            return jade // 7
+        logger.warning(f'秘闻未通关卡片的勾玉数量无法判层：{jade}')
         return None
 
     def click_battle(self):

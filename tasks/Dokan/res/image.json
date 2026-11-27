@@ -542,11 +542,11 @@
   {
     "itemName": "ryou_dokan_have_dokan",
     "imageName": "res_ryou_dokan_have_dokan.png",
-    "roiFront": "240,600,94,90",
+    "roiFront": "252,601,72,66",
     "roiBack": "240,600,94,90",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": ""
+    "description": "道馆已经建立"
   },
   {
     "itemName": "find_xin",

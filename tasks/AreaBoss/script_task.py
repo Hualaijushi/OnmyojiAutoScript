@@ -14,6 +14,7 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_area_boss, page_shikigami_records, page_main
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.AreaBoss.assets import AreaBossAssets
+from tasks.AreaBoss.boss_result import BossResult, BossRunRecord
 from tasks.AreaBoss.config_boss import AreaBossFloor
 from module.logger import logger
 from module.exception import TaskEnd
@@ -30,6 +31,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
     RETRY_DETAIL_TIMEOUT = 5
     # 本场战斗里是否明确识别到失败横幅（`I_FALSE`）；用它区分「明确战败」和「结果不明」
     _loss_seen = False
+    # 本次运行的不同鬼王完成记录；每个任务对象、每次 `run()` 各自新建，不放类级可变容器
+    _run_record = None
 
     def _exit_matcher(self) -> ExitMatcher:
         return self.I_AB_CLOSE_RED
@@ -61,30 +64,38 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
 
         self.goto_page(page_area_boss)
 
-        # 已挑战鬼王数量
-        boss_fought = 0
+        # 名字明确时按不同鬼王计数；名字未知仍挑战，实际胜利按匿名次数计入，优先避免因 OCR 漏打。
+        record = self._run_record = BossRunRecord(con.boss_number)
         if con.boss_reward:
-            if self.fight_reward_boss():  # 挑战成功则加一
-                boss_fought += 1
+            self.fight_reward_boss()
 
-        self.open_filter()
-        # 切换到对应集合(热门/收藏)
-        if con.use_collect:
-            self.switch_to_collect()
+        if not record.reached:
+            self.open_filter()
+            # 切换到对应集合(热门/收藏)
+            if con.use_collect:
+                self.switch_to_collect()
+            else:
+                self.switch_to_famous()
+            source = '收藏' if con.use_collect else '热门'
+            # 候选只有列表前三个位置，每个位置最多打开一次
+            for index, battle in enumerate((self.I_BATTLE_1, self.I_BATTLE_2, self.I_BATTLE_3), start=1):
+                if record.reached:
+                    break
+                self.boss_fight(battle, source=source, position=f'第{index}只')
+
+        logger.info(f'Area boss summary: {record.summary()}')
+        if record.reached:
+            if record.anonymous_wins:
+                logger.warning('Area boss completion count reached with unnamed wins; distinct identities unconfirmed')
+            else:
+                logger.info('Area boss target reached')
         else:
-            self.switch_to_famous()
-
-        if con.boss_number - boss_fought == 3:
-            self.boss_fight(self.I_BATTLE_1)
-            self.boss_fight(self.I_BATTLE_2)
-            self.boss_fight(self.I_BATTLE_3)
-        elif con.boss_number - boss_fought == 2:
-            self.boss_fight(self.I_BATTLE_1)
-            self.boss_fight(self.I_BATTLE_2)
-        elif con.boss_number - boss_fought == 1:
-            self.boss_fight(self.I_BATTLE_1)
+            logger.warning(f'Area boss target NOT reached, candidates exhausted: {record.summary()}；'
+                           f'未计入原因：{record.skipped_reasons()}')
         # 退出
         self.goto_page(page_main)
+        # 不足时仍按 success=True 排期：success=False 会被循环控制器记成「未恢复」并阻塞循环，
+        # 而且候选已耗尽，缩短间隔重跑也补不了；不足的事实由上面的警告日志如实报告
         self.set_next_run(task='AreaBoss', success=True, finish=False)
 
         # 以抛出异常的形式结束
@@ -137,7 +148,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         self.wait_until_appear(self.I_AB_CLOSE_RED)
         self.ui_click(self.I_AB_CLOSE_RED, self.I_FILTER)
 
-    def boss_fight(self, battle: RuleImage, ultra: bool = False, fileter_open: bool = True) -> bool:
+    def boss_fight(self, battle: RuleImage, ultra: bool = False, fileter_open: bool = True,
+                   source: str = '热门', position: str = '') -> BossResult:
         """
             完成挑战一个鬼王的全流程
             从打开筛选界面开始 到关闭鬼王详情界面结束
@@ -145,21 +157,53 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         @type battle:
         @param ultra: 是否需要切换到极地鬼
         @type ultra:
-        @return:    True        挑战成功
-                    False       挑战失败
+        @param source: 目标来源（悬赏 / 热门 / 收藏），只用于日志和完成记录
+        @param position: 候选位置，只用于日志
+        @return:    `BossResult`；真值只在「本次挑战成功 / 此前已上榜」时为真，计数以本轮完成记录为准
         @rtype:
         """
+        where = f'{source}{position}'
+        name, result = self._boss_fight(battle, ultra, fileter_open, where)
+        record = self._boss_record()
+        if result is BossResult.WON:
+            record.mark(name, f'{where}·挑战成功')
+        elif result is BossResult.ALREADY_RANKED and name is not None:
+            record.mark(name, f'{where}·此前已上榜')
+        record.note(where, name, result)
+        logger.info(f'Area boss result: {where} {name or "名字未知"} -> {result.value}'
+                    f'（完成 {record.count} / 目标 {record.target}）')
+        return result
+
+    def _boss_fight(self, battle: RuleImage, ultra: bool, fileter_open: bool, where: str):
+        """返回 (规范化名字或 None, BossResult)。详情页打开后只读一次名字，之后的判断和重试都复用它。"""
         reward_floor = self.config.area_boss.boss.reward_floor
+        record = self._boss_record()
         if fileter_open and not self.appear(self.I_AB_FILTER_OPENED):
             self.open_filter()
         # 如果打不开鬼王详情界面,直接退出
         if not self.open_boss_detail(battle, 3):
-            return False
+            logger.warning(f'Area boss open failed: {where}, detail page cannot be opened')
+            return None, BossResult.DETAIL_FAILED
+
+        name = self._read_detail_name()
+        logger.info(f'Area boss open: {where} name={name or "名字未知"}')
+        if name is None:
+            # 用户优先避免漏打：不凭空补名字，也不因单次 OCR 为空跳过，继续既有挑战流程。
+            logger.warning(f'Area boss identity unknown: {where}, continue without name deduplication; '
+                           'a win will count anonymously and may repeat another boss')
+
+        if name in record.done:
+            logger.info(f'Area boss duplicate skipped: {where} name={name}, '
+                        f'done earlier in this run: {record.done[name]}')
+            self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=3)
+            return name, BossResult.DUPLICATE
 
         # 如果已经打过该BOSS,直接跳过不打了
         if self.is_group_ranked():
+            logger.info(f'Area boss already ranked, skipped: {where} name={name}, '
+                        f'evidence: I_AB_GROUP_RANK_NONE not matched (inverse check)')
             self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=3)
-            return True
+            return name, BossResult.ALREADY_RANKED
 
         if ultra:
             if not self.get_difficulty():  # 在普界面
@@ -168,41 +212,49 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
                     self.switch_difficulty(True)
                 elif self.config.area_boss.boss.Attack_60:  # 没有出现极则一次没打过, 拉到60级再打
                     self.switch_to_level_60()
-                    if not self.start_fight():  # 60级没打过退出吧
+                    self._log_prepare(where, name, level='60', floor='未知')
+                    pre = self.start_fight(name)
+                    if not pre:  # 60级没打过退出吧
                         logger.warning("you are so weakness!")
                         self.wait_until_appear(self.I_AB_CLOSE_RED)
                         self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=3)
-                        return False
+                        return name, pre
                     self.switch_difficulty(True)  # 打过了切换到极
                 else:  # 普通地鬼且没有开启打60级
                     self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=3)
-                    return False
+                    return name, BossResult.NOT_ELIGIBLE
 
             # 调整悬赏层数
             match reward_floor:
                 case AreaBossFloor.ONE: self.switch_to_floor_1()
                 case AreaBossFloor.TEN: self.switch_to_floor_10()
                 case AreaBossFloor.DEFAULT: logger.info("Not change floor")
-        result = True
-        if not self.start_fight():
-            result = False
+        floor = (reward_floor.value if reward_floor != AreaBossFloor.DEFAULT else '未知(不更改)') if ultra else '未知'
+        self._log_prepare(where, name, level='未知', floor=floor)
+        result = self.start_fight(name)
+        if not result:
             logger.warning("Area Boss Fight Failed ")
         self.wait_until_appear(self.I_AB_CLOSE_RED)
         self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=1)
-        return result
+        return name, result
 
-    def start_fight(self) -> bool:
+    def _log_prepare(self, where: str, name: str | None, level: str, floor: str):
+        """挑战前一行：能确认的写确认值，读不到的写未知，不猜。"""
+        mode = '极' if self.appear(self.I_AB_DIFFICULTY_JI) else '非极(普通或未识别)'
+        logger.info(f'Area boss prepare fight: {where} name={name or "名字未知"}, difficulty={mode}, level={level}, floor={floor}')
+
+    def start_fight(self, name: str | None = '') -> BossResult:
         """打当前详情页里的鬼王；明确战败最多打 `BATTLE_MAX_ATTEMPTS` 场（含首次）。
 
-        True = 明确胜利；False = 三败 / 结果不明 / 重试时详情页没准备好。只有「明确战败」才打下一场：
+        WON = 明确胜利；LOST = 三败 / 重试时详情页没准备好；UNKNOWN = 结果不明。只有「明确战败」才打下一场：
         每次重试前先用新截图确认仍在详情页且挑战按钮可点，再走同一个挑战入口 `I_FIRE`，不点失败页的「再次挑战」。
         异常（卡死、页面未知、设备异常、任务停止）不在这里捕获，照旧向上抛。
         """
         for attempt in range(1, self.BATTLE_MAX_ATTEMPTS + 1):
             self.check_can_run()
             if attempt > 1 and not self._detail_ready_for_retry():
-                logger.warning('Area boss detail page is not ready for a retry, give up this boss')
-                return False
+                logger.warning(f'Area boss detail page is not ready for a retry, give up this boss [{name}]')
+                return BossResult.LOST
             while 1:
                 self.screenshot()
                 if self.appear_then_click(self.I_FIRE, interval=1):
@@ -211,13 +263,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
                     break
             outcome = self._fight_once()
             if outcome == WIN:
-                return True
+                return BossResult.WON
             if outcome == UNKNOWN:
-                logger.warning('Area boss battle result is not confirmed, do not retry')
-                return False
-            logger.warning(f'Area boss battle lost ({attempt}/{self.BATTLE_MAX_ATTEMPTS})')
-        logger.warning(f'Area boss battle lost {self.BATTLE_MAX_ATTEMPTS} times, skip this boss')
-        return False
+                logger.warning(f'Area boss battle result is not confirmed, do not retry [{name}]')
+                return BossResult.UNKNOWN
+            logger.warning(f'Area boss battle lost ({attempt}/{self.BATTLE_MAX_ATTEMPTS}) [{name}]')
+        logger.warning(f'Area boss battle lost {self.BATTLE_MAX_ATTEMPTS} times, skip this boss [{name}]')
+        return BossResult.LOST
 
     def _fight_once(self) -> str:
         """打一场并分类结果：胜利 / 明确战败（识别到失败横幅）/ 结果不明。
@@ -312,15 +364,16 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
                 break
             self.wait_until_appear(self.I_AB_JI_FLOOR_TEN, False, 1)
 
-    def fight_reward_boss(self):
+    def fight_reward_boss(self) -> BossResult:
         BOSS_REWARD_PHOTO1 = [self.C_AB_BOSS_REWARD_PHOTO_1, self.C_AB_BOSS_REWARD_PHOTO_2, self.C_AB_BOSS_REWARD_PHOTO_3]
         BOSS_REWARD_PHOTO2 = [self.C_AB_BOSS_REWARD_PHOTO_MINUS_2, self.C_AB_BOSS_REWARD_PHOTO_MINUS_1]
         need_open_filter, boss_name, photo = self.get_hot_in_reward()  # 获取挑战人数最多的Boss的名字
         if photo is None or boss_name == '声望不够':
-            return False
+            logger.warning('Area boss reward: no reward target can be challenged')
+            return BossResult.NO_TARGET
         # 不需要打开筛选界面说明直接找到了目标boss, 直接挑战
         if not need_open_filter:
-            return self.boss_fight(photo, True, fileter_open=False)
+            return self.boss_fight(photo, True, fileter_open=False, source='悬赏', position=f'({photo.name})')
         # 滑动到最顶层
         logger.info("Swipe to top")
         for i in range(random.randint(1, 3)):
@@ -330,7 +383,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
             self.open_filter()
             name = self.get_bossName(PHOTO)
             if self.check_common_chars(str(name), boss_name):
-                return self.boss_fight(PHOTO, True, fileter_open=False)
+                return self.boss_fight(PHOTO, True, fileter_open=False, source='悬赏', position=f'({PHOTO.name})')
             self.ui_click_until_disappear(self.I_AB_CLOSE_RED)
         # 倒数一和二
         for PHOTO in BOSS_REWARD_PHOTO2:
@@ -338,9 +391,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
             self.swipe(self.S_AB_FILTER_UP)
             name = self.get_bossName(PHOTO)
             if self.check_common_chars(str(name), boss_name):
-                return self.boss_fight(PHOTO, True, fileter_open=False)
+                return self.boss_fight(PHOTO, True, fileter_open=False, source='悬赏', position=f'({PHOTO.name})')
             self.ui_click_until_disappear(self.I_AB_CLOSE_RED)
         self.ui_click_until_disappear(self.I_AB_CLOSE_RED)
+        logger.warning(f'Area boss reward: target {boss_name} not found in the list')
+        return BossResult.NO_TARGET
 
     def get_hot_in_reward(self):
         """
@@ -422,9 +477,23 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         if not self.open_boss_detail(click_area, 3):
             logger.info("%s unavailable", str(click_area))
             return 0
+        return re.sub(r"['\[\]]", "", str(self._boss_name_texts()))
+
+    def _boss_name_texts(self) -> list:
+        """对当前（已打开的）详情画面识别一次鬼王名字，不点击、不截图。"""
         ocrName = self.O_AB_BOSS_NAME.detect_and_ocr(self.device.image)
-        bossName = re.sub(r"[\'\[\]]", "", str([result.ocr_text for result in ocrName]))
-        return bossName
+        return [result.ocr_text for result in ocrName or []]
+
+    def _read_detail_name(self) -> str | None:
+        """当前详情页的鬼王完整名字，只做空白清理；空 / 读不出来返回 None，不使用默认名字也不做模糊匹配。"""
+        texts = self._boss_name_texts()
+        name = re.sub(r"\s+", "", ''.join(t for t in texts if isinstance(t, str)))
+        return name or None
+
+    def _boss_record(self) -> BossRunRecord:
+        if self._run_record is None:       # 没经过 run() 直接调用 boss_fight 时，按配置数量建一份
+            self._run_record = BossRunRecord(self.config.area_boss.boss.boss_number)
+        return self._run_record
 
     def open_boss_detail(self, battle: RuleImage, try_num: int = 3) -> bool:
         """

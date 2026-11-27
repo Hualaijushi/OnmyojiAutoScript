@@ -181,7 +181,7 @@ class SixRealmsAssets:
 
 
 	# Click Rule Assets
-	# 孔雀国首领觉绿标位置
+	# 孔雀国首领觉绿标位置 
 	C_PK_GREEN_MAIN = RuleClick(roi_front=(620,492,33,66), roi_back=(620,492,33,66), name="pk_green_main")
 
 
@@ -204,8 +204,10 @@ class SixRealmsAssets:
 	I_PK_START_THIRD_SKILL = RuleImage(roi_front=(1006,601,85,41), roi_back=(1006,601,85,41), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_start_third_skill.png")
 	# 孔雀国主界面标志 
 	I_PK_CHECK_MAIN = RuleImage(roi_front=(93,18,112,48), roi_back=(93,18,112,48), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_check_main.png")
-	# 只有300金币时仍唤息，快速跳过岛屿
-	I_PK_STORE_STILLIN = RuleImage(roi_front=(670,398,177,66), roi_back=(670,398,177,66), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_store_stillin.png")
+	# 只有300金币时仍唤息，快速跳过岛屿 
+	I_PK_STORE_STILLIN = RuleImage(roi_front=(670,413,166,51), roi_back=(657,398,191,82), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_store_stillin.png")
+	# 放弃试炼 
+	I_PK_GIVEUP = RuleImage(roi_front=(715,323,47,46), roi_back=(474,293,333,135), threshold=0.8, method="Template matching", file="./tasks/SixRealms/peacock_kingdom/pk/pk_pk_giveup.png")
 
 
 	# Image Rule Assets
@@ -339,4 +341,5 @@ class SixRealmsAssets:
 	I_SR_CHECK_BUY_BOX = RuleImage(roi_front=(484,290,295,47), roi_back=(405,230,467,255), threshold=0.8, method="Template matching", file="./tasks/SixRealms/sr/sr_sr_check_buy_box.png")
 	# 不再提醒 
 	I_SR_NOT_TIP = RuleImage(roi_front=(543,342,37,37), roi_back=(405,230,467,255), threshold=0.8, method="Template matching", file="./tasks/SixRealms/sr/sr_sr_not_tip.png")
+
 

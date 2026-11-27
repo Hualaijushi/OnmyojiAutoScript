@@ -66,6 +66,10 @@ class XinLanAdapter(SyncAdapter):
         return bool(self.task.appear(rule))
 
     def _tap(self, rule) -> None:
+        if rule is not GeneralInviteAssets.I_I_ACCEPT:
+            self.task.screenshot()
+            if self.task.appear(A.I_ACC_TONGXIN):
+                return
         self.task.click(rule)
 
     def _ocr(self, rule):
@@ -80,6 +84,22 @@ class XinLanAdapter(SyncAdapter):
 
     def _pause(self, seconds: float) -> None:
         time.sleep(seconds)
+
+    def _recover_navigation(self, unknown: bool = False) -> bool:
+        return self.task.recover_xin_lan_navigation(unknown=unknown)
+
+    def _drain_navigation_popups(self) -> int:
+        """连续处理遮挡；返回关闭数，超时返回 -1，不用三次上限截断多个羁绊提示。"""
+        deadline = time.monotonic() + 8
+        closed = 0
+        while True:
+            if time.monotonic() >= deadline:
+                logger.warning('XinLan: navigation popup recovery timed out')
+                return -1
+            if not self._recover_navigation():
+                return closed
+            closed += 1
+            self._pause(1.5)
 
     # ------------------------------------------------------------------------------------------------------------------
     # 公共步骤
@@ -108,6 +128,8 @@ class XinLanAdapter(SyncAdapter):
         次数有限（`SAME_TOGGLES`）：不用 `_click_until` 的 30 秒循环，免得同一按钮来回触发单按钮 10 次点击上限。
         """
         for _ in range(self.SAME_TOGGLES):
+            if self._drain_navigation_popups() < 0:
+                return False
             self._shot()
             if not self._seen(A.I_FRIEND_SAME_CLOSE):
                 return True
@@ -128,22 +150,59 @@ class XinLanAdapter(SyncAdapter):
         有通知时好友列表不会停在最顶端，要先点「最近」再点「好友」才回到顶部（用户 2026-10-22 补充），
         所以每次都无条件复位，再点固定坐标；名字对不上就整套重做，用尽仍不对才失败（不会进福袋页）。
         """
-        if not self._goto_friends():
-            return False
-        for attempt in range(1, self.OPEN_TRIES + 1):
+        deadline = time.monotonic() + self.NAV_TIMEOUT
+        attempt = 0
+        navigate = True
+        while attempt < self.OPEN_TRIES and time.monotonic() < deadline:
+            # 导航前也先清理，避免连续提示被公共未知页的同动作去重限制截断。
+            closed = self._drain_navigation_popups()
+            if closed < 0:
+                return False
+            navigate = navigate or bool(closed)
+            self._shot()
+            if self._seen(A.I_ACC_TONGXIN):
+                return False
+            if navigate and not self._goto_friends():
+                return False
+            navigate = False
             # 两个标签的选中 / 未选中模板互相得分都在 0.94 以上（阈值 0.8 分不开），不能靠「看到已选中就跳过」：
             # 2026-10-24 oas1 因此跳过了复位，一直点在别人身上。这里无条件各点一次，结果交给下面的名字 OCR 核对
-            self._tap(A.I_FRIEND_CUR_UNSEL)
-            self._pause(self.CLICK_GAP)
-            self._tap(A.I_FRIEND_LIST_UNSEL)
-            self._pause(self.CLICK_GAP)
+            interrupted = False
+            for rule in (A.I_FRIEND_CUR_UNSEL, A.I_FRIEND_LIST_UNSEL):
+                closed = self._drain_navigation_popups()
+                if closed < 0:
+                    return False
+                if closed:
+                    interrupted = navigate = True
+                    break
+                self._tap(rule)
+                self._pause(self.CLICK_GAP)
+            if interrupted:
+                continue
             if not self._expand_same_list():
+                if self._recover_navigation(unknown=True):
+                    navigate = True
+                    continue
                 return False
+            closed = self._drain_navigation_popups()
+            if closed < 0:
+                return False
+            if closed:
+                navigate = True
+                continue
             self._tap(A.C_THE_TOP_FRIEND)
             self._pause(self.CLICK_GAP)
             self._shot()
-            if self._on_peer_detail():
+            closed = self._drain_navigation_popups()
+            if closed < 0:
+                return False
+            if not closed and self._on_peer_detail():
                 return True
+            # 名字不符可能是未知弹窗遮挡；复用关闭动作后从好友入口重新定位。
+            navigate = bool(closed or self._recover_navigation(unknown=True))
+            if navigate:
+                continue
+            attempt += 1
             logger.warning(f'XinLan: top friend is not {self.peer_alias!r} (attempt {attempt}/{self.OPEN_TRIES})')
         return False
 
@@ -153,17 +212,54 @@ class XinLanAdapter(SyncAdapter):
 
     def _open_gift_page(self) -> bool:
         """在好友详情点右上角图标进福袋页（初始 / x/10 / x/20 三态外观不同，所以用固定区域点击）。"""
-        return self._click_until(A.C_TONGXIN_ICON, A.I_INVITE_TONGXIN, self.NAV_TIMEOUT)
+        deadline = time.monotonic() + self.NAV_TIMEOUT
+        clicks = 0
+        while time.monotonic() < deadline:
+            closed = self._drain_navigation_popups()
+            if closed < 0:
+                return False
+            self._shot()
+            if self._seen(A.I_ACC_TONGXIN):
+                return False
+            if self._seen(A.I_INVITE_TONGXIN):
+                return True
+            if closed or not self._on_peer_detail():
+                if not closed:
+                    self._recover_navigation(unknown=True)
+                if not self._open_peer_detail():
+                    return False
+                clicks = 0
+                continue
+            # 图标未打开页面时先恢复，不能一直点相同固定区域。
+            if clicks >= 2:
+                if not self._recover_navigation(unknown=True):
+                    return False
+                if not self._open_peer_detail():
+                    return False
+                clicks = 0
+                continue
+            self._tap(A.C_TONGXIN_ICON)
+            clicks += 1
+            self._pause(self.CLICK_GAP)
+        return False
 
     def _close_gift_page(self) -> bool:
         deadline = time.monotonic() + self.NAV_TIMEOUT
+        clicks = 0
         while True:
+            if self._drain_navigation_popups() < 0:
+                return False
             self._shot()
+            if self._seen(A.I_ACC_TONGXIN):
+                return False
             if not self._seen(A.I_INVITE_TONGXIN):
                 return True
             if time.monotonic() >= deadline:
                 return False
+            if clicks >= 2:
+                return False
             self._tap(A.C_RANDOM_LEFT)
+            clicks += 1
             self._pause(self.CLICK_GAP)
 
     def _accept_invite(self, ctx, inviter_alias: str, timeout: float) -> bool:
@@ -176,6 +272,8 @@ class XinLanAdapter(SyncAdapter):
         ignored = None
         while True:
             ctx.check_alive()
+            if self._drain_navigation_popups() < 0:
+                return False
             self._shot()
             if self._seen(A.I_ACC_TONGXIN):
                 name = _squash(self._ocr(A.O_NAME_TONGXIN_INVITER) or '')
@@ -193,6 +291,11 @@ class XinLanAdapter(SyncAdapter):
         """次数图标 `x/y` 的分母读到 `total`（用户 2026-10-21 确认：成功判据只看分母是 20，不看分子）。"""
         deadline = time.monotonic() + self.NUM_WAIT
         while True:
+            closed = self._drain_navigation_popups()
+            if closed < 0:
+                return False
+            if closed and not self._open_peer_detail():
+                return False
             self._shot()
             result = self._ocr(A.O_NUM_TONGXIN)
             if result and result[2] == total:
@@ -200,6 +303,9 @@ class XinLanAdapter(SyncAdapter):
             if time.monotonic() >= deadline:
                 logger.warning(f'XinLan: counter reads {result!r}, expect denominator {total}')
                 return False
+            if not result and self._recover_navigation(unknown=True):
+                if not self._open_peer_detail():
+                    return False
             self._pause(self.POLL)
 
     def _verify_total(self) -> bool:

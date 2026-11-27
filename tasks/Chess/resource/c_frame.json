@@ -1,0 +1,442 @@
+[
+  {
+    "itemName": "hand_card",
+    "imageName": "card/card_hand_badge_jade_1.png",
+    "roiBack": "170,480,964,217",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "profile": "High",
+    "description": "手牌识别框",
+    "roiBadge": "264,552,20,19",
+    "badgeSerial": 0,
+    "badgeGrayscale": false,
+    "roiRange": [
+      "279,665,66,24",
+      "279,639,66,24",
+      "279,613,66,24",
+      "294,552,50,47",
+      "262,547,86,146"
+    ],
+    "badges": [
+      {
+        "imageName": "card/card_hand_badge_jade_3.png"
+      },
+      {
+        "imageName": "card/card_hand_badge_jade_2.png"
+      },
+      {
+        "imageName": "card/card_hand_badge_jade_1.png"
+      }
+    ],
+    "rangeOperations": [
+      {
+        "type": "ocr",
+        "mode": "Single",
+        "method": "Default",
+        "keyword": ""
+      },
+      {
+        "type": "ocr",
+        "mode": "Single",
+        "method": "Default",
+        "keyword": ""
+      },
+      {
+        "type": "ocr",
+        "mode": "Single",
+        "method": "Default",
+        "keyword": ""
+      },
+      {
+        "imageName": "",
+        "method": "Template matching",
+        "threshold": 0.8,
+        "type": "image"
+      },
+      {
+        "type": "click"
+      }
+    ]
+  },
+  {
+    "itemName": "store_card",
+    "imageName": "store/store_card_badge_gold.png",
+    "roiBack": "341,54,929,242",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "profile": "High",
+    "description": "",
+    "roiBadge": "1042,267,21,23",
+    "badgeSerial": 0,
+    "badgeGrayscale": false,
+    "roiRange": [
+      "908,261,134,32",
+      "931,224,134,32",
+      "931,194,134,32",
+      "931,162,134,32",
+      "944,81,97,71",
+      "905,57,175,237"
+    ],
+    "badges": [
+      {
+        "imageName": "store/store_card_badge_gold.png"
+      }
+    ],
+    "rangeOperations": [
+      {
+        "type": "ocr",
+        "mode": "Single",
+        "method": "Default",
+        "keyword": ""
+      },
+      {
+        "type": "ocr",
+        "mode": "Single",
+        "method": "Default",
+        "keyword": ""
+      },
+      {
+        "type": "ocr",
+        "mode": "Single",
+        "method": "Default",
+        "keyword": ""
+      },
+      {
+        "type": "ocr",
+        "mode": "Single",
+        "method": "Default",
+        "keyword": ""
+      },
+      {
+        "imageName": "",
+        "method": "Template matching",
+        "threshold": 0.8,
+        "type": "image"
+      },
+      {
+        "type": "click"
+      }
+    ]
+  },
+  {
+    "itemName": "fetter_badge",
+    "imageName": "fetter/fetter_badge_badge_1.png",
+    "roiBack": "166,439,970,281",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "profile": "High",
+    "description": "纹章识别",
+    "roiBadge": "574,548,65,20",
+    "badgeSerial": 1,
+    "badgeGrayscale": true,
+    "roiRange": [
+      "564,665,79,23",
+      "562,551,86,137",
+      "578,589,53,48"
+    ],
+    "badges": [
+      {
+        "imageName": "fetter/fetter_badge_badge_1.png"
+      }
+    ],
+    "rangeOperations": [
+      {
+        "type": "ocr",
+        "mode": "Single",
+        "method": "Default",
+        "keyword": ""
+      },
+      {
+        "type": "click"
+      },
+      {
+        "imageName": "",
+        "method": "Template matching",
+        "threshold": 0.8,
+        "type": "image"
+      }
+    ]
+  },
+  {
+    "itemName": "board_occupancy",
+    "imageName": "board/board_badge_emoji.png",
+    "roiBack": "145,290,950,340",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "profile": "High",
+    "description": "前排1-6、后排7-12；1-12项占位Image，13-24项对应上阵Click",
+    "roiBadge": "154,498,32,32",
+    "badgeSerial": 0,
+    "badgeGrayscale": false,
+    "roiRange": [
+      "311,309,52,50",
+      "414,308,52,50",
+      "516,309,52,50",
+      "619,308,52,50",
+      "723,308,52,50",
+      "826,308,52,50",
+      "281,414,52,50",
+      "396,413,52,50",
+      "510,413,52,50",
+      "624,414,52,50",
+      "737,413,52,50",
+      "851,413,52,50",
+      "365,386,24,24",
+      "461,386,24,24",
+      "563,386,24,24",
+      "664,386,24,24",
+      "766,386,24,24",
+      "865,386,24,24",
+      "337,493,24,24",
+      "449,493,24,24",
+      "557,493,24,24",
+      "666,493,24,24",
+      "783,493,24,24",
+      "890,493,24,24"
+    ],
+    "badges": [
+      {
+        "imageName": "board/board_badge_emoji.png"
+      }
+    ],
+    "rangeOperations": [
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      }
+    ]
+  },
+  {
+    "itemName": "boss_board_occupancy",
+    "imageName": "board/board_badge_emoji.png",
+    "roiBack": "145,280,950,350",
+    "method": "Template matching",
+    "threshold": 0.85,
+    "profile": "High",
+    "description": "前排1-6、后排7-12；1-12项占位Image，13-24项对应上阵Click",
+    "roiBadge": "154,498,32,32",
+    "badgeSerial": 0,
+    "badgeGrayscale": false,
+    "roiRange": [
+      "275,290,52,50",
+      "398,290,52,50",
+      "519,290,52,50",
+      "640,290,52,50",
+      "761,290,52,50",
+      "882,290,52,50",
+      "219,399,52,50",
+      "364,399,52,50",
+      "508,399,52,50",
+      "652,399,52,50",
+      "795,399,52,50",
+      "939,399,52,50",
+      "335,380,24,24",
+      "451,381,24,24",
+      "566,382,24,24",
+      "681,381,24,24",
+      "797,379,24,24",
+      "910,383,24,24",
+      "284,495,24,24",
+      "420,494,24,24",
+      "557,493,24,24",
+      "685,493,24,24",
+      "825,492,24,24",
+      "958,495,24,24"
+    ],
+    "badges": [
+      {
+        "imageName": "board/board_badge_emoji.png"
+      }
+    ],
+    "rangeOperations": [
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "method": "Template matching",
+        "threshold": 0.68,
+        "type": "image"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      },
+      {
+        "type": "click"
+      }
+    ]
+  }
+]

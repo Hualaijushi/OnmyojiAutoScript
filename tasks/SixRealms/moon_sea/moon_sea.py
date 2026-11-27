@@ -19,6 +19,12 @@ class MoonSea(BaseMoonSea):
         categories.add("moon_sea")
         return categories
 
+    def _navigation_detect_categories(self, destination: pages.Page) -> set[str]:
+        """导航识别当前页时保留月之海分类，避免回退全量扫描误命中其他副本准备页。"""
+        categories = super()._navigation_detect_categories(destination)
+        categories.add("moon_sea")
+        return categories
+
     @property
     def ms_page_handle_dict(self) -> dict[pages.Page, Callable]:
         return {

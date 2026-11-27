@@ -37,6 +37,22 @@ EXPLORATION_LEVEL_STABLE_FRAMES = 2
 EXPLORATION_LEVEL_SETTLE_TIMEOUT = 1.5
 EXPLORATION_LEVEL_POLL_INTERVAL = 0.12
 
+# Boss 胜利直退：从确认胜利到观察到合法外层页的总上限。超时视为退出失败，不假装进入下一轮。
+BOSS_EXIT_TIMEOUT = 30
+
+# fire() 每次实际点击后等待战斗页出现的结果窗口（秒）。依据：循环里两次点击的最小间隔是 0.8 秒
+# （点击没出战斗页就会重击），窗口取其 2.5 倍，覆盖进战斗准备页的转场；最后一次点击或 10 秒上限边缘
+# 的点击也据此有一次观察机会。
+FIRE_RESULT_WINDOW = 2.0
+
+# Boss 胜利直退状态（任务内存，不落盘）：
+#   ''        没有进行中的直退
+#   'exiting' 已确认 Boss 胜利，正在退出本次探索；跳过地图宝箱 / 小纸人
+#   'exited'  已观察到外层页；新一轮真正开始前外层不补领刚才跳过的宝箱
+BOSS_EXIT_IDLE = ''
+BOSS_EXIT_EXITING = 'exiting'
+BOSS_EXIT_EXITED = 'exited'
+
 
 class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, ReplaceShikigami, SwitchSoul, ExplorationAssets):
     fire_monster_type: str = ''
@@ -44,6 +60,12 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     user_status: UserStatus = UserStatus.ALONE
     wait_start_time: datetime = datetime.now()
     pre_page: pages.Page = None
+    # 本次战斗归属（'boss' / 'normal' / ''）：由 fire() 在确认进入战斗页时写入，run_on_battle 消费一次后清空
+    _battle_target: str = ''
+    _boss_exit_phase: str = BOSS_EXIT_IDLE
+    _boss_exit_timer: Optional[Timer] = None
+    # 刚完成的 Boss 直退循环尚未走过单人疲劳安全节点；只消费一次
+    _boss_cycle_fatigue_due: bool = False
 
     def _exit_matcher(self) -> ExitMatcher:
         return pages.any_of(self.I_E_SETTINGS_BUTTON, self.I_E_AUTO_ROTATE_ON, self.I_E_AUTO_ROTATE_OFF)
@@ -88,6 +110,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             self.close_buff()
         self.user_status = self._config.exploration_config.user_status
         self.wait_start_time = datetime.now()  # 重置等待时间
+        self._reset_boss_exit_state()
 
     def post_process(self):
         self.goto_page(pages.page_exploration)
@@ -102,6 +125,40 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             self.close_buff()
         self.set_next_run(task='Exploration', success=True, finish=False)
         raise TaskEnd
+
+    def _reset_boss_exit_state(self) -> None:
+        self._battle_target = ''
+        self._boss_exit_phase = BOSS_EXIT_IDLE
+        self._boss_exit_timer = None
+        self._boss_cycle_fatigue_due = False
+
+    def begin_boss_exit(self) -> None:
+        """Boss 战斗确认胜利后进入直退：跳过本轮地图宝箱 / 小纸人，交页面分发执行退出。"""
+        logger.info('Boss battle won, skip map rewards and exit exploration')
+        self._boss_exit_phase = BOSS_EXIT_EXITING
+        self._boss_exit_timer = Timer(BOSS_EXIT_TIMEOUT).start()
+        self.need_exit = True
+        self.fire_monster_type = ''
+
+    def observe_boss_exit_outer(self, current_page) -> None:
+        """分发拿到新截图识别出的页面；正向命中外层页才算退出成功（点击发出不算）。"""
+        if self._boss_exit_phase != BOSS_EXIT_EXITING:
+            return
+        if current_page in (pages.page_exp_entrance, pages.page_exploration):
+            logger.info('Boss exit done, reached outer page')
+            self._boss_exit_phase = BOSS_EXIT_EXITED
+            self._boss_exit_timer = None
+            self._boss_cycle_fatigue_due = True
+            self.need_exit = False
+
+    def guard_boss_exit_deadline(self) -> None:
+        if self._boss_exit_phase == BOSS_EXIT_EXITING and self._boss_exit_timer is not None                 and self._boss_exit_timer.reached():
+            raise GameStuckError(f'Boss exit not finished within {BOSS_EXIT_TIMEOUT}s')
+
+    def end_boss_exit_handoff(self) -> None:
+        """新一轮真正开始（进地图 / 进战斗 / 组队开战），外层不再跳过宝箱。"""
+        if self._boss_exit_phase == BOSS_EXIT_EXITED:
+            self._boss_exit_phase = BOSS_EXIT_IDLE
 
     def _wait_chapter_list_settle(self, baseline) -> bool:
         """等待章节列表发生结构变化并停稳；结果不代表目标章节已找到。"""
@@ -339,27 +396,52 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         self.activate_realm_raid(self._config.scrolls, self._config.exploration_config, current_page)
         return False
 
+    def _observe_fire_result(self, button) -> bool:
+        """fire() 的一次只读观察：截图并识别，已进入战斗页 / 退出弹窗返回 True。不发点击。
+
+        归属只在这里正向识别到战斗页时写入；退出弹窗分支清空，不记作开战。
+        """
+        self.screenshot()
+        cur_page = self.get_current_page()
+        # 退出动画期间可能再次识别到怪物开始攻击, 因此取消退出
+        if cur_page == pages.page_exp_exit:
+            self.need_exit = False
+            self._battle_target = ''
+            return True
+        if cur_page in (pages.page_battle_prepare, pages.page_battle):
+            # 只有确认进入战斗页才记录归属；仅识别到按钮或点击不算
+            self._battle_target = 'boss' if button is self.I_BOSS_BATTLE_BUTTON else 'normal'
+            return True
+        return False
+
     def fire(self, button) -> bool:
         """进入战斗(True:成功进入战斗/识别到退出弹窗, 否则False)
         这里之所以违反页面特性使用循环, 是因为由于怪物移动的原因可能导致一次点击会无法进入战斗,
         回到外循环之后由于UP旋转的特性可能导致识别不到怪物然后开始滑动, 导致错过的怪物更多
         因此这里使用贪心的思想, 只要识别到怪物一次就尽最大可能直接进入战斗, 保证尽可能有怪则打
+
+        点击预算（最多 4 次）与结果确认分开：每次实际发出的点击都有 FIRE_RESULT_WINDOW 秒的结果窗口，
+        主循环因次数用完或 10 秒上限退出时，若最后一次点击的窗口还没观察完，就在窗口内只截图识别
+        （不再点击）。总耗时 <= 10 秒主循环 + 一次点击间隔内的一帧 + FIRE_RESULT_WINDOW。
         """
+        self._battle_target = ''  # 上次未被消费的归属不带入本次
         max_tries = 4
         timeout_timer = Timer(10).start()  # 增加最大时间限制, 防止因未知因素引起无限等待
+        last_click_window = None
         while max_tries > 0 and not timeout_timer.reached():
-            self.screenshot()
-            cur_page = self.get_current_page()
-            # 退出动画期间可能再次识别到怪物开始攻击, 因此取消退出
-            if cur_page == pages.page_exp_exit:
-                self.need_exit = False
-                return True
-            if cur_page in (pages.page_battle_prepare, pages.page_battle):
+            if self._observe_fire_result(button):
                 return True
             if self.appear_then_click(button, interval=0.8):
                 max_tries -= 1
-                continue
-        return False
+                last_click_window = Timer(FIRE_RESULT_WINDOW).start()
+        if last_click_window is None:
+            return False  # 点击从未实际发出, 没有待确认的结果
+        # 尾部确认：不发点击、不重置主循环计时器；至少观察一帧，窗口到期即止
+        while True:
+            if self._observe_fire_result(button):
+                return True
+            if last_click_window.reached():
+                return False
 
     def switch_rotate(self) -> bool:
         """按配置管理「自动添加候补式神」。返回是否执行了切换动作。
@@ -410,13 +492,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         return False
 
     def collect_paper_man_reward(self) -> bool:
-        """收集小纸人奖励, 若未开启则自动退出"""
-        # 已经打过boss了且设置了不收集小纸人奖励则直接返回
-        if self.fire_monster_type == 'boss' and not self._config.exploration_config.collect_paper_reward:
-            logger.info("Not collect paper doll reward")
-            self.quit_exp_main()
-            return True
-        # 没打boss或者收集纸人奖励, 且出现了纸人则处理掉落奖励
+        """收集小纸人奖励(普通怪阶段); Boss 胜利后由 begin_boss_exit 直退, 不经过这里"""
         if self.appear(self.I_BATTLE_REWARD) and self._config.exploration_config.collect_paper_reward:
             self.ui_get_reward(self.I_BATTLE_REWARD)
             self.wait_start_time = datetime.now()  # 队友等待时间重置

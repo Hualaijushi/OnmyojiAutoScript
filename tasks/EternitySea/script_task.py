@@ -81,6 +81,7 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
         self._member_stage_preset_switched = False
         self._two_teams_switch_sous(self._task_config.switch_soul_config_1)
         self._two_teams_switch_sous(self._task_config.switch_soul_config_2)
+        opened_gold_buffs = self._open_configured_gold_buffs()
         success = False
         match self._task_config.eternity_sea_config.user_status:
             case UserStatus.LEADER: success = self.run_leader()
@@ -88,11 +89,56 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
             case UserStatus.ALONE: success = self.run_alone()
             case _: logger.error('Unknown user status')
         self.goto_page(page_main)
+        self._close_owned_gold_buffs(opened_gold_buffs)
         if success:
             self.set_next_run(self.task_name, finish=True, success=True)
         else:
             self.set_next_run(self.task_name, finish=False, success=False)
         raise TaskEnd(self.task_name)
+
+    def _open_configured_gold_buffs(self) -> list:
+        """只记录本次从关闭切换为开启的金币加成。"""
+        con = self._task_config.eternity_sea_config
+        selected = []
+        if con.buff_gold_50_click:
+            selected.append((self.O_GOLD_50, self.gold_50))
+        if con.buff_gold_100_click:
+            selected.append((self.O_GOLD_100, self.gold_100))
+        if not selected:
+            return []
+        if self.is_in_battle(True):
+            logger.warning('EternitySea started in battle; skip gold buffs')
+            return []
+        self.goto_page(page_main)
+        self.open_buff()
+        opened = []
+        for rule, switch in selected:
+            area = self.get_area(rule)
+            if not area:
+                logger.warning(f'EternitySea gold buff {rule.name} not found; skip')
+                continue
+            self.set_switch_area(area)
+            is_closed = self.appear(self.I_CLOSE_RED)
+            is_open = self.appear(self.I_OPEN_YELLOW)
+            if is_closed and not is_open:
+                if switch(is_open=True):
+                    opened.append(switch)
+                else:
+                    logger.warning(f'EternitySea gold buff {rule.name} could not be enabled')
+            elif not is_open or is_closed:
+                logger.warning(f'EternitySea gold buff {rule.name} state unclear; skip')
+        self.close_buff()
+        return opened
+
+    def _close_owned_gold_buffs(self, opened: list) -> None:
+        """正常返回庭院后只关闭本次开启的加成。"""
+        if not opened:
+            return
+        self.open_buff()
+        for switch in opened:
+            if not switch(is_open=False):
+                logger.warning('EternitySea could not close a gold buff it opened')
+        self.close_buff()
 
     def run_leader(self):
         logger.info('Start run leader')

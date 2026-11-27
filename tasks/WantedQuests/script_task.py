@@ -2,7 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta, time, datetime
 from time import sleep
 
@@ -37,6 +37,16 @@ _WQ_TYPE_PREFIXES = tuple(sorted(
 ))
 # 「数量」之后允许残留的右括号 / 引号；其余残留视为识别异常，不猜数量。
 _WQ_ROW_PATTERN = re.compile(r"(.+?)\(?[数教]量:(\d+)[)\"'”’]*")
+# 整区路径用的进度格式：允许把 `/` 误识别成 `7`（既有容错，补读路径不继承）。
+_WQ_PROGRESS_PATTERN = re.compile(r'(?<!\d)(\d{1,2})([7/])(\d{1,2})(?!\d)')
+# 标签条带补读用的严格进度格式：只允许整段文字就是 n/m，不猜、不删字符拼凑。
+_WQ_STRIP_PROGRESS = re.compile(r'(\d{1,2})/(\d{1,2})')
+
+# find_wq 的「有效标记」：找到可靠候选 / 没有悬赏证据 / 有悬赏标签但进度无法确定。
+# 第三种必须和第二种分开：前者要异常收尾并保留现场，后者才允许翻页后按正常完成结束。
+WQ_FOUND = 1
+WQ_NONE = -1
+WQ_UNRESOLVED = -2
 
 
 @dataclass(frozen=True)
@@ -52,9 +62,41 @@ class WQRowReading:
     reason: str = ''
 
 
+@dataclass(eq=False)
+class WQContext:
+    """当前正在处理的一条悬赏的上下文，只属于本次运行的任务对象，不落盘、不跨运行。
+
+    - name：规范化后的妖怪名（来自详情页已有的那一次 OCR，只去空白，不模糊匹配）；空串 = 身份未确认。
+    - current / total：列表上读到的进度，同一进度阶段 = 同一 (current, total)。
+    - attempted：本阶段已经「尝试过」的路线。它不是「悬赏已完成」的记录：调用返回、战斗胜利、finally 都不等于完成。
+    - repeats：同一进度阶段里连续再次执行的次数，用来给「身份未确认 + 持续无进展」兜底。
+    """
+    name: str
+    current: Optional[int]
+    total: Optional[int]
+    attempted: set = field(default_factory=set)
+    repeats: int = 0
+
+    def describe(self) -> str:
+        progress = f'{self.current}/{self.total}' if self.total is not None else 'unknown'
+        return f'monster={self.name or "<unknown>"!r} progress={progress}'
+
+
 class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
     WQ_LIST_MAX_SCROLLS = 4
     WQ_LIST_EDGE_MARGIN = 80
+    # 整区检测漏掉进度文字时，按「悬赏封印」标签补读它正上方的窄条：条带上沿 = 标签上沿 - 26，高 36，
+    # 宽取列表区域宽度（偏移来自 oas1 10-30 13:23 截图的标注工具实验，进度文字底边略压到标签上沿）。
+    WQ_STRIP_ABOVE = 26
+    WQ_STRIP_HEIGHT = 36
+    # 原条带无法读取时，使用另一组相对位置重试，覆盖 1/2 漏检的真实画面。
+    WQ_STRIP_RETRY_ABOVE = 22
+    WQ_STRIP_RETRY_HEIGHT = 28
+    # 同一帧最多补读几条标签，防止异常画面里出现大量标签时开销失控
+    WQ_STRIP_MAX_LABELS = 5
+    # 有标签但进度读不出来时，用新截图复核的次数；仍读不出就按识别异常收尾
+    WQ_UNRESOLVED_RECHECKS = 2
+    WQ_UNRESOLVED_RECHECK_WAIT = 1.0
     # 详情打不开时，带新截图重新定位 / 点击的有界次数；超过即按异常收尾，不靠滑动列表掩盖
     WQ_OPEN_MAX_RETRIES = 2
     # 推荐信息整体读取失败时，换新截图重读的次数
@@ -66,11 +108,15 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
     # 单次运行允许的「取消追踪跳过」上限，防止取消没生效时反复打开同一悬赏
     WQ_MAX_SKIPS = 12
     wq_skip_count = 0
+    # 同一进度阶段里连续再次执行的上限：路线级去重只对「妖怪名已确认」的上下文生效，
+    # 名字读不出 / 对不上时用它兜底，超过就按异常收尾，不无限重复，也不猜悬赏完成。
+    WQ_MAX_NO_PROGRESS_REPEATS = 3
 
     # 追踪界面(显示"前往"按钮的界面,左上角位置,神秘任务不好使)显示以下名称时,任务不再执行
     unwanted_boss_name_list: list = []
-    # 已经执行过的悬赏封印(仅记录执行过的, 不一定成功运行)
-    wq_executed_set: set[WQInfo] = set()
+    # 当前悬赏的上下文（含「已尝试过的路线」）：归本次运行的任务对象所有，run 开始时明确初始化，
+    # 完成领奖 / 取消追踪时关闭；不是类级集合，不同悬赏、不同运行、不同实例之间不共用。
+    _wq_context: Optional[WQContext] = None
 
     def run(self):
         con = self.config.model.wanted_quests
@@ -95,7 +141,9 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
 
         error_count = 0
         open_failures = 0
+        unresolved_checks = 0
         self.wq_skip_count = 0
+        self._wq_context = None
         while 1:
             self.screenshot()
             if not self.is_wq_remained():
@@ -104,10 +152,12 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             if self.appear(self.I_WQ_BOX):
                 logger.info("get reward")
                 self.ui_get_reward(self.I_WQ_BOX)
+                self._close_wq_context('reward claimed')
                 continue
             if self.appear(self.I_E_REWARD_BOX_BIG):
                 logger.info("get treasure")
                 self.ui_get_reward(self.I_E_REWARD_BOX_BIG)
+                self._close_wq_context('treasure claimed')
                 continue
             current, found, total, self.O_WQ_TEXT_ALL.area = self.find_wq(
                 self.device.image,
@@ -115,7 +165,23 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                     error_count >= self.WQ_LIST_MAX_SCROLLS
                 ),
             )
-            if found == -1:
+            if found == WQ_UNRESOLVED:
+                # 列表上有「悬赏封印」标签，但没有可靠候选，且有标签的进度读不出 / 非法：
+                # 这不是「没有悬赏」。先用新截图复核（可能只是过渡画面），仍然读不出就按识别异常收尾，
+                # 由调度器保存现场并计失败次数；不翻页、不调 next_run。
+                unresolved_checks += 1
+                logger.warning(
+                    'Wanted quest labels found but progress unreadable '
+                    f'({unresolved_checks}/{self.WQ_UNRESOLVED_RECHECKS + 1})'
+                )
+                if unresolved_checks > self.WQ_UNRESOLVED_RECHECKS:
+                    raise GameStuckError(
+                        'Wanted quest labels are visible but their progress cannot be read'
+                    )
+                sleep(self.WQ_UNRESOLVED_RECHECK_WAIT)
+                continue
+            unresolved_checks = 0
+            if found == WQ_NONE:
                 if error_count >= self.WQ_LIST_MAX_SCROLLS:
                     logger.warning(
                         'No unfinished wanted quest after scrolling '
@@ -141,7 +207,7 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 continue
             open_failures = 0
             error_count = 0
-            self.execute_mission(total - current)
+            self.execute_mission(total - current, current=current, total=total)
             sleep(1.5)
         self.next_run()
         raise TaskEnd('WantedQuests')
@@ -229,6 +295,8 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
     def skip_current_wq(self, reason: str) -> None:
         """按业务规则跳过当前悬赏：取消追踪并确认回到列表；取消不成功按异常收尾。"""
         logger.warning(f'Skip current wanted quest: {reason}')
+        # 这条悬赏被放弃：下一条（哪怕同名）必须建立新的上下文，旧的路线限制不能带过去
+        self._close_wq_context(f'skipped: {reason}')
         self.wq_skip_count += 1
         if self.wq_skip_count > self.WQ_MAX_SKIPS:
             raise GameStuckError('Too many wanted quest skips, cancel trace may not take effect')
@@ -360,10 +428,50 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         self.ui_click_until_smt_disappear(self.C_WQ_TRACE_ONE_CLOSE, stop=self.I_WQ_TRACE_ONE_CHECK_OPENED,
                                           interval=1.5)
 
-    def execute_mission(self, num_want: int):
+    def _close_wq_context(self, reason: str) -> None:
+        """当前悬赏已领奖 / 已取消追踪：关闭上下文，下一条悬赏重新开始。"""
+        if self._wq_context is not None:
+            logger.info(f'Wanted quest context closed ({reason}): {self._wq_context.describe()}')
+        self._wq_context = None
+
+    def _begin_wq_attempt(self, monster_name: str, current: Optional[int], total: Optional[int]) -> WQContext:
+        """为这次打开的详情确定上下文。
+
+        只有「紧接上一次执行、没有领奖 / 取消、同一进度阶段、妖怪名已确认且相同」才沿用上一份
+        已尝试路线；进度增加、进度变小、总数不同、名字不同、名字读不出，都不继承旧的路线限制。
+        进度未知时没有任何可依据的阶段，也不记录、不接旧上下文（不会把未知当作同一条）。
+        """
+        name = ''.join(str(monster_name or '').split())
+        previous = self._wq_context
+        if current is None or total is None:
+            self._wq_context = None
+            return WQContext(name, None, None)
+        same_stage = previous is not None and previous.current == current and previous.total == total
+        if not same_stage:
+            context = WQContext(name, current, total)
+        elif name and previous.name and name != previous.name:
+            # 名字已确认不同：是另一条悬赏，不是无进展的重复
+            context = WQContext(name, current, total)
+        else:
+            confirmed = bool(name) and name == previous.name
+            context = WQContext(
+                name, current, total,
+                attempted=previous.attempted if confirmed else set(),
+                repeats=previous.repeats + 1,
+            )
+            logger.info(
+                f'Wanted quest progress unchanged since last attempt ({context.describe()}, '
+                f'repeat {context.repeats}, identity {"confirmed" if confirmed else "unconfirmed"})'
+            )
+        self._wq_context = context
+        return context
+
+    def execute_mission(self, num_want: int, current: Optional[int] = None, total: Optional[int] = None):
         """
         执行对应的悬赏任务
         :param num_want: 一共要打败的怪物数量
+        :param current: 列表上读到的当前进度（用于隔离执行记录，None = 未知）
+        :param total: 列表上读到的总数
         :return:
         """
         logger.hr('Start wanted quests')
@@ -378,8 +486,10 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             logger.warning(f'unwanted {monster_name}')
             self.skip_current_wq(f'unwanted {monster_name}')
             return False
+        # 复用上面已经读出的妖怪名，确定本次的悬赏上下文（不为去重再读一次 OCR）
+        context = self._begin_wq_attempt(monster_name, current, total)
         # 获取排序后的悬赏信息列表
-        ordered_wq_infos = self.read_ordered_wq_infos(num_want)
+        ordered_wq_infos = self.read_ordered_wq_infos(num_want, context)
         if not ordered_wq_infos:
             # read_ordered_wq_infos 已排除识别失败，走到这里只可能是全部被业务规则过滤
             logger.info('Current wanted quest skipped all, cancel it')
@@ -396,13 +506,18 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             logger.info('Current wanted quests can not be executed')
             self.skip_current_wq('no executable recommendation')
             return False
+        if context.repeats > self.WQ_MAX_NO_PROGRESS_REPEATS:
+            raise GameStuckError(
+                f'Wanted quest made no progress after {context.repeats - 1} repeated attempts ({context.describe()})'
+            )
         try:
-            logger.info(f'Choose wq: {wq_info}')
+            logger.info(f'Choose wq: {wq_info} ({context.describe()})')
             wq_call_dict[wq_info.type](wq_info.goto_btn, wq_info.do_num)
         except ExploreWantedBoss:
             logger.warning('Maybe only need attack boss')
         finally:
-            self.wq_executed_set.add(wq_info)
+            # 只记「这条悬赏在这个进度阶段尝试过这条路线」，不代表悬赏已完成
+            context.attempted.add(wq_info)
             self.goto_page(page_exploration)
 
     def get_need_exec_wq(self, ordered_wq_infos: List[WQInfo]) -> Optional[WQInfo]:
@@ -411,7 +526,10 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             if WQType.CHALLENGE == wq_info.type:
                 number_challenge = self.O_WQ_NUMBER.ocr(self.device.image)
                 if number_challenge < 5:  # 挑战卷5张都没有了, 省着点吧试试别的
-                    logger.warning("Challenge ticket num < 5, skip")
+                    logger.warning(
+                        f'Challenge ticket num {number_challenge} < 5, skip challenge {wq_info.dest} '
+                        f'(number={wq_info.number}, do_num={wq_info.do_num})'
+                    )
                     continue
             return wq_info
         return None
@@ -426,16 +544,17 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 self.screenshot()
         return False
 
-    def read_ordered_wq_infos(self, num_want: int) -> List[WQInfo]:
+    def read_ordered_wq_infos(self, num_want: int, context: Optional[WQContext] = None) -> List[WQInfo]:
         """读取并排序推荐地点；全部是识别失败时换新截图重读，仍失败则按异常收尾。
 
         识别失败（failed）不能当作「被规则跳过」：否则会取消追踪或让任务被排到明天。
         """
         for attempt in range(self.WQ_INFO_READ_ATTEMPTS):
-            readings = self.read_wq_rows(num_want)
+            readings = self.read_wq_rows(num_want, context)
             ordered = self.order_wq_infos(readings)
             failed = [r for r in readings if r.status == 'failed']
             if ordered or not failed:
+                self._log_wq_decision(readings, context)
                 if failed:
                     logger.warning(
                         'Some wanted quest recommendation rows are unreadable: '
@@ -451,9 +570,22 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 self.screenshot()
         raise GameStuckError('Wanted quest recommendation rows cannot be recognized')
 
-    def get_ordered_wq_infos(self, num_want: int) -> List[WQInfo]:
+    def get_ordered_wq_infos(self, num_want: int, context: Optional[WQContext] = None) -> List[WQInfo]:
         """获取当前悬赏妖怪页面排好序的信息列表, 会自动排除无法执行的悬赏"""
-        return self.order_wq_infos(self.read_wq_rows(num_want))
+        return self.order_wq_infos(self.read_wq_rows(num_want, context))
+
+    @staticmethod
+    def _log_wq_decision(readings: List[WQRowReading], context: Optional[WQContext]) -> None:
+        """一条日志说明每行推荐的结论：谁被过滤、为什么没被选；只复用已读出的结果，不新增识别。"""
+        parts = []
+        for reading in readings:
+            if reading.status == 'ok':
+                info = reading.info
+                parts.append(f'row{reading.index}: {info.type.value} {info.dest} x{info.number} -> {info.do_num} rounds')
+            elif reading.status != 'absent':
+                parts.append(f'row{reading.index}: {reading.status} ({reading.reason})')
+        who = context.describe() if context is not None else 'monster/progress unknown'
+        logger.info(f'Wanted quest recommendations [{who}]: ' + '; '.join(parts))
 
     def order_wq_infos(self, readings: List[WQRowReading]) -> List[WQInfo]:
         wq_info_list = [r.info for r in readings if r.status == 'ok']
@@ -461,12 +593,12 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         wq_info_list.sort(key=lambda x: type_ordered_list.index(x.type))
         return wq_info_list
 
-    def read_wq_rows(self, num_want: int) -> List[WQRowReading]:
+    def read_wq_rows(self, num_want: int, context: Optional[WQContext] = None) -> List[WQRowReading]:
         """逐行读取推荐地点；第 i 行始终绑定自己的 I_GOTO_i，某行失败 / 被过滤不影响其他行的按钮。"""
         wq_info_ocr = [self.O_WQ_INFO_1, self.O_WQ_INFO_2, self.O_WQ_INFO_3, self.O_WQ_INFO_4]
         goto_btn_list = [self.I_GOTO_1, self.I_GOTO_2, self.I_GOTO_3, self.I_GOTO_4]
         return [
-            self.build_wq_info(i + 1, wq_info_ocr[i], goto_btn_list[i], num_want)
+            self.build_wq_info(i + 1, wq_info_ocr[i], goto_btn_list[i], num_want, context)
             for i in range(4)
         ]
 
@@ -490,13 +622,15 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             return None
         return wq_type, dest, number
 
-    def build_wq_info(self, index: int, info_rule: RuleOcr, goto_btn_rule: RuleImage, num_want: int) -> WQRowReading:
+    def build_wq_info(self, index: int, info_rule: RuleOcr, goto_btn_rule: RuleImage, num_want: int,
+                      context: Optional[WQContext] = None) -> WQRowReading:
         """
         构建单条悬赏信息
         :param index: 行号(1-4)
         :param info_rule: 整行 OCR（类型 + 目的地 + 数量）
         :param goto_btn_rule: 本行前往按钮
         :param num_want: 想要攻击的数量
+        :param context: 当前悬赏的上下文；只有它里面「已尝试」的路线才会被去重，None = 不去重
         """
         text = info_rule.ocr(self.device.image)
         goto_visible = self.appear(goto_btn_rule)
@@ -521,10 +655,14 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             return WQRowReading(index, 'failed', reason='goto button not visible')
         do_num = num_want // wq_number + (num_want % wq_number > 0)
         wq_info = WQInfo(wq_type, wq_dest, wq_number, goto_btn_rule, do_num)
-        # 跳过已经执行过的(例:都是探索第5层4只怪, 上次计算需要打2次但是这次还是打2次, 肯定出问题了也不需要执行了)
-        if wq_info in self.wq_executed_set:
-            logger.warning('This wanted quest has been executed, skip')
-            return WQRowReading(index, 'filtered', reason='already executed')
+        # 跳过「这条悬赏在同一进度阶段已经尝试过」的路线(例:同一条探索第5层4只怪, 上次计算需要打2次、
+        # 进度没变这次还是打2次, 肯定出问题了)；其他悬赏、其他进度阶段的记录不参与过滤
+        if context is not None and wq_info in context.attempted:
+            logger.warning(
+                f'Skip wanted quest route already attempted at the same progress ({context.describe()}): '
+                f'row {index} {wq_type.value} {wq_dest} x{wq_number}, do_num={do_num}'
+            )
+            return WQRowReading(index, 'filtered', reason='already attempted at this progress')
         return WQRowReading(index, 'ok', info=wq_info)
 
     def challenge(self, goto_btn, num):
@@ -820,10 +958,8 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
         :return: (已完成数量, 有效标记, 总数量, 进度文字点击 roi)
         """
         res_list = self.O_WQ_TEXT_ALL.detect_and_ocr(img)
-        progress_pattern = re.compile(
-            r'(?<!\d)(\d{1,2})([7/])(\d{1,2})(?!\d)'
-        )
-        roi_x, roi_y, _, roi_height = self.O_WQ_TEXT_ALL.roi
+        progress_pattern = _WQ_PROGRESS_PATTERN
+        roi_x, roi_y, roi_width, roi_height = self.O_WQ_TEXT_ALL.roi
         safe_progress_bottom = (
             roi_y + roi_height - self.WQ_LIST_EDGE_MARGIN
         )
@@ -844,6 +980,11 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
 
         confirmed_candidates = []
         edge_candidates = []
+        # 整区检测读到的合法进度（含已完成）：用来判断哪些标签已经有人认领，不需要补读
+        legal_progress_areas = []
+        # 标签和非法进度被整区检测并成一个框：进度被忽略，但悬赏证据不能跟着丢掉
+        merged_illegal_areas = []
+        merged_illegal_edge_areas = []
         for text, progress_area in ocr_items:
             match = progress_pattern.search(text)
             if not match:
@@ -854,7 +995,15 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                     'Ignore abnormal wanted quest progress: '
                     f'{text}'
                 )
+                # 合并框里标签位置不可靠，不推导窄条。底部边缘区的先翻页（预算内不算证据），
+                # 翻页预算耗尽后仍在，就和普通框一样算未确定——不能把它当成确认没有悬赏
+                if self._has_wq_label_hint(text):
+                    if progress_area[1] < safe_progress_bottom:
+                        merged_illegal_areas.append(list(progress_area))
+                    else:
+                        merged_illegal_edge_areas.append(list(progress_area))
                 continue
+            legal_progress_areas.append(progress_area)
             if current == total:
                 continue
 
@@ -887,7 +1036,29 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             elif label_confirmed:
                 confirmed_candidates.append(candidate)
 
+        unresolved_labels = list(merged_illegal_areas)
+        if allow_edge_fallback:
+            # allow_edge_fallback 即「翻页预算已耗尽」：此时当前帧里仍有的底部非法合并框是悬赏证据
+            unresolved_labels.extend(merged_illegal_edge_areas)
+        if not confirmed_candidates:
+            # 整区检测没有可选候选：按「悬赏封印」标签补读它上方的窄条（原路径有候选时零补读）。
+            # 补读出的非边缘候选和原候选同级；底部边缘的仍只在允许边缘保底时才用。
+            supplement, supplement_edge, unresolved = self._supplement_wq_progress(
+                img, ocr_items, legal_progress_areas,
+                (roi_x, roi_y, roi_width, roi_height), safe_progress_bottom,
+            )
+            confirmed_candidates.extend(supplement)
+            edge_candidates.extend(supplement_edge)
+            unresolved_labels.extend(unresolved)
+
         candidates = confirmed_candidates
+        if not candidates and unresolved_labels:
+            # 有悬赏标签却确定不了进度：不能当作「没有悬赏」，更不能为了翻页而绕过。
+            logger.warning(
+                'Wanted quest label(s) without readable progress at '
+                f'{unresolved_labels}'
+            )
+            return -1, WQ_UNRESOLVED, -1, [0, 0, 0, 0]
         if not candidates and allow_edge_fallback:
             candidates = edge_candidates
             if candidates:
@@ -904,8 +1075,100 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 f'Find wanted quest progress {raw_text}: '
                 f'{current}/{total}, click={click_area}'
             )
-            return current, 1, total, click_area
-        return -1, -1, -1, [0, 0, 0, 0]
+            return current, WQ_FOUND, total, click_area
+        return -1, WQ_NONE, -1, [0, 0, 0, 0]
+
+    def _supplement_wq_progress(
+        self,
+        img,
+        ocr_items,
+        legal_progress_areas,
+        list_roi,
+        safe_progress_bottom,
+    ):
+        """整区 OCR 没给出可选候选时，按标签补读进度。
+
+        只用同一帧整区 OCR 已经给出的逐个标签框，每个标签只读自己上方的窄条；
+        已经被整区读到的合法进度认领的标签不重复读。
+        :return: (非边缘候选, 边缘候选, 进度读不出的标签位置)，候选格式同 find_wq 的内部候选
+        """
+        roi_x, roi_y, roi_width, roi_height = list_roi
+        labels = []
+        for text, area in ocr_items:
+            # 文字里带进度格式的框（合法的走原路径，非法的由 find_wq 记为未确定）不在这里补读
+            if not self._has_wq_label_hint(text) or _WQ_PROGRESS_PATTERN.search(text):
+                continue
+            # 同一个标签被检测成多个相邻的框时只保留一个
+            if any(abs(area[1] - other[1]) < 12 for other in labels):
+                continue
+            labels.append(area)
+        labels.sort(key=lambda area: area[1])
+
+        confirmed, edge, unresolved = [], [], []
+        read_count = 0
+        for label_area in labels:
+            label_top = label_area[1]
+            label_bottom = label_top + label_area[3]
+            # 已有合法进度落在这个标签的归属窗口内（与整区路径的归属判据一致）
+            if any(
+                label_bottom >= area[1] - 12 and label_top <= area[1] + area[3] + 82
+                for area in legal_progress_areas
+            ):
+                continue
+            strip_top = label_top - self.WQ_STRIP_ABOVE
+            strip = (roi_x, strip_top, roi_width, self.WQ_STRIP_HEIGHT)
+            # 条带被列表上 / 下沿裁掉的标签（刚被滚出或还没滚进来）不是可靠证据：既不读也不报未确定
+            if strip_top < roi_y or strip_top + self.WQ_STRIP_HEIGHT > roi_y + roi_height:
+                continue
+            if read_count >= self.WQ_STRIP_MAX_LABELS:
+                # 超出补读上限的标签不能悄悄丢掉：当作进度未确定
+                unresolved.append(list(label_area))
+                continue
+            read_count += 1
+            reading = self._read_wq_label_strip(img, strip)
+            if reading is None:
+                retry_top = label_top - self.WQ_STRIP_RETRY_ABOVE
+                retry_strip = (roi_x, retry_top, roi_width, self.WQ_STRIP_RETRY_HEIGHT)
+                if retry_top >= roi_y and retry_top + self.WQ_STRIP_RETRY_HEIGHT <= roi_y + roi_height:
+                    reading = self._read_wq_label_strip(img, retry_strip)
+                    if reading is not None:
+                        logger.info('Wanted quest progress recovered from alternate label strip')
+            if reading is None:
+                unresolved.append(list(label_area))
+                continue
+            current, total, area, text = reading
+            if current == total:
+                continue
+            logger.info(f'Wanted quest progress {text} recovered from label strip, click={area}')
+            candidate = (area[1], current, total, area, text)
+            (edge if area[1] >= safe_progress_bottom else confirmed).append(candidate)
+        return confirmed, edge, unresolved
+
+    def _read_wq_label_strip(self, img, strip):
+        """在标签上方的窄条里读 n/m；读不到、非法、多个互相矛盾时返回 None。
+
+        每次新建一个只带窄条 ROI 的 OCR 规则，不改共享的 O_WQ_TEXT_ALL。
+        :return: (已完成数, 总数, 整屏坐标的点击框, 文本) 或 None
+        """
+        rule = RuleOcr(
+            name='wq_progress_strip', mode='Full', method='Default',
+            roi=strip, area=strip, keyword='',
+        )
+        readings = {}
+        for result in rule.detect_and_ocr(img, logDisplay=False):
+            match = _WQ_STRIP_PROGRESS.fullmatch(self._normalize_wq_list_text(result.ocr_text))
+            if not match:
+                continue
+            x, y, w, h = self._wq_box_xywh(result.box)
+            # 窄条只截取这个标签正上方，条内读到的 n/m 就是它自己的进度；别处的数字进不了这个条带
+            area = [x + strip[0], y + strip[1], w, h]
+            readings[(int(match.group(1)), int(match.group(2)))] = (area, match.group(0))
+        if len(readings) != 1:
+            return None
+        (current, total), (area, text) = next(iter(readings.items()))
+        if not 0 <= current <= total <= 14 or total == 0:
+            return None
+        return current, total, area, text
 
     def is_wq_remained(self):
         """检测是否仍有悬赏；兼容列表底部仅剩裁切卡位。"""

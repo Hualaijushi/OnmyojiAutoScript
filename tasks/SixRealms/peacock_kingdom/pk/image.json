@@ -83,10 +83,19 @@
   {
     "itemName": "pk_store_stillin",
     "imageName": "pk_pk_store_stillin.png",
-    "roiFront": "670,398,177,66",
-    "roiBack": "670,398,177,66",
+    "roiFront": "670,413,166,51",
+    "roiBack": "657,398,191,82",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "只有300金币时仍唤息，快速跳过岛屿"
+  },
+  {
+    "itemName": "pk_giveup",
+    "imageName": "pk_pk_giveup.png",
+    "roiFront": "715,323,47,46",
+    "roiBack": "474,293,333,135",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "放弃试炼"
   }
 ]

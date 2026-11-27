@@ -138,7 +138,7 @@ class LoginService(
                 logger.info('Cancel switch from early server to normal server')
                 continue
 
-            if self.appear(self.I_LOGIN_8, interval=0.6): # 进入登录页面后不再处理登录动画逻辑
+            if self.appear(self.I_LOGIN_16, interval=0.6): # 进入登录页面后不再处理登录动画逻辑
                 skip_login_animation = False
             if skip_login_animation:
                 if self.ocr_appear_click(self.O_LOGIN_ANIMATION_SKIP, interval=2.5):  # 点击跳过登录动画

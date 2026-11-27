@@ -15,6 +15,7 @@ from module.atom.image import RuleImage
 from module.base.utils import point2str
 from module.logger import logger
 from module.exception import TaskEnd, GameStuckError
+from module.script.task_outcome import report_scheduled_outcome
 from tasks.KekkaiUtilize.page import page_guild_realm, page_guild_realm_growth, page_guild_card
 
 from tasks.KekkaiUtilize.script_task import ScriptTask as KU
@@ -45,6 +46,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
             self.check_max_lv(con.shikigami_class, con.auto_fill)
         self.goto_page(page_main)
 
+        report_scheduled_outcome(self.config, 'KekkaiActivation', 'kekkai_activation', 'completed')
         raise TaskEnd('KekkaiActivation')
 
     @cached_property
@@ -327,6 +329,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
         # 保存配置并设置下次执行
         self.config.save()
         self.set_next_run("KekkaiActivation", target=next_run)
+        report_scheduled_outcome(self.config, 'KekkaiActivation', 'kekkai_activation', 'retry_scheduled')
         raise TaskEnd
 
     def harvest_card(self):

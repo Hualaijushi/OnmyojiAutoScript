@@ -28,9 +28,9 @@ class Guild(Buy, GameUi, WeeklyPurchaseAssets):
     def execute_guild(self, con: GuildStore = None):
         if not con.enable:
             return
-        logger.hr('Start guild', 1)
+        logger.hr('开始处理寮商店购买', 1)
         self.goto_page(page_guild_store)
-        logger.info('Enter guild store success')
+        logger.info('已进入寮商店')
         time.sleep(0.5)
         swipe_cnt, max_swipe = 0, random.randint(3, 5)
         mystery_ret, scrap_ret, skin_ret, gift_ret = False, False, False, False
@@ -46,14 +46,14 @@ class Guild(Buy, GameUi, WeeklyPurchaseAssets):
                 skin_ret = self._guild_skin_ticket()
             self.swipe(self.S_GUILD_STORE, interval=1.5)
             time.sleep(2)
-            logger.attr(max_swipe - swipe_cnt, 'remain swipe times')
+            logger.attr(max_swipe - swipe_cnt, '剩余滑动次数')
             swipe_cnt += 1
         # 回去
         self.goto_page(page_shirin)
 
     def _guild_honor_gift(self):
         # 功勋礼包
-        logger.hr('Guild honor gift', 2)
+        logger.hr('寮商店：功勋礼包', 2)
         self.screenshot()
         if not self.buy_check_money(self.O_GUILD_TOTAL, 210):
             return False

@@ -86,10 +86,12 @@ from tasks.Duel.config import Duel
 from tasks.Chess.config import Chess
 # ----------------------------------------------------------------------------------------------------------------------
 from tasks.ActivityShikigami.args_layout import build_args_layout as activity_shikigami_args_layout
+from tasks.Dokan.args_layout import build_args_layout as dokan_args_layout
 
-# 目前只有式神活动提供展示信息，其他任务不推广
+# 目前只有式神活动和道馆提供展示信息，其他任务不推广（道馆的返回带 kind = "dokan"，式神活动的返回结构不变）
 TASK_ARGS_LAYOUTS = {
     'activity_shikigami': activity_shikigami_args_layout,
+    'dokan': dokan_args_layout,
 }
 
 
@@ -459,6 +461,8 @@ class ConfigModel(ConfigBase):
                         groups_value[key] = groups[group_name]
             result[key] = merge_value(groups_value[key], value, schema["$defs"], model=getattr(task, key, None))
 
+        if isinstance(task, Chess):
+            result = task.oasx_args(result)
         return result
 
     def script_task_layout(self, task: str) -> dict:
@@ -503,6 +507,12 @@ class ConfigModel(ConfigBase):
 
         task_object = getattr(self, task, None)
         group_object = getattr(task_object, group, None)
+        if isinstance(task_object, Chess) and group == 'chess_config' and argument == 'lineup_bond':
+            handled = task_object.select_oasx_lineup(value)
+            if handled is not None:
+                if handled:
+                    self.save()
+                return handled
         if group_object is None:  # deal list
             matchs = re.findall(r'\d+', group)
             index = int(matchs[-1]) - 1 if matchs else None

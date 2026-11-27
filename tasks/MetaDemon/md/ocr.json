@@ -16,5 +16,14 @@
     "method": "Default",
     "keyword": "",
     "description": "好友列表"
+  },
+  {
+    "itemName": "md_boss_star",
+    "roiFront": "509,428,49,26",
+    "roiBack": "506,425,58,35",
+    "mode": "Digit",
+    "method": "Default",
+    "keyword": "",
+    "description": "当前鬼王星级，仅为已启用的御魂/预设/强力配置读取，不选择鬼王"
   }
 ]
